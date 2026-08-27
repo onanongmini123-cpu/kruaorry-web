@@ -2,9 +2,10 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, KeyRound, Eye, EyeOff, Globe, CheckCircle2 } from "lucide-react";
+import { Mail, KeyRound, Eye, EyeOff, Globe, CheckCircle2, User } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Checkbox, IconButton } from "@/components/ui";
+import { createClient } from "@/lib/supabase/client";
 
 const POINTS = [
   "สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง",
@@ -12,24 +13,56 @@ const POINTS = [
   "เครื่องมือในห้องเรียน จับเวลา สุ่มชื่อ จับกลุ่ม",
 ];
 
+type Mode = "signin" | "signup";
+
 export default function LoginPage() {
   const router = useRouter();
+  const supabase = createClient();
+  const [mode, setMode] = useState<Mode>("signin");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // This build has no backend yet (fresh start, per the owner — see
-  // sampleData.ts). Sign-in is a UI preview: it simulates success and
-  // drops into the sample teacher app rather than pretending to check a
-  // real password.
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setNotice(null);
     setLoading(true);
-    window.setTimeout(() => {
+
+    if (mode === "signup") {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } },
+      });
+      setLoading(false);
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+      if (!data.session) {
+        setNotice("สมัครสำเร็จ กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตนก่อนเข้าสู่ระบบ");
+        setMode("signin");
+        return;
+      }
       router.push("/app");
-    }, 500);
+      router.refresh();
+      return;
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (signInError) {
+      setError(signInError.message === "Invalid login credentials" ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : signInError.message);
+      return;
+    }
+    router.push("/app");
+    router.refresh();
   };
 
   return (
@@ -54,13 +87,36 @@ export default function LoginPage() {
 
       <div style={{ padding: "var(--sp-7) var(--sp-5)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: 420, margin: "0 auto" }}>
-          <h2 style={{ fontSize: "var(--fs-30)" }}>เข้าสู่ระบบ</h2>
-          <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-14)", color: "var(--status-warning-fg)", background: "var(--status-warning-bg)", padding: "10px 14px", borderRadius: "var(--r-md)" }}>
-            ตัวอย่างหน้าจอเท่านั้น — ยังไม่เชื่อมกับระบบสมาชิกจริง กดเข้าสู่ระบบเพื่อดูตัวอย่างแอปสำหรับครู
+          <h2 style={{ fontSize: "var(--fs-30)" }}>{mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิกครู"}</h2>
+          <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
+            {mode === "signin" ? "ยังไม่มีบัญชี? " : "มีบัญชีอยู่แล้ว? "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "signin" ? "signup" : "signin");
+                setError(null);
+                setNotice(null);
+              }}
+              style={{ color: "var(--purple-600)", fontWeight: "var(--fw-semibold)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              {mode === "signin" ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
+            </button>
           </p>
+
+          {notice && (
+            <p style={{ fontSize: "var(--fs-14)", color: "var(--status-success-fg)", background: "var(--status-success-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
+              {notice}
+            </p>
+          )}
+          {error && (
+            <p style={{ fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
+              {error}
+            </p>
+          )}
+
           <div style={{ display: "grid", gap: "var(--sp-4)" }}>
-            <Button variant="secondary" size="lg" block icon={Globe} type="button">
-              เข้าสู่ระบบด้วย Google
+            <Button variant="secondary" size="lg" block icon={Globe} type="button" disabled title="เร็วๆ นี้">
+              เข้าสู่ระบบด้วย Google (เร็วๆ นี้)
             </Button>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-4)", margin: "var(--sp-7) 0" }}>
@@ -69,19 +125,24 @@ export default function LoginPage() {
             <span style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
           </div>
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: "var(--sp-5)" }}>
-            <Input label="อีเมล" type="email" icon={Mail} placeholder="napha@school.ac.th" value={email} onChange={(e) => setEmail(e.target.value)} />
+            {mode === "signup" && (
+              <Input label="ชื่อ-นามสกุล" icon={User} placeholder="ครูนภา ใจดี" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            )}
+            <Input label="อีเมล" type="email" icon={Mail} placeholder="napha@school.ac.th" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <Input
               label="รหัสผ่าน"
               type={showPassword ? "text" : "password"}
               icon={KeyRound}
-              placeholder="รหัสผ่านของครู"
+              placeholder="อย่างน้อย 6 ตัวอักษร"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              minLength={6}
+              required
               trailing={<IconButton icon={showPassword ? EyeOff : Eye} label="แสดงรหัสผ่าน" onClick={() => setShowPassword((v) => !v)} />}
             />
-            <Checkbox label="จำการเข้าสู่ระบบไว้" checked={remember} onChange={setRemember} />
+            {mode === "signin" && <Checkbox label="จำการเข้าสู่ระบบไว้" checked={remember} onChange={setRemember} />}
             <Button size="lg" block loading={loading} type="submit">
-              เข้าสู่ระบบ
+              {mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
             </Button>
           </form>
         </div>

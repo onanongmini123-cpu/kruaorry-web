@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
-import Link from "next/link";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, type SideNavGroup } from "@/components/ui";
-import { CATEGORIES, SAMPLE_PLANS, SAMPLE_RESOURCES, type SampleResource } from "@/lib/sampleData";
+import { createClient } from "@/lib/supabase/client";
+import { fetchPublishedResources, fetchPlans, fetchProfile, resourceIcon, resourceTint, type Resource, type Plan, type Profile } from "@/lib/data";
 
 type View = "home" | "library" | "detail" | "plans";
 
@@ -20,26 +21,85 @@ const NAV_GROUPS: SideNavGroup[] = [
 ];
 
 export default function TeacherAppPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [view, setView] = useState<View>("home");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
 
+  useEffect(() => {
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+      const [profileData, resourceData, planData] = await Promise.all([
+        fetchProfile(supabase, user.id),
+        fetchPublishedResources(supabase),
+        fetchPlans(supabase),
+      ]);
+      setProfile(profileData);
+      setResources(resourceData);
+      setPlans(planData);
+      setLoading(false);
+    })();
+  }, [supabase, router]);
+
+  const categoryOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    resources.forEach((r) => {
+      if (r.category) seen.set(r.category, r.category);
+    });
+    return Array.from(seen.entries()).map(([value, label]) => ({ value, label }));
+  }, [resources]);
+
   const toggleSaved = (id: string) => setSaved((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
 
-  const openDetail = (r: SampleResource) => {
+  const openDetail = (r: Resource) => {
     setDetailId(r.id);
     setView("detail");
   };
 
-  const detail = SAMPLE_RESOURCES.find((r) => r.id === detailId) || null;
+  const openResource = (r: Resource) => {
+    if (!r.free) {
+      setView("plans");
+      return;
+    }
+    if (r.ctaUrl) window.open(r.ctaUrl, "_blank", "noopener,noreferrer");
+  };
 
-  const filtered = SAMPLE_RESOURCES.filter((r) => {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  };
+
+  const detail = resources.find((r) => r.id === detailId) || null;
+
+  const filtered = resources.filter((r) => {
     const matchesSearch = !query.trim() || r.title.toLowerCase().includes(query.toLowerCase());
-    const matchesCategory = categories.length === 0 || categories.includes(r.category);
+    const matchesCategory = categories.length === 0 || (r.category ? categories.includes(r.category) : false);
     return matchesSearch && matchesCategory;
   });
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
+        <span className="kru-spin" aria-hidden="true" style={{ width: 28, height: 28, borderRadius: 999, border: "3px solid var(--border-subtle)", borderTopColor: "var(--brand)" }} />
+      </div>
+    );
+  }
+
+  const initials = (profile?.fullName || profile?.email || "ค").slice(0, 2);
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -52,11 +112,14 @@ export default function TeacherAppPage() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <SideNav groups={NAV_GROUPS} value={view === "detail" ? "library" : view} onChange={(k) => setView(k as View)} />
           </div>
-          <Link href="/" style={{ marginTop: "var(--sp-6)" }}>
-            <Button size="sm" block variant="ghost" icon={LogOut}>
-              ออกจากตัวอย่าง
+          {profile?.role === "admin" && (
+            <Button size="sm" block variant="soft" icon={ShieldCheck} onClick={() => router.push("/admin")} style={{ marginTop: "var(--sp-4)" }}>
+              ไปที่หลังบ้านแอดมิน
             </Button>
-          </Link>
+          )}
+          <Button size="sm" block variant="ghost" icon={LogOut} onClick={handleSignOut} style={{ marginTop: "var(--sp-4)" }}>
+            ออกจากระบบ
+          </Button>
         </aside>
 
         <div className="kru-app-main">
@@ -65,11 +128,11 @@ export default function TeacherAppPage() {
             <div style={{ flex: 1 }} />
             <div style={{ display: "flex", alignItems: "center", gap: 10 }} className="kru-app-header-account">
               <span style={{ width: 36, height: 36, borderRadius: "var(--r-pill)", background: "var(--pink-100)", color: "var(--pink-700)", display: "grid", placeItems: "center", fontWeight: "var(--fw-semibold)", fontSize: "var(--fs-14)" }}>
-                นภ
+                {initials}
               </span>
               <div style={{ fontSize: "var(--fs-14)", lineHeight: 1.3 }}>
-                <div style={{ fontWeight: "var(--fw-semibold)" }}>ครูนภา (ตัวอย่าง)</div>
-                <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-13)" }}>ครู</div>
+                <div style={{ fontWeight: "var(--fw-semibold)" }}>{profile?.fullName || profile?.email}</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-13)" }}>แพ็ก {profile?.plan}</div>
               </div>
             </div>
           </header>
@@ -79,7 +142,7 @@ export default function TeacherAppPage() {
               <div>
                 <div style={{ background: "var(--wash-hero)", borderRadius: "var(--r-panel)", padding: "var(--sp-8)", marginBottom: "var(--sp-8)", display: "flex", alignItems: "center", gap: "var(--sp-6)", flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 240 }}>
-                    <h1 style={{ fontSize: "var(--fs-30)" }}>สวัสดีค่ะครูนภา</h1>
+                    <h1 style={{ fontSize: "var(--fs-30)" }}>สวัสดีค่ะ{profile?.fullName ? ` ${profile.fullName}` : ""}</h1>
                     <p style={{ margin: "var(--sp-3) 0 0", fontSize: "var(--fs-16)", color: "var(--text-body)" }}>สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง</p>
                   </div>
                   <Button size="lg" icon={FolderOpen} onClick={() => setView("library")}>
@@ -87,25 +150,29 @@ export default function TeacherAppPage() {
                   </Button>
                 </div>
                 <h2 style={{ fontSize: "var(--fs-24)", marginBottom: "var(--sp-5)" }}>สื่อล่าสุดในคลัง</h2>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
-                  {SAMPLE_RESOURCES.slice(0, 3).map((r) => (
-                    <ResourceCard
-                      key={r.id}
-                      title={r.title}
-                      meta={r.meta}
-                      affordance={r.affordance}
-                      tags={r.tags}
-                      icon={r.icon}
-                      tint={r.tint}
-                      free={r.free}
-                      locked={!r.free}
-                      saved={saved.includes(r.id)}
-                      onSave={() => toggleSaved(r.id)}
-                      onClick={() => openDetail(r)}
-                      onAction={() => (r.free ? window.alert(`เปิด: ${r.title} (ตัวอย่าง)`) : setView("plans"))}
-                    />
-                  ))}
-                </div>
+                {resources.length === 0 ? (
+                  <EmptyState icon={FolderOpen} title="ยังไม่มีสื่อเผยแพร่" description="แอดมินยังไม่ได้เผยแพร่สื่อ กลับมาดูใหม่อีกครั้ง" />
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
+                    {resources.slice(0, 3).map((r) => (
+                      <ResourceCard
+                        key={r.id}
+                        title={r.title}
+                        meta={r.meta}
+                        affordance={r.affordance}
+                        tags={r.tags}
+                        icon={resourceIcon(r.affordance)}
+                        tint={resourceTint(r.affordance)}
+                        free={r.free}
+                        locked={!r.free}
+                        saved={saved.includes(r.id)}
+                        onSave={() => toggleSaved(r.id)}
+                        onClick={() => openDetail(r)}
+                        onAction={() => openResource(r)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -115,7 +182,7 @@ export default function TeacherAppPage() {
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-16)", color: "var(--text-muted)" }}>ดูตัวอย่างได้ทุกชิ้นก่อนใช้ ดาวน์โหลดแล้วสอนได้เลย</p>
                 <div className="kru-lib-grid">
                   <aside className="kru-lib-filters">
-                    <FilterChips label="หมวดหมู่" options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))} value={categories} onChange={setCategories} />
+                    <FilterChips label="หมวดหมู่" options={categoryOptions} value={categories} onChange={setCategories} />
                   </aside>
                   <div>
                     <div style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", marginBottom: "var(--sp-5)" }}>พบ {filtered.length} รายการ</div>
@@ -130,14 +197,14 @@ export default function TeacherAppPage() {
                             meta={r.meta}
                             affordance={r.affordance}
                             tags={r.tags}
-                            icon={r.icon}
-                            tint={r.tint}
+                            icon={resourceIcon(r.affordance)}
+                            tint={resourceTint(r.affordance)}
                             free={r.free}
                             locked={!r.free}
                             saved={saved.includes(r.id)}
                             onSave={() => toggleSaved(r.id)}
                             onClick={() => openDetail(r)}
-                            onAction={() => (r.free ? window.alert(`เปิด: ${r.title} (ตัวอย่าง)`) : setView("plans"))}
+                            onAction={() => openResource(r)}
                           />
                         ))}
                       </div>
@@ -156,17 +223,18 @@ export default function TeacherAppPage() {
                   <div>
                     <h1 style={{ fontSize: "var(--fs-36)" }}>{detail.title}</h1>
                     <div style={{ margin: "var(--sp-5) 0 var(--sp-6)", color: "var(--text-muted)" }}>{detail.meta}</div>
-                    <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--r-panel)", background: "var(--surface-card)", height: 320, display: "grid", placeItems: "center", color: "var(--text-faint)" }}>
-                      <detail.icon size={48} strokeWidth={1.5} />
+                    <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--r-panel)", background: "var(--surface-card)", height: 320, display: "grid", placeItems: "center", color: "var(--text-faint)", overflow: "hidden" }}>
+                      {detail.coverImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={detail.coverImageUrl} alt={detail.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        React.createElement(resourceIcon(detail.affordance), { size: 48, strokeWidth: 1.5 })
+                      )}
                     </div>
                     <div style={{ display: "grid", gap: "var(--sp-6)", marginTop: "var(--sp-8)", maxWidth: 640 }}>
                       <div>
                         <h3 style={{ fontSize: "var(--fs-20)" }}>สื่อนี้คืออะไร</h3>
-                        <p style={{ fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)", color: "var(--text-body)" }}>{detail.what}</p>
-                      </div>
-                      <div>
-                        <h3 style={{ fontSize: "var(--fs-20)" }}>ช่วยครูอย่างไร</h3>
-                        <p style={{ fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)", color: "var(--text-body)" }}>{detail.helps}</p>
+                        <p style={{ fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)", color: "var(--text-body)" }}>{detail.description || "—"}</p>
                       </div>
                     </div>
                   </div>
@@ -175,12 +243,7 @@ export default function TeacherAppPage() {
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
                         {detail.free ? "พร้อมใช้สอนได้เลย" : "สื่อนี้สำหรับสมาชิก"}
                       </div>
-                      <Button
-                        block
-                        size="lg"
-                        style={{ marginTop: "var(--sp-6)" }}
-                        onClick={() => (detail.free ? window.alert(`เปิด: ${detail.title} (ตัวอย่าง)`) : setView("plans"))}
-                      >
+                      <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} onClick={() => openResource(detail)}>
                         {detail.free ? "เปิดใช้งาน" : "ดูแพ็กที่ปลดล็อก"}
                       </Button>
                       <Button block variant="ghost" icon={Bookmark} onClick={() => toggleSaved(detail.id)} style={{ marginTop: "var(--sp-4)" }}>
@@ -195,9 +258,9 @@ export default function TeacherAppPage() {
             {view === "plans" && (
               <div>
                 <h1 style={{ fontSize: "var(--fs-30)" }}>แพ็กเกจ</h1>
-                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>ตัวเลขตัวอย่าง ยังไม่ใช่ราคาขายจริง</p>
+                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {profile?.plan}</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
-                  {SAMPLE_PLANS.map((plan) => (
+                  {plans.map((plan) => (
                     <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>

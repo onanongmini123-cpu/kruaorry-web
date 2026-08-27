@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FolderOpen, Sparkles, Timer, CheckCircle2 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, PillarTile } from "@/components/ui";
-import { SAMPLE_PLANS } from "@/lib/sampleData";
+import { fetchPlans, type Plan } from "@/lib/data";
+import { createClient } from "@/lib/supabase/client";
 
 const PILLARS = [
   { icon: FolderOpen, tone: "purple" as const, title: "คลังสื่อพร้อมสอน", desc: "ดาวน์โหลดแล้วใช้สอนได้เลย ไม่ต้องทำเอง" },
@@ -13,6 +15,13 @@ const PILLARS = [
 ];
 
 export default function LandingPage() {
+  const [plans, setPlans] = useState<Plan[]>([]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    fetchPlans(supabase).then(setPlans);
+  }, []);
+
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <header
@@ -76,7 +85,7 @@ export default function LandingPage() {
                 </Link>
                 <Link href="/app">
                   <Button size="lg" variant="secondary">
-                    ดูตัวอย่างแอปสำหรับครู
+                    เข้าสู่แอปสำหรับครู
                   </Button>
                 </Link>
               </div>
@@ -95,10 +104,10 @@ export default function LandingPage() {
         <section style={{ maxWidth: "var(--container-max)", margin: "0 auto", padding: "0 var(--sp-5) var(--sp-13)" }}>
           <h2 style={{ fontSize: "var(--fs-30)", textAlign: "center" }}>แพ็กเกจ</h2>
           <p style={{ marginTop: "var(--sp-3)", textAlign: "center", color: "var(--text-muted)" }}>
-            ตัวเลขตัวอย่างสำหรับตรวจทานหน้าจอ ยังไม่ใช่ราคาขายจริง
+            ราคาเริ่มต้น ปรับปรุงได้จากหลังบ้านเมื่อเปิดขายจริง
           </p>
           <div style={{ marginTop: "var(--sp-8)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
-            {SAMPLE_PLANS.map((plan) => (
+            {plans.map((plan) => (
               <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)" }}>{plan.priceLabel}</div>
@@ -118,7 +127,7 @@ export default function LandingPage() {
       </main>
 
       <footer style={{ borderTop: "1px solid var(--border-subtle)", padding: "var(--sp-7) var(--sp-5)", textAlign: "center", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
-        KruAorry — เว็บไซต์ตัวอย่างจากดีไซน์ใหม่ ยังไม่เชื่อมกับระบบสมาชิกจริง
+        KruAorry — สมัครสมาชิกและเข้าสู่ระบบได้จริง
       </footer>
     </div>
   );
