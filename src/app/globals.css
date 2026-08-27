@@ -1,0 +1,613 @@
+@import "tailwindcss";
+
+/*
+ * KruAorry design-system tokens, ported from the Claude Design handoff.
+ * This whole app IS the new design, so tokens live on :root (no scoping
+ * needed — there's no legacy UI sharing this codebase).
+ */
+:root {
+  /* ---- Purple (primary brand) ---- */
+  --purple-50: #f6f3ff;
+  --purple-100: #ede7ff;
+  --purple-200: #dcd1ff;
+  --purple-300: #c3b0fc;
+  --purple-400: #a88ef8;
+  --purple-500: #8a6df0;
+  --purple-600: #7355da;
+  --purple-700: #5c41b2;
+  --purple-800: #46318b;
+  --purple-900: #2e2160;
+  /* ---- Pink (warmth, from the mascot badge) ---- */
+  --pink-50: #fff3f8;
+  --pink-100: #ffe4ef;
+  --pink-200: #ffc9df;
+  --pink-300: #ffa6c9;
+  --pink-400: #fb85b3;
+  --pink-500: #f2699a;
+  --pink-600: #d64e80;
+  --pink-700: #ae3b65;
+  /* ---- Blue (calm, informational) ---- */
+  --blue-50: #f0f6ff;
+  --blue-100: #deeaff;
+  --blue-200: #c2d9fe;
+  --blue-300: #98bffb;
+  --blue-400: #6ea8fa;
+  --blue-500: #4a8df0;
+  --blue-600: #2f70d2;
+  --blue-700: #2456a4;
+  /* ---- Neutrals (warm, very slightly violet) ---- */
+  --ink-900: #221b33;
+  --ink-800: #342a4a;
+  --ink-700: #4a3f63;
+  --ink-600: #665b7e;
+  --ink-500: #8a809e;
+  --ink-400: #ada5bc;
+  --ink-300: #cfc9da;
+  --ink-200: #e5e1ee;
+  --ink-100: #f1eff7;
+  --ink-50: #f8f7fc;
+  --white: #ffffff;
+  /* ---- Status ---- */
+  --green-50: #eaf8f2;
+  --green-500: #2fa97c;
+  --green-700: #1e7b59;
+  --amber-50: #fff6e8;
+  --amber-500: #e8a33d;
+  --amber-700: #a9701d;
+  --red-50: #fdeef1;
+  --red-500: #e2556e;
+  --red-700: #b03a50;
+
+  --brand: var(--purple-500);
+  --brand-hover: var(--purple-600);
+  --brand-press: var(--purple-700);
+  --brand-soft: var(--purple-100);
+  --brand-soft-hover: var(--purple-200);
+  --brand-accent: var(--pink-400);
+  --brand-accent-soft: var(--pink-100);
+  --brand-cool: var(--blue-400);
+  --brand-cool-soft: var(--blue-100);
+
+  --text-strong: var(--ink-900);
+  --text-body: var(--ink-700);
+  --text-muted: var(--ink-500);
+  --text-faint: var(--ink-400);
+  --text-on-brand: var(--white);
+  --text-link: var(--purple-600);
+  --text-link-hover: var(--purple-700);
+
+  --surface-page: var(--ink-50);
+  --surface-card: var(--white);
+  --surface-sunken: var(--ink-100);
+  --surface-raised: var(--white);
+  --surface-brand-wash: var(--purple-50);
+  --surface-accent-wash: var(--pink-50);
+  --surface-inverse: var(--ink-900);
+
+  --border-subtle: var(--ink-200);
+  --border-default: var(--ink-300);
+  --border-strong: var(--ink-400);
+  --border-brand: var(--purple-300);
+  --focus-ring: rgba(138, 109, 240, 0.45);
+
+  --status-success-fg: var(--green-700);
+  --status-success-bg: var(--green-50);
+  --status-warning-fg: var(--amber-700);
+  --status-warning-bg: var(--amber-50);
+  --status-danger-fg: var(--red-700);
+  --status-danger-bg: var(--red-50);
+  --status-info-fg: var(--blue-700);
+  --status-info-bg: var(--blue-50);
+  --status-member-fg: var(--purple-700);
+  --status-member-bg: var(--purple-100);
+
+  --wash-hero: linear-gradient(160deg, var(--purple-50) 0%, var(--pink-50) 55%, var(--blue-50) 100%);
+
+  --font-display: var(--font-anuphan), "Noto Sans Thai", system-ui, sans-serif;
+  --font-body: var(--font-plex-thai), var(--font-anuphan), "Noto Sans Thai", system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-14: 0.875rem;
+  --fs-15: 0.9375rem;
+  --fs-16: 1rem;
+  --fs-18: 1.125rem;
+  --fs-20: 1.25rem;
+  --fs-24: 1.5rem;
+  --fs-30: 1.875rem;
+  --fs-36: 2.25rem;
+  --fs-44: 2.75rem;
+  --fs-56: 3.5rem;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-normal: 1.55;
+  --lh-loose: 1.75;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --ls-tighter: -0.038em;
+  --ls-tight: -0.024em;
+  --ls-normal: 0;
+  --ls-wide: 0.04em;
+
+  --text-h1: var(--fs-44);
+  --text-h2: var(--fs-30);
+  --text-h3: var(--fs-24);
+  --text-h4: var(--fs-20);
+
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 20px;
+  --sp-7: 24px;
+  --sp-8: 32px;
+  --sp-9: 40px;
+  --sp-10: 48px;
+  --sp-11: 64px;
+  --sp-12: 80px;
+  --sp-13: 96px;
+  --sp-14: 128px;
+
+  --gap-inline: var(--sp-3);
+  --gap-grid: var(--sp-7);
+  --container-max: 1200px;
+  --tap-min: 44px;
+
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-xl: 32px;
+  --r-2xl: 40px;
+  --r-pill: 999px;
+  --r-control: var(--r-md);
+  --r-button: var(--r-pill);
+  --r-card: var(--r-lg);
+  --r-panel: var(--r-xl);
+
+  --shadow-xs: 0 1px 2px rgba(46, 33, 96, 0.04);
+  --shadow-sm: 0 1px 3px rgba(46, 33, 96, 0.04), 0 6px 16px -8px rgba(46, 33, 96, 0.06);
+  --shadow-md: 0 2px 6px rgba(46, 33, 96, 0.05), 0 12px 28px -12px rgba(46, 33, 96, 0.1);
+  --shadow-lg: 0 8px 24px -8px rgba(46, 33, 96, 0.12), 0 24px 56px -20px rgba(46, 33, 96, 0.14);
+  --shadow-xl: 0 32px 80px -24px rgba(46, 33, 96, 0.2);
+  --shadow-brand: 0 1px 2px rgba(46, 33, 96, 0.1), 0 8px 20px -12px rgba(115, 85, 218, 0.45);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --ring-focus: 0 0 0 3px var(--focus-ring);
+
+  --dur-fast: 140ms;
+  --dur-normal: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --press-scale: 0.97;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs-16);
+  line-height: var(--lh-normal);
+  color: var(--text-body);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  color: var(--text-strong);
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--text-link);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+button {
+  font-family: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+  border-radius: var(--r-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------- Button */
+.kru-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-inline);
+  font-weight: var(--fw-semibold);
+  border-radius: var(--r-button);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+  min-height: var(--tap-min);
+  padding: 0 var(--sp-6);
+  font-size: var(--fs-15);
+}
+.kru-btn:active {
+  transform: scale(var(--press-scale));
+}
+.kru-btn:disabled {
+  cursor: not-allowed;
+  background: var(--ink-100) !important;
+  color: var(--text-faint) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  transform: none;
+}
+.kru-btn--lg {
+  min-height: 52px;
+  padding: 0 var(--sp-7);
+  font-size: var(--fs-16);
+}
+.kru-btn--sm {
+  min-height: 36px;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-14);
+}
+.kru-btn--block {
+  display: flex;
+  width: 100%;
+}
+.kru-btn--primary {
+  background: var(--brand);
+  color: var(--text-on-brand);
+  box-shadow: var(--shadow-brand), var(--shadow-inset-top);
+}
+.kru-btn--primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+.kru-btn--secondary {
+  background: var(--surface-card);
+  color: var(--text-strong);
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-xs);
+}
+.kru-btn--secondary:hover:not(:disabled) {
+  background: var(--ink-50);
+}
+.kru-btn--soft {
+  background: var(--brand-soft);
+  color: var(--text-link);
+}
+.kru-btn--soft:hover:not(:disabled) {
+  background: var(--brand-soft-hover);
+}
+.kru-btn--ghost {
+  background: transparent;
+  color: var(--text-body);
+}
+.kru-btn--ghost:hover:not(:disabled) {
+  background: var(--ink-100);
+}
+
+/* ------------------------------------------------------------ IconButton */
+.kru-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+  flex: 0 0 auto;
+}
+.kru-iconbtn:hover {
+  background: var(--ink-100);
+}
+
+/* ------------------------------------------------------------------ Input */
+.kru-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kru-field__label {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+  color: var(--text-body);
+}
+.kru-field__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.kru-field__icon {
+  position: absolute;
+  left: var(--sp-4);
+  color: var(--text-faint);
+  pointer-events: none;
+  display: flex;
+}
+.kru-input,
+.kru-select {
+  width: 100%;
+  min-height: 52px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font-size: var(--fs-16);
+  padding: 0 var(--sp-5);
+  box-shadow: var(--shadow-xs);
+}
+.kru-input::placeholder {
+  color: var(--text-faint);
+}
+.kru-input:focus,
+.kru-select:focus {
+  outline: none;
+  border-color: var(--border-brand);
+  box-shadow: var(--ring-focus);
+}
+.kru-field--has-icon .kru-input,
+.kru-field--has-icon .kru-select {
+  padding-left: var(--sp-10);
+}
+.kru-select {
+  appearance: none;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------- Checkbox */
+.kru-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-15);
+  color: var(--text-body);
+  cursor: pointer;
+  min-height: var(--tap-min);
+}
+.kru-checkbox input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* ----------------------------------------------------------------- Switch */
+.kru-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  cursor: pointer;
+  min-height: var(--tap-min);
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+.kru-switch__track {
+  width: 44px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--ink-200);
+  position: relative;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+  flex: 0 0 auto;
+}
+.kru-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-normal) var(--ease-standard);
+}
+.kru-switch--on .kru-switch__track {
+  background: var(--brand);
+}
+.kru-switch--on .kru-switch__track::after {
+  transform: translateX(18px);
+}
+
+/* ------------------------------------------------------------------ Badge */
+.kru-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+.kru-badge--info {
+  background: var(--status-info-bg);
+  color: var(--status-info-fg);
+}
+.kru-badge--success {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+.kru-badge--warning {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+.kru-badge--danger {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.kru-badge--member {
+  background: var(--status-member-bg);
+  color: var(--status-member-fg);
+}
+.kru-badge--brand {
+  background: var(--brand-soft);
+  color: var(--text-link);
+}
+.kru-badge--neutral {
+  background: var(--ink-100);
+  color: var(--text-body);
+}
+.kru-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--ink-100);
+  color: var(--text-muted);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+}
+
+/* ------------------------------------------------------------------- Card */
+.kru-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-card);
+}
+
+/* ---------------------------------------------------------------- SideNav */
+.kru-sidenav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-15);
+  font-weight: var(--fw-medium);
+  color: var(--text-body);
+  cursor: pointer;
+  min-height: var(--tap-min);
+  text-align: left;
+}
+.kru-sidenav__item:hover {
+  background: var(--ink-100);
+}
+.kru-sidenav__item--active {
+  background: var(--brand-soft);
+  color: var(--text-link);
+  font-weight: var(--fw-semibold);
+}
+
+/* ------------------------------------------------------------------- Tabs */
+.kru-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--ink-100);
+  padding: 4px;
+  border-radius: var(--r-pill);
+}
+.kru-tabs__item {
+  border: none;
+  background: transparent;
+  border-radius: var(--r-pill);
+  padding: var(--sp-3) var(--sp-6);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  cursor: pointer;
+  min-height: 40px;
+}
+.kru-tabs__item--active {
+  background: var(--surface-card);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --------------------------------------------------------------- FilterChips */
+.kru-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  border-radius: var(--r-pill);
+  padding: 8px 14px;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+  color: var(--text-body);
+  cursor: pointer;
+}
+.kru-chip--active {
+  background: var(--brand-soft);
+  border-color: var(--border-brand);
+  color: var(--text-link);
+}
+
+/* --------------------------------------------------------------- EmptyState */
+.kru-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--sp-4);
+  padding: var(--sp-9) var(--sp-6);
+  color: var(--text-muted);
+}
+.kru-empty__icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-lg);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  display: grid;
+  place-items: center;
+}
+
+@keyframes kru-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.kru-spin {
+  animation: kru-spin 0.9s linear infinite;
+}
