@@ -7,6 +7,8 @@ import { Mascot } from "@/components/Mascot";
 import { Button, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 
+export const dynamic = "force-dynamic";
+
 type View = "dash" | "content" | "requests" | "members";
 
 interface AdminResource {

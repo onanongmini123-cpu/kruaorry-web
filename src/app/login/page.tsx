@@ -13,6 +13,8 @@ const POINTS = [
   "เครื่องมือในห้องเรียน จับเวลา สุ่มชื่อ จับกลุ่ม",
 ];
 
+export const dynamic = "force-dynamic";
+
 type Mode = "signin" | "signup";
 
 export default function LoginPage() {

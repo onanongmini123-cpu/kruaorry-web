@@ -8,6 +8,8 @@ import { Button, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, ty
 import { createClient } from "@/lib/supabase/client";
 import { fetchPublishedResources, fetchPlans, fetchProfile, resourceIcon, resourceTint, type Resource, type Plan, type Profile } from "@/lib/data";
 
+export const dynamic = "force-dynamic";
+
 type View = "home" | "library" | "detail" | "plans";
 
 const NAV_GROUPS: SideNavGroup[] = [
