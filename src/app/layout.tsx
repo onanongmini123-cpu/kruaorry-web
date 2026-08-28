@@ -20,10 +20,26 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
 });
 
+const title = "KruAorry — ครูมีงานเยอะพออยู่แล้ว ให้ครูอรรี่ช่วย";
+const description =
+  "คลังสื่อการสอน เครื่องมือ AI และเครื่องมือในห้องเรียนสำหรับครูไทย ใช้งานง่าย ดาวน์โหลดแล้วสอนได้เลย";
+
 export const metadata: Metadata = {
-  title: "KruAorry — ครูมีงานเยอะพออยู่แล้ว ให้ครูอรรี่ช่วย",
-  description:
-    "คลังสื่อการสอน เครื่องมือ AI และเครื่องมือในห้องเรียนสำหรับครูไทย ใช้งานง่าย ดาวน์โหลดแล้วสอนได้เลย",
+  metadataBase: new URL("https://kruaorry-web.vercel.app"),
+  title,
+  description,
+  openGraph: {
+    title,
+    description,
+    type: "website",
+    locale: "th_TH",
+    siteName: "KruAorry",
+  },
+  twitter: {
+    card: "summary",
+    title,
+    description,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
