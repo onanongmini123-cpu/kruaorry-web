@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, KeyRound, Eye, EyeOff, Globe, CheckCircle2, User } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
@@ -19,7 +19,7 @@ type Mode = "signin" | "signup";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<Mode>("signin");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -30,6 +30,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) router.replace("/app");
+    });
+  }, [supabase, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,9 +154,9 @@ export default function LoginPage() {
           </div>
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: "var(--sp-5)" }}>
             {mode === "signup" && (
-              <Input label="ชื่อ-นามสกุล" icon={User} placeholder="ครูนภา ใจดี" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+              <Input label="ชื่อ-นามสกุล" icon={User} placeholder="ครูนภา ใจดี" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" required />
             )}
-            <Input label="อีเมล" type="email" icon={Mail} placeholder="napha@school.ac.th" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <Input label="อีเมล" type="email" icon={Mail} placeholder="napha@school.ac.th" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
             <Input
               label="รหัสผ่าน"
               type={showPassword ? "text" : "password"}
@@ -159,6 +165,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={6}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
               required
               trailing={<IconButton icon={showPassword ? EyeOff : Eye} label="แสดงรหัสผ่าน" onClick={() => setShowPassword((v) => !v)} />}
             />

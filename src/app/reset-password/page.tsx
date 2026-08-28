@@ -137,8 +137,8 @@ function ResetPasswordForm() {
 
         {stage === "verified" && !done && (
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: "var(--sp-5)", marginTop: "var(--sp-6)" }}>
-            <Input label="รหัสผ่านใหม่" type="password" icon={KeyRound} placeholder="อย่างน้อย 6 ตัวอักษร" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} required />
-            <Input label="ยืนยันรหัสผ่านใหม่" type="password" icon={KeyRound} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={6} required />
+            <Input label="รหัสผ่านใหม่" type="password" icon={KeyRound} placeholder="อย่างน้อย 6 ตัวอักษร" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} autoComplete="new-password" required />
+            <Input label="ยืนยันรหัสผ่านใหม่" type="password" icon={KeyRound} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={6} autoComplete="new-password" required />
             <Button size="lg" block loading={loading} type="submit">
               บันทึกรหัสผ่านใหม่
             </Button>
