@@ -2,25 +2,41 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { Button, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, type SideNavGroup } from "@/components/ui";
+import { Button, Input, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { fetchPublishedResources, fetchPlans, fetchProfile, resourceIcon, resourceTint, type Resource, type Plan, type Profile } from "@/lib/data";
+import {
+  fetchPublishedResources,
+  fetchPlans,
+  fetchProfile,
+  fetchRequests,
+  submitRequest,
+  resourceIcon,
+  resourceTint,
+  type Resource,
+  type Plan,
+  type Profile,
+  type TeacherRequest,
+} from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-type View = "home" | "library" | "detail" | "plans";
+type View = "home" | "library" | "detail" | "plans" | "requests";
 
 const NAV_GROUPS: SideNavGroup[] = [
   {
     items: [
       { key: "home", label: "หน้าแรก", icon: House },
       { key: "library", label: "คลังสื่อ", icon: FolderOpen },
+      { key: "requests", label: "เสนอไอเดีย", icon: MessageSquareText },
       { key: "plans", label: "แพ็กเกจ", icon: IdCard },
     ],
   },
 ];
+
+const REQUEST_STATUS_LABEL: Record<TeacherRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
+const REQUEST_STATUS_TONE: Record<TeacherRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
 
 export default function TeacherAppPage() {
   const router = useRouter();
@@ -34,6 +50,11 @@ export default function TeacherAppPage() {
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [requests, setRequests] = useState<TeacherRequest[]>([]);
+  const [newRequestTitle, setNewRequestTitle] = useState("");
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -44,17 +65,35 @@ export default function TeacherAppPage() {
         router.push("/login");
         return;
       }
-      const [profileData, resourceData, planData] = await Promise.all([
+      setUserId(user.id);
+      const [profileData, resourceData, planData, requestData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
+        fetchRequests(supabase),
       ]);
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
+      setRequests(requestData);
       setLoading(false);
     })();
   }, [supabase, router]);
+
+  const handleSubmitRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRequestError(null);
+    if (!newRequestTitle.trim() || !userId) return;
+    setSubmittingRequest(true);
+    const errorMessage = await submitRequest(supabase, userId, newRequestTitle);
+    setSubmittingRequest(false);
+    if (errorMessage) {
+      setRequestError(errorMessage);
+      return;
+    }
+    setNewRequestTitle("");
+    setRequests(await fetchRequests(supabase));
+  };
 
   const categoryOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -254,6 +293,37 @@ export default function TeacherAppPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {view === "requests" && (
+              <div>
+                <h1 style={{ fontSize: "var(--fs-30)" }}>เสนอไอเดียสื่อใหม่</h1>
+                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>บอกทีมงานว่าอยากได้สื่ออะไรเพิ่ม</p>
+                <form onSubmit={handleSubmitRequest} className="kru-card" style={{ padding: "var(--sp-6)", display: "flex", gap: "var(--sp-4)", alignItems: "flex-end", flexWrap: "wrap", maxWidth: 700, marginBottom: "var(--sp-8)" }}>
+                  <div style={{ flex: 1, minWidth: 240 }}>
+                    <Input label="ไอเดียของครู" placeholder="เช่น เกมทบทวนคำศัพท์ภาษาอังกฤษ ป.3" value={newRequestTitle} onChange={(e) => setNewRequestTitle(e.target.value)} />
+                  </div>
+                  <Button type="submit" loading={submittingRequest}>
+                    ส่งไอเดีย
+                  </Button>
+                  {requestError && <p style={{ width: "100%", fontSize: "var(--fs-14)", color: "var(--status-danger-fg)" }}>{requestError}</p>}
+                </form>
+                {requests.length === 0 ? (
+                  <EmptyState icon={MessageSquareText} title="ยังไม่มีไอเดียจากครู" description="เป็นคนแรกที่เสนอไอเดียสิ" />
+                ) : (
+                  <div style={{ display: "grid", gap: "var(--sp-5)", maxWidth: 700 }}>
+                    {requests.map((r) => (
+                      <div key={r.id} className="kru-card" style={{ padding: "var(--sp-6)", display: "flex", alignItems: "center", gap: "var(--sp-6)" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: "var(--fw-semibold)" }}>{r.title}</div>
+                          <div style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{r.votes} โหวต</div>
+                        </div>
+                        <Badge tone={REQUEST_STATUS_TONE[r.status]}>{REQUEST_STATUS_LABEL[r.status]}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

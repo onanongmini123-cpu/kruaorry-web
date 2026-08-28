@@ -29,6 +29,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +66,25 @@ export default function LoginPage() {
     }
     router.push("/app");
     router.refresh();
+  };
+
+  const handleForgotPassword = async () => {
+    setError(null);
+    setNotice(null);
+    if (!email.trim()) {
+      setError("กรอกอีเมลก่อนกดลืมรหัสผ่าน");
+      return;
+    }
+    setResetting(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setResetting(false);
+    if (resetError) {
+      setError(resetError.message);
+      return;
+    }
+    setNotice("ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่อีเมลแล้ว กรุณาตรวจสอบกล่องจดหมาย");
   };
 
   return (
@@ -142,7 +162,19 @@ export default function LoginPage() {
               required
               trailing={<IconButton icon={showPassword ? EyeOff : Eye} label="แสดงรหัสผ่าน" onClick={() => setShowPassword((v) => !v)} />}
             />
-            {mode === "signin" && <Checkbox label="จำการเข้าสู่ระบบไว้" checked={remember} onChange={setRemember} />}
+            {mode === "signin" && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <Checkbox label="จำการเข้าสู่ระบบไว้" checked={remember} onChange={setRemember} />
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={resetting}
+                  style={{ color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                >
+                  {resetting ? "กำลังส่ง..." : "ลืมรหัสผ่าน?"}
+                </button>
+              </div>
+            )}
             <Button size="lg" block loading={loading} type="submit">
               {mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
             </Button>

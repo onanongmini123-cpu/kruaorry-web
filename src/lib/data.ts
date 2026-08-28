@@ -98,6 +98,33 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
   }));
 }
 
+export interface TeacherRequest {
+  id: string;
+  title: string;
+  votes: number;
+  status: "pending" | "in_progress" | "done";
+}
+
+export async function fetchRequests(supabase: SupabaseClient): Promise<TeacherRequest[]> {
+  const { data, error } = await supabase
+    .from("requests")
+    .select("id, title, votes, status")
+    .order("votes", { ascending: false });
+
+  if (error) logError("fetchRequests failed", error);
+  if (error || !data) return [];
+  return data;
+}
+
+export async function submitRequest(supabase: SupabaseClient, userId: string, title: string): Promise<string | null> {
+  const { error } = await supabase.from("requests").insert({ title: title.trim(), requested_by: userId });
+  if (error) {
+    logError("submitRequest failed", error);
+    return error.message;
+  }
+  return null;
+}
+
 export async function fetchProfile(supabase: SupabaseClient, userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("profiles")
