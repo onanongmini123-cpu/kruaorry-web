@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2 } from "lucide-react";
+import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -64,6 +64,7 @@ export default function AdminConsolePage() {
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [requests, setRequests] = useState<AdminRequest[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -107,7 +108,39 @@ export default function AdminConsolePage() {
     router.refresh();
   };
 
-  const handleCreateResource = async (e: React.FormEvent) => {
+  const openCreateForm = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setShowForm(true);
+  };
+
+  const openEditForm = async (id: string) => {
+    const { data, error } = await supabase
+      .from("resources")
+      .select("title, meta, description, category, delivery_mode, cta_url, cover_image_url, is_free")
+      .eq("id", id)
+      .single();
+    if (error || !data) {
+      window.alert(`โหลดข้อมูลสื่อไม่สำเร็จ: ${error?.message ?? ""}`);
+      return;
+    }
+    setEditingId(id);
+    setForm({
+      title: data.title ?? "",
+      meta: data.meta ?? "",
+      description: data.description ?? "",
+      category: data.category ?? "",
+      delivery_mode: data.delivery_mode,
+      cta_url: data.cta_url ?? "",
+      cover_image_url: data.cover_image_url ?? "",
+      is_free: data.is_free,
+    });
+    setFormError(null);
+    setShowForm(true);
+  };
+
+  const handleSaveResource = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     if (!form.title.trim()) {
@@ -115,7 +148,7 @@ export default function AdminConsolePage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("resources").insert({
+    const payload = {
       title: form.title.trim(),
       meta: form.meta.trim() || null,
       description: form.description.trim() || null,
@@ -124,15 +157,17 @@ export default function AdminConsolePage() {
       cta_url: form.cta_url.trim() || null,
       cover_image_url: form.cover_image_url.trim() || null,
       is_free: form.is_free,
-      status: "draft",
-      created_by: adminId,
-    });
+    };
+    const { error } = editingId
+      ? await supabase.from("resources").update(payload).eq("id", editingId)
+      : await supabase.from("resources").insert({ ...payload, status: "draft", created_by: adminId });
     setSaving(false);
     if (error) {
       setFormError(error.message);
       return;
     }
     setForm(EMPTY_FORM);
+    setEditingId(null);
     setShowForm(false);
     await reloadAdminData();
   };
@@ -220,13 +255,14 @@ export default function AdminConsolePage() {
                   <h1 style={{ fontSize: "var(--fs-30)" }}>จัดการสื่อ</h1>
                   <p style={{ margin: "var(--sp-3) 0 0", color: "var(--text-muted)" }}>สื่อใหม่เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่</p>
                 </div>
-                <Button icon={Plus} onClick={() => setShowForm((v) => !v)}>
+                <Button icon={Plus} onClick={() => (showForm ? setShowForm(false) : openCreateForm())}>
                   {showForm ? "ปิดฟอร์ม" : "เพิ่มสื่อใหม่"}
                 </Button>
               </div>
 
               {showForm && (
-                <form onSubmit={handleCreateResource} className="kru-card" style={{ padding: "var(--sp-6)", marginTop: "var(--sp-6)", display: "grid", gap: "var(--sp-4)" }}>
+                <form onSubmit={handleSaveResource} className="kru-card" style={{ padding: "var(--sp-6)", marginTop: "var(--sp-6)", display: "grid", gap: "var(--sp-4)" }}>
+                  <h2 style={{ fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>{editingId ? "แก้ไขสื่อ" : "สื่อใหม่"}</h2>
                   {formError && (
                     <p style={{ fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)" }}>
                       {formError}
@@ -258,7 +294,7 @@ export default function AdminConsolePage() {
                     ให้สมาชิกทุกแพ็กใช้ได้ฟรี
                   </label>
                   <Button type="submit" loading={saving}>
-                    บันทึกเป็นฉบับร่าง
+                    {editingId ? "บันทึกการแก้ไข" : "บันทึกเป็นฉบับร่าง"}
                   </Button>
                 </form>
               )}
@@ -285,6 +321,14 @@ export default function AdminConsolePage() {
                           <option value="published">เผยแพร่</option>
                           <option value="archived">เก็บถาวร</option>
                         </select>
+                        <button
+                          type="button"
+                          aria-label="แก้ไขสื่อ"
+                          onClick={() => openEditForm(item.id)}
+                          style={{ border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", padding: 6 }}
+                        >
+                          <Pencil size={18} />
+                        </button>
                         <button
                           type="button"
                           aria-label="ลบสื่อ"
