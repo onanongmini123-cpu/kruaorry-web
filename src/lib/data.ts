@@ -59,6 +59,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     .eq("status", "published")
     .order("created_at", { ascending: false });
 
+  if (error) console.error("fetchPublishedResources failed:", error);
   if (error || !data) return [];
 
   return data.map((r) => ({
@@ -81,6 +82,7 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     .select("id, name, price_label, note, features")
     .order("sort_order", { ascending: true });
 
+  if (error) console.error("fetchPlans failed:", error);
   if (error || !data) return [];
 
   return data.map((p) => ({
@@ -99,6 +101,7 @@ export async function fetchProfile(supabase: SupabaseClient, userId: string): Pr
     .eq("id", userId)
     .single();
 
+  if (error) console.error("fetchProfile failed:", error);
   if (error || !data) return null;
 
   return {
