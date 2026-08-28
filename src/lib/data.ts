@@ -1,7 +1,11 @@
 import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ResourceAffordance } from "@/components/ui";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+
+function logError(label: string, error: PostgrestError) {
+  console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
+}
 
 export interface Resource {
   id: string;
@@ -59,7 +63,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     .eq("status", "published")
     .order("created_at", { ascending: false });
 
-  if (error) console.error("fetchPublishedResources failed:", error);
+  if (error) logError("fetchPublishedResources failed", error);
   if (error || !data) return [];
 
   return data.map((r) => ({
@@ -82,7 +86,7 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     .select("id, name, price_label, note, features")
     .order("sort_order", { ascending: true });
 
-  if (error) console.error("fetchPlans failed:", error);
+  if (error) logError("fetchPlans failed", error);
   if (error || !data) return [];
 
   return data.map((p) => ({
@@ -101,7 +105,7 @@ export async function fetchProfile(supabase: SupabaseClient, userId: string): Pr
     .eq("id", userId)
     .single();
 
-  if (error) console.error("fetchProfile failed:", error);
+  if (error) logError("fetchProfile failed", error);
   if (error || !data) return null;
 
   return {
