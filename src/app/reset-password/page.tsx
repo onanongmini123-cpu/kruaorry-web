@@ -1,8 +1,8 @@
 "use client";
 
-import React, { Suspense, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { KeyRound } from "lucide-react";
+import { KeyRound, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -25,37 +25,58 @@ export default function ResetPasswordPage() {
   );
 }
 
+type Stage = "confirm" | "verifying" | "verified" | "error";
+
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
-  const [ready, setReady] = useState(false);
+  const tokenHash = searchParams.get("token_hash");
+  const code = searchParams.get("code");
+  const [stage, setStage] = useState<Stage>(tokenHash || code ? "confirm" : "error");
+  const [error, setError] = useState<string | null>(
+    tokenHash || code ? null : "ลิงก์ไม่ถูกต้อง กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ"
+  );
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const code = searchParams.get("code");
-      if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        if (exchangeError) {
-          setError("ลิงก์หมดอายุหรือไม่ถูกต้อง กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
-          setReady(true);
-          return;
-        }
+  // Verification only runs after an explicit human click, never automatically on
+  // page load — the Supabase recovery link is single-use, and if the page
+  // verified it on mount, an email client's automated link-prescan (which
+  // fetches the URL to check it's safe) would silently burn the token before
+  // the person ever clicks it, showing "otp_expired" on their real attempt.
+  const handleConfirmLink = async () => {
+    setStage("verifying");
+    setError(null);
+
+    if (tokenHash) {
+      const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+      if (verifyError) {
+        setError("ลิงก์หมดอายุหรือถูกใช้ไปแล้ว กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
+        setStage("error");
+        return;
       }
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        setError("ลิงก์หมดอายุหรือไม่ถูกต้อง กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
+    } else if (code) {
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      if (exchangeError) {
+        setError("ลิงก์หมดอายุหรือถูกใช้ไปแล้ว กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
+        setStage("error");
+        return;
       }
-      setReady(true);
-    })();
-  }, [supabase, searchParams]);
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setError("ลิงก์หมดอายุหรือถูกใช้ไปแล้ว กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
+      setStage("error");
+      return;
+    }
+    setStage("verified");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,10 +103,6 @@ function ResetPasswordForm() {
     }, 1500);
   };
 
-  if (!ready) {
-    return <LoadingSpinner />;
-  }
-
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "var(--sp-5)" }}>
       <Mascot size={56} />
@@ -103,7 +120,22 @@ function ResetPasswordForm() {
           </p>
         )}
 
-        {!done && !error && (
+        {stage === "confirm" && (
+          <div style={{ marginTop: "var(--sp-6)" }}>
+            <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginBottom: "var(--sp-5)" }}>กดยืนยันเพื่อดำเนินการตั้งรหัสผ่านใหม่</p>
+            <Button size="lg" block icon={ShieldCheck} onClick={handleConfirmLink}>
+              ยืนยันลิงก์
+            </Button>
+          </div>
+        )}
+
+        {stage === "verifying" && (
+          <div style={{ marginTop: "var(--sp-8)", display: "grid", placeItems: "center" }}>
+            <span className="kru-spin" aria-hidden="true" style={{ width: 24, height: 24, borderRadius: 999, border: "3px solid var(--border-subtle)", borderTopColor: "var(--brand)" }} />
+          </div>
+        )}
+
+        {stage === "verified" && !done && (
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: "var(--sp-5)", marginTop: "var(--sp-6)" }}>
             <Input label="รหัสผ่านใหม่" type="password" icon={KeyRound} placeholder="อย่างน้อย 6 ตัวอักษร" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} required />
             <Input label="ยืนยันรหัสผ่านใหม่" type="password" icon={KeyRound} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={6} required />
