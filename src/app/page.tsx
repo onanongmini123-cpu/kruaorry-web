@@ -104,7 +104,7 @@ export default function LandingPage() {
         <section style={{ maxWidth: "var(--container-max)", margin: "0 auto", padding: "0 var(--sp-5) var(--sp-13)" }}>
           <h2 style={{ fontSize: "var(--fs-30)", textAlign: "center" }}>แพ็กเกจ</h2>
           <p style={{ marginTop: "var(--sp-3)", textAlign: "center", color: "var(--text-muted)" }}>
-            ราคาเริ่มต้น ปรับปรุงได้จากหลังบ้านเมื่อเปิดขายจริง
+            เลือกแพ็กที่เหมาะกับคุณ สมัครสมาชิกฟรีแล้วอัปเกรดได้ทุกเมื่อ
           </p>
           <div style={{ marginTop: "var(--sp-8)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
             {plans.map((plan) => (
@@ -127,7 +127,15 @@ export default function LandingPage() {
       </main>
 
       <footer style={{ borderTop: "1px solid var(--border-subtle)", padding: "var(--sp-7) var(--sp-5)", textAlign: "center", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
-        KruAorry — สมัครสมาชิกและเข้าสู่ระบบได้จริง
+        <div>KruAorry — สื่อการสอนและเครื่องมือสำหรับครูไทย</div>
+        <div style={{ marginTop: 8, display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+          <Link href="/terms" style={{ color: "var(--text-muted)" }}>
+            เงื่อนไขการใช้งาน
+          </Link>
+          <Link href="/privacy" style={{ color: "var(--text-muted)" }}>
+            นโยบายความเป็นส่วนตัว
+          </Link>
+        </div>
       </footer>
     </div>
   );
