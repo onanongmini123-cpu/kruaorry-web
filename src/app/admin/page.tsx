@@ -68,6 +68,7 @@ export default function AdminConsolePage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   const reloadAdminData = async () => {
     const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }] = await Promise.all([
@@ -140,6 +141,28 @@ export default function AdminConsolePage() {
     setShowForm(true);
   };
 
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setFormError("กรุณาเลือกไฟล์รูปภาพ");
+      return;
+    }
+    setUploadingCover(true);
+    setFormError(null);
+    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error: uploadError } = await supabase.storage.from("resource-covers").upload(path, file, { upsert: false });
+    if (uploadError) {
+      setUploadingCover(false);
+      setFormError(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`);
+      return;
+    }
+    const { data } = supabase.storage.from("resource-covers").getPublicUrl(path);
+    setForm((f) => ({ ...f, cover_image_url: data.publicUrl }));
+    setUploadingCover(false);
+  };
+
   const handleSaveResource = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -203,6 +226,31 @@ export default function AdminConsolePage() {
     const { error } = await supabase.from("requests").update({ status }).eq("id", id);
     if (error) {
       window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    await reloadAdminData();
+  };
+
+  const handleMemberPlanChange = async (id: string, plan: string) => {
+    const { error } = await supabase.from("profiles").update({ plan }).eq("id", id);
+    if (error) {
+      window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    await reloadAdminData();
+  };
+
+  const handleMemberRoleChange = async (id: string, role: AdminMember["role"]) => {
+    if (id === adminId && role !== "admin" && !window.confirm("นี่คือบัญชีของคุณเอง — ลดสิทธิ์ตัวเองจะทำให้ออกจากหลังบ้านทันที ยืนยันหรือไม่?")) {
+      return;
+    }
+    const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+    if (error) {
+      window.alert(`อัปเดตบทบาทไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    if (id === adminId && role !== "admin") {
+      router.push("/app");
       return;
     }
     await reloadAdminData();
@@ -288,7 +336,15 @@ export default function AdminConsolePage() {
                     />
                   </div>
                   <Input label="ลิงก์ (URL ปลายทาง)" value={form.cta_url} onChange={(e) => setForm({ ...form, cta_url: e.target.value })} placeholder="https://..." />
-                  <Input label="รูปปก (URL)" value={form.cover_image_url} onChange={(e) => setForm({ ...form, cover_image_url: e.target.value })} placeholder="https://..." />
+                  <div className="kru-field">
+                    <label className="kru-field__label">รูปปก (จำเป็นก่อนเผยแพร่)</label>
+                    {form.cover_image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={form.cover_image_url} alt="ตัวอย่างรูปปก" style={{ width: "100%", maxWidth: 320, height: 160, objectFit: "cover", borderRadius: "var(--r-md)", border: "1px solid var(--border-subtle)", marginBottom: "var(--sp-3)" }} />
+                    )}
+                    <input type="file" accept="image/*" onChange={handleCoverUpload} disabled={uploadingCover} />
+                    {uploadingCover && <span style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>กำลังอัปโหลด...</span>}
+                  </div>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-14)" }}>
                     <input type="checkbox" checked={form.is_free} onChange={(e) => setForm({ ...form, is_free: e.target.checked })} />
                     ให้สมาชิกทุกแพ็กใช้ได้ฟรี
@@ -402,9 +458,28 @@ export default function AdminConsolePage() {
                             <div style={{ fontWeight: "var(--fw-medium)" }}>{m.full_name || "(ยังไม่ระบุชื่อ)"}</div>
                             <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{m.email}</div>
                           </td>
-                          <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>{m.plan}</td>
                           <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-                            <Badge tone={m.role === "admin" ? "member" : "neutral"}>{m.role === "admin" ? "แอดมิน" : "สมาชิก"}</Badge>
+                            <select
+                              className="kru-select"
+                              style={{ minHeight: 36, width: "auto" }}
+                              value={m.plan}
+                              onChange={(e) => handleMemberPlanChange(m.id, e.target.value)}
+                            >
+                              <option value="free">free</option>
+                              <option value="plus">plus</option>
+                              <option value="lifetime">lifetime</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
+                            <select
+                              className="kru-select"
+                              style={{ minHeight: 36, width: "auto" }}
+                              value={m.role}
+                              onChange={(e) => handleMemberRoleChange(m.id, e.target.value as AdminMember["role"])}
+                            >
+                              <option value="member">สมาชิก</option>
+                              <option value="admin">แอดมิน</option>
+                            </select>
                           </td>
                         </tr>
                       ))}
