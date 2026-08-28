@@ -125,6 +125,23 @@ export async function submitRequest(supabase: SupabaseClient, userId: string, ti
   return null;
 }
 
+export async function fetchSavedResourceIds(supabase: SupabaseClient, userId: string): Promise<string[]> {
+  const { data, error } = await supabase.from("saved_resources").select("resource_id").eq("user_id", userId);
+  if (error) logError("fetchSavedResourceIds failed", error);
+  if (error || !data) return [];
+  return data.map((r) => r.resource_id);
+}
+
+export async function setResourceSaved(supabase: SupabaseClient, userId: string, resourceId: string, saved: boolean): Promise<void> {
+  if (saved) {
+    const { error } = await supabase.from("saved_resources").insert({ user_id: userId, resource_id: resourceId });
+    if (error) logError("setResourceSaved (save) failed", error);
+    return;
+  }
+  const { error } = await supabase.from("saved_resources").delete().eq("user_id", userId).eq("resource_id", resourceId);
+  if (error) logError("setResourceSaved (unsave) failed", error);
+}
+
 export async function fetchProfile(supabase: SupabaseClient, userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("profiles")

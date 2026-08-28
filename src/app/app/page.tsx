@@ -12,6 +12,8 @@ import {
   fetchProfile,
   fetchRequests,
   submitRequest,
+  fetchSavedResourceIds,
+  setResourceSaved,
   resourceIcon,
   resourceTint,
   type Resource,
@@ -66,16 +68,18 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
-      const [profileData, resourceData, planData, requestData] = await Promise.all([
+      const [profileData, resourceData, planData, requestData, savedIds] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
         fetchRequests(supabase),
+        fetchSavedResourceIds(supabase, user.id),
       ]);
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
       setRequests(requestData);
+      setSaved(savedIds);
       setLoading(false);
     })();
   }, [supabase, router]);
@@ -103,7 +107,12 @@ export default function TeacherAppPage() {
     return Array.from(seen.entries()).map(([value, label]) => ({ value, label }));
   }, [resources]);
 
-  const toggleSaved = (id: string) => setSaved((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+  const toggleSaved = (id: string) => {
+    if (!userId) return;
+    const nowSaved = !saved.includes(id);
+    setSaved((prev) => (nowSaved ? [...prev, id] : prev.filter((s) => s !== id)));
+    setResourceSaved(supabase, userId, id, nowSaved);
+  };
 
   const openDetail = (r: Resource) => {
     setDetailId(r.id);
