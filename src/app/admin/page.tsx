@@ -2,14 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil } from "lucide-react";
+import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
 
-type View = "dash" | "content" | "requests" | "members";
+type View = "dash" | "content" | "requests" | "upgrades" | "members";
 type ResourceStatus = "draft" | "published" | "archived";
 type DeliveryMode = "web_app" | "google_template" | "google_form";
 
@@ -35,12 +35,22 @@ interface AdminRequest {
   status: "pending" | "in_progress" | "done";
 }
 
+interface AdminUpgradeRequest {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  status: "pending" | "approved" | "declined";
+  created_at: string;
+  profiles: { full_name: string | null; email: string } | null;
+}
+
 const NAV_GROUPS: SideNavGroup[] = [
   {
     items: [
       { key: "dash", label: "ภาพรวม", icon: LayoutDashboard },
       { key: "content", label: "จัดการสื่อ", icon: FolderCog },
       { key: "requests", label: "คำขอจากครู", icon: MessageSquareText },
+      { key: "upgrades", label: "คำขออัปเกรด", icon: Wallet },
       { key: "members", label: "สมาชิก", icon: Users },
     ],
   },
@@ -63,6 +73,7 @@ export default function AdminConsolePage() {
   const [resources, setResources] = useState<AdminResource[]>([]);
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [requests, setRequests] = useState<AdminRequest[]>([]);
+  const [upgradeRequests, setUpgradeRequests] = useState<AdminUpgradeRequest[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -71,14 +82,17 @@ export default function AdminConsolePage() {
   const [uploadingCover, setUploadingCover] = useState(false);
 
   const reloadAdminData = async () => {
-    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }] = await Promise.all([
+    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }] = await Promise.all([
       supabase.from("resources").select("id, title, meta, status").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status").order("votes", { ascending: false }),
+      supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
     ]);
     setResources(resourceRows ?? []);
     setMembers(memberRows ?? []);
     setRequests(requestRows ?? []);
+    if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
+    setUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []);
   };
 
   useEffect(() => {
@@ -231,6 +245,32 @@ export default function AdminConsolePage() {
     await reloadAdminData();
   };
 
+  const handleApproveUpgrade = async (request: AdminUpgradeRequest, userId: string) => {
+    const { error: planError } = await supabase.from("profiles").update({ plan: request.plan_id }).eq("id", userId);
+    if (planError) {
+      window.alert(`อัปเกรดแพ็กไม่สำเร็จ: ${planError.message}`);
+      return;
+    }
+    const { error: statusError } = await supabase
+      .from("upgrade_requests")
+      .update({ status: "approved", resolved_at: new Date().toISOString() })
+      .eq("id", request.id);
+    if (statusError) {
+      window.alert(`อัปเดตสถานะคำขอไม่สำเร็จ: ${statusError.message}`);
+      return;
+    }
+    await reloadAdminData();
+  };
+
+  const handleDeclineUpgrade = async (id: string) => {
+    const { error } = await supabase.from("upgrade_requests").update({ status: "declined", resolved_at: new Date().toISOString() }).eq("id", id);
+    if (error) {
+      window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    await reloadAdminData();
+  };
+
   const handleMemberPlanChange = async (id: string, plan: string) => {
     const { error } = await supabase.from("profiles").update({ plan }).eq("id", id);
     if (error) {
@@ -292,6 +332,7 @@ export default function AdminConsolePage() {
                 <StatTile value={resources.filter((r) => r.status === "published").length} label="สื่อที่เผยแพร่แล้ว" icon={FolderOpen} tone="success" />
                 <StatTile value={members.length} label="สมาชิกทั้งหมด" icon={Users} tone="brand" />
                 <StatTile value={requests.filter((r) => r.status === "pending").length} label="คำขอจากครูที่รอ" icon={MessageSquareText} tone="info" />
+                <StatTile value={upgradeRequests.filter((r) => r.status === "pending").length} label="คำขออัปเกรดที่รอ" icon={Wallet} tone="warning" />
               </div>
             </div>
           )}
@@ -398,6 +439,41 @@ export default function AdminConsolePage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {view === "upgrades" && (
+            <div>
+              <h1 style={{ fontSize: "var(--fs-30)" }}>คำขออัปเกรด</h1>
+              <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>ตรวจสอบว่าได้รับเงินแล้วก่อนกดอนุมัติ</p>
+              {upgradeRequests.length === 0 ? (
+                <EmptyState icon={Wallet} title="ยังไม่มีคำขออัปเกรด" description="" />
+              ) : (
+                <div style={{ display: "grid", gap: "var(--sp-5)", maxWidth: 900 }}>
+                  {upgradeRequests.map((r) => (
+                    <div key={r.id} className="kru-card" style={{ padding: "var(--sp-6)", display: "flex", alignItems: "center", gap: "var(--sp-6)", flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontWeight: "var(--fw-semibold)" }}>{r.profiles?.full_name || r.profiles?.email || "(ไม่พบข้อมูลผู้ใช้)"}</div>
+                        <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                          {r.profiles?.email} · ขออัปเกรดเป็น <strong>{r.plan_id}</strong> · {new Date(r.created_at).toLocaleDateString("th-TH")}
+                        </div>
+                      </div>
+                      {r.status === "pending" ? (
+                        <div style={{ display: "flex", gap: "var(--sp-3)" }}>
+                          <Button size="sm" icon={Check} onClick={() => handleApproveUpgrade(r, r.user_id)}>
+                            อนุมัติและอัปเกรด
+                          </Button>
+                          <Button size="sm" variant="ghost" icon={X} onClick={() => handleDeclineUpgrade(r.id)}>
+                            ปฏิเสธ
+                          </Button>
+                        </div>
+                      ) : (
+                        <Badge tone={r.status === "approved" ? "success" : "neutral"}>{r.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธแล้ว"}</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

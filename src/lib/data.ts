@@ -142,6 +142,34 @@ export async function setResourceSaved(supabase: SupabaseClient, userId: string,
   if (error) logError("setResourceSaved (unsave) failed", error);
 }
 
+export interface UpgradeRequest {
+  id: string;
+  planId: string;
+  status: "pending" | "approved" | "declined";
+  createdAt: string;
+}
+
+export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
+  const { data, error } = await supabase
+    .from("upgrade_requests")
+    .select("id, plan_id, status, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) logError("fetchUpgradeRequests failed", error);
+  if (error || !data) return [];
+  return data.map((r) => ({ id: r.id, planId: r.plan_id, status: r.status, createdAt: r.created_at }));
+}
+
+export async function submitUpgradeRequest(supabase: SupabaseClient, userId: string, planId: string): Promise<string | null> {
+  const { error } = await supabase.from("upgrade_requests").insert({ user_id: userId, plan_id: planId });
+  if (error) {
+    logError("submitUpgradeRequest failed", error);
+    return error.message;
+  }
+  return null;
+}
+
 export async function fetchProfile(supabase: SupabaseClient, userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("profiles")

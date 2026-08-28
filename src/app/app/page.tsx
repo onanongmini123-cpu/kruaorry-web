@@ -2,10 +2,11 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText, MessageCircle } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { PAYMENT_LINE_ID } from "@/lib/config";
 import {
   fetchPublishedResources,
   fetchPlans,
@@ -14,12 +15,15 @@ import {
   submitRequest,
   fetchSavedResourceIds,
   setResourceSaved,
+  fetchUpgradeRequests,
+  submitUpgradeRequest,
   resourceIcon,
   resourceTint,
   type Resource,
   type Plan,
   type Profile,
   type TeacherRequest,
+  type UpgradeRequest,
 } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +61,8 @@ export default function TeacherAppPage() {
   const [newRequestTitle, setNewRequestTitle] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [upgradeRequests, setUpgradeRequests] = useState<UpgradeRequest[]>([]);
+  const [submittingUpgradePlanId, setSubmittingUpgradePlanId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -68,21 +74,35 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
-      const [profileData, resourceData, planData, requestData, savedIds] = await Promise.all([
+      const [profileData, resourceData, planData, requestData, savedIds, upgradeData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
         fetchRequests(supabase),
         fetchSavedResourceIds(supabase, user.id),
+        fetchUpgradeRequests(supabase, user.id),
       ]);
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
       setRequests(requestData);
       setSaved(savedIds);
+      setUpgradeRequests(upgradeData);
       setLoading(false);
     })();
   }, [supabase, router]);
+
+  const handleRequestUpgrade = async (planId: string) => {
+    if (!userId) return;
+    setSubmittingUpgradePlanId(planId);
+    const errorMessage = await submitUpgradeRequest(supabase, userId, planId);
+    setSubmittingUpgradePlanId(null);
+    if (errorMessage) {
+      window.alert(`ส่งคำขอไม่สำเร็จ: ${errorMessage}`);
+      return;
+    }
+    setUpgradeRequests(await fetchUpgradeRequests(supabase, userId));
+  };
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -341,14 +361,37 @@ export default function TeacherAppPage() {
                 <h1 style={{ fontSize: "var(--fs-30)" }}>แพ็กเกจ</h1>
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {profile?.plan}</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
-                  {plans.map((plan) => (
-                    <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)" }}>
-                      <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
-                      <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
-                      <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
-                    </div>
-                  ))}
+                  {plans.map((plan) => {
+                    const isCurrent = profile?.plan === plan.id;
+                    const pendingRequest = upgradeRequests.find((r) => r.planId === plan.id && r.status === "pending");
+                    return (
+                      <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
+                        <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
+                        <div style={{ marginTop: "var(--sp-6)" }}>
+                          {isCurrent ? (
+                            <Badge tone="success">แพ็กปัจจุบันของคุณ</Badge>
+                          ) : plan.id === "free" ? null : pendingRequest ? (
+                            <div>
+                              <Badge tone="warning">รอแอดมินอนุมัติ</Badge>
+                              <p style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginTop: 8 }}>
+                                โอนเงินหรือติดต่อชำระผ่าน LINE: <strong>{PAYMENT_LINE_ID}</strong> แล้วรอแอดมินอัปเกรดให้
+                              </p>
+                            </div>
+                          ) : (
+                            <Button block icon={MessageCircle} loading={submittingUpgradePlanId === plan.id} onClick={() => handleRequestUpgrade(plan.id)}>
+                              สนใจอัปเกรด
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+                <p style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
+                  วิธีอัปเกรด: กด &ldquo;สนใจอัปเกรด&rdquo; แล้วโอนเงินหรือติดต่อชำระผ่าน LINE <strong>{PAYMENT_LINE_ID}</strong> ทีมงานจะอัปเกรดแพ็กให้หลังยืนยันการชำระเงิน
+                </p>
               </div>
             )}
           </main>
