@@ -543,7 +543,6 @@ export default function AdminConsolePage() {
                             >
                               <option value="free">free</option>
                               <option value="plus">plus</option>
-                              <option value="lifetime">lifetime</option>
                             </select>
                           </td>
                           <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
