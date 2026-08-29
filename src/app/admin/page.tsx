@@ -6,33 +6,28 @@ import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpe
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import {
+  validateResourceFile,
+  formatFileSize,
+  publishValidationError,
+  nextResourceFileFields,
+  commitResourceFileChange,
+  discardPendingUpload,
+  type DeliveryMode,
+  type PendingFile,
+} from "@/lib/resourceFile";
 
 export const dynamic = "force-dynamic";
 
 type View = "dash" | "content" | "requests" | "upgrades" | "members";
 type ResourceStatus = "draft" | "published" | "archived";
-type DeliveryMode = "web_app" | "google_template" | "google_form" | "file_download";
-
-const ALLOWED_FILE_EXTENSIONS: Record<string, string> = {
-  "application/pdf": ".pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-  "application/zip": ".zip",
-  "application/x-zip-compressed": ".zip",
-};
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
-
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.ceil(bytes / 1024)} KB`;
-}
 
 interface AdminResource {
   id: string;
   title: string;
   meta: string | null;
   status: ResourceStatus;
+  delivery_mode: DeliveryMode;
 }
 
 interface AdminMember {
@@ -110,10 +105,12 @@ export default function AdminConsolePage() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [pendingResourceId, setPendingResourceId] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
+  const [fileRemoved, setFileRemoved] = useState(false);
 
   const reloadAdminData = async () => {
     const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }] = await Promise.all([
-      supabase.from("resources").select("id, title, meta, status").order("created_at", { ascending: false }),
+      supabase.from("resources").select("id, title, meta, status, delivery_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status").order("votes", { ascending: false }),
       supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
@@ -157,8 +154,24 @@ export default function AdminConsolePage() {
     setEditingId(null);
     setPendingResourceId(crypto.randomUUID());
     setForm(EMPTY_FORM);
+    setPendingFile(null);
+    setFileRemoved(false);
     setFormError(null);
     setShowForm(true);
+  };
+
+  // Closing or cancelling the form must never leave an uploaded-but-unsaved
+  // file sitting in storage — discard it if there is one.
+  const closeForm = async () => {
+    const cleanupError = await discardPendingUpload(supabase.storage.from("resource-files"), pendingFile);
+    if (cleanupError) console.error(cleanupError);
+    setPendingFile(null);
+    setFileRemoved(false);
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setPendingResourceId(null);
+    setFormError(null);
+    setShowForm(false);
   };
 
   const openEditForm = async (id: string) => {
@@ -173,6 +186,8 @@ export default function AdminConsolePage() {
     }
     setEditingId(id);
     setPendingResourceId(null);
+    setPendingFile(null);
+    setFileRemoved(false);
     setForm({
       title: data.title ?? "",
       meta: data.meta ?? "",
@@ -217,12 +232,9 @@ export default function AdminConsolePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!ALLOWED_FILE_EXTENSIONS[file.type]) {
-      setFormError("รองรับเฉพาะไฟล์ PDF, DOCX, PPTX, XLSX และ ZIP เท่านั้น");
-      return;
-    }
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      setFormError("ไฟล์ต้องมีขนาดไม่เกิน 50MB");
+    const validationError = validateResourceFile(file);
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
     const resourceId = editingId ?? pendingResourceId;
@@ -232,30 +244,43 @@ export default function AdminConsolePage() {
     }
     setUploadingFile(true);
     setFormError(null);
-    if (form.file_path) {
-      await supabase.storage.from("resource-files").remove([form.file_path]);
+    const storage = supabase.storage.from("resource-files");
+    // A pending upload from earlier in this same form session (picked a file,
+    // then picked a different one before saving) is safe to discard now —
+    // it was never referenced by the row. The previously *saved* file
+    // (form.file_path) is untouched here; it's only deleted after a
+    // successful save, in handleSaveResource.
+    if (pendingFile) {
+      const cleanupError = await discardPendingUpload(storage, pendingFile);
+      if (cleanupError) console.error(cleanupError);
     }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${resourceId}/${Date.now()}-${safeName}`;
-    const { error: uploadError } = await supabase.storage.from("resource-files").upload(path, file, { upsert: false });
+    const path = `${resourceId}/${crypto.randomUUID()}-${safeName}`;
+    const { error: uploadError } = await storage.upload(path, file, { upsert: false });
     if (uploadError) {
       setUploadingFile(false);
       setFormError(`อัปโหลดไฟล์ไม่สำเร็จ: ${uploadError.message}`);
       return;
     }
-    setForm((f) => ({ ...f, file_path: path, file_name: file.name, file_size: file.size, file_mime_type: file.type }));
+    setPendingFile({ path, name: file.name, size: file.size, mimeType: file.type });
+    setFileRemoved(false);
     setUploadingFile(false);
   };
 
+  // Removing a file never deletes anything immediately: a not-yet-saved
+  // pending upload is just discarded from storage (it was never the row's
+  // file), while removing the currently-saved file only takes effect once
+  // the form is saved successfully (handleSaveResource performs the delete).
   const handleFileRemove = async () => {
-    if (!form.file_path) return;
-    if (!window.confirm("ลบไฟล์นี้ใช่หรือไม่?")) return;
-    const { error } = await supabase.storage.from("resource-files").remove([form.file_path]);
-    if (error) {
-      setFormError(`ลบไฟล์ไม่สำเร็จ: ${error.message}`);
+    if (pendingFile) {
+      const cleanupError = await discardPendingUpload(supabase.storage.from("resource-files"), pendingFile);
+      if (cleanupError) console.error(cleanupError);
+      setPendingFile(null);
       return;
     }
-    setForm((f) => ({ ...f, file_path: "", file_name: "", file_size: 0, file_mime_type: "" }));
+    if (!form.file_path) return;
+    if (!window.confirm("ลบไฟล์นี้ใช่หรือไม่? การลบจะมีผลเมื่อกดบันทึก")) return;
+    setFileRemoved(true);
   };
 
   const handleSaveResource = async (e: React.FormEvent) => {
@@ -266,6 +291,13 @@ export default function AdminConsolePage() {
       return;
     }
     setSaving(true);
+
+    const currentFilePath = form.file_path || null;
+    const fileFields = nextResourceFileFields(
+      { file_path: currentFilePath, file_name: form.file_name || null, file_size: form.file_size || null, file_mime_type: form.file_mime_type || null },
+      pendingFile,
+      fileRemoved,
+    );
     const payload = {
       title: form.title.trim(),
       meta: form.meta.trim() || null,
@@ -275,22 +307,41 @@ export default function AdminConsolePage() {
       cta_url: form.cta_url.trim() || null,
       cover_image_url: form.cover_image_url.trim() || null,
       is_free: form.is_free,
-      file_path: form.file_path || null,
-      file_name: form.file_name || null,
-      file_size: form.file_size || null,
-      file_mime_type: form.file_mime_type || null,
+      ...fileFields,
     };
-    const { error } = editingId
-      ? await supabase.from("resources").update(payload).eq("id", editingId)
-      : await supabase.from("resources").insert({ ...payload, id: pendingResourceId, status: "draft", created_by: adminId });
-    setSaving(false);
-    if (error) {
-      setFormError(error.message);
+
+    const result = await commitResourceFileChange({
+      storage: supabase.storage.from("resource-files"),
+      saveRow: async () =>
+        editingId
+          ? await supabase.from("resources").update(payload).eq("id", editingId)
+          : await supabase.from("resources").insert({ ...payload, id: pendingResourceId, status: "draft", created_by: adminId }),
+      currentFilePath,
+      pendingFile,
+      fileRemoved,
+    });
+
+    // Cleanup failures never block the user-visible outcome, but they must
+    // never be silently dropped either.
+    result.cleanupErrors.forEach((message) => console.error(message));
+
+    if (!result.ok) {
+      setSaving(false);
+      setPendingFile(null);
+      setFileRemoved(false);
+      setFormError(result.saveError);
       return;
     }
+    if (result.cleanupErrors.length > 0) {
+      window.alert(result.cleanupErrors.join("\n"));
+    }
+
+    setSaving(false);
     setForm(EMPTY_FORM);
     setEditingId(null);
     setPendingResourceId(null);
+    setPendingFile(null);
+    setFileRemoved(false);
     setShowForm(false);
     await reloadAdminData();
   };
@@ -298,13 +349,18 @@ export default function AdminConsolePage() {
   const handleStatusChange = async (id: string, status: ResourceStatus) => {
     if (status === "published") {
       const target = resources.find((r) => r.id === id);
-      const { data: full } = await supabase.from("resources").select("cover_image_url, file_path, cta_url").eq("id", id).single();
-      if (!full?.cover_image_url) {
-        window.alert(`ยังเผยแพร่ "${target?.title ?? ""}" ไม่ได้ — ต้องมีรูปปกก่อนเผยแพร่`);
-        return;
-      }
-      if (!full.file_path && !full.cta_url) {
-        window.alert(`ยังเผยแพร่ "${target?.title ?? ""}" ไม่ได้ — ต้องมีไฟล์หรือลิงก์ปลายทางอย่างน้อยหนึ่งอย่าง`);
+      const { data: full } = await supabase.from("resources").select("delivery_mode, cover_image_url, file_path, cta_url").eq("id", id).single();
+      const validationError =
+        full &&
+        publishValidationError({
+          status: "published",
+          deliveryMode: full.delivery_mode,
+          coverImageUrl: full.cover_image_url,
+          filePath: full.file_path,
+          ctaUrl: full.cta_url,
+        });
+      if (validationError) {
+        window.alert(`ยังเผยแพร่ "${target?.title ?? ""}" ไม่ได้ — ${validationError}`);
         return;
       }
     }
@@ -438,7 +494,7 @@ export default function AdminConsolePage() {
                   <h1 style={{ fontSize: "var(--fs-30)" }}>จัดการสื่อ</h1>
                   <p style={{ margin: "var(--sp-3) 0 0", color: "var(--text-muted)" }}>สื่อใหม่เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่</p>
                 </div>
-                <Button icon={Plus} onClick={() => (showForm ? setShowForm(false) : openCreateForm())}>
+                <Button icon={Plus} onClick={() => (showForm ? closeForm() : openCreateForm())}>
                   {showForm ? "ปิดฟอร์ม" : "เพิ่มสื่อใหม่"}
                 </Button>
               </div>
@@ -473,16 +529,36 @@ export default function AdminConsolePage() {
                   </div>
                   <Input label="ลิงก์ (URL ปลายทาง)" value={form.cta_url} onChange={(e) => setForm({ ...form, cta_url: e.target.value })} placeholder="https://..." />
                   <div className="kru-field">
-                    <label className="kru-field__label">ไฟล์สื่อ (PDF, DOCX, PPTX, XLSX, ZIP — ไม่เกิน 50MB, ต้องมีไฟล์หรือลิงก์อย่างน้อยหนึ่งอย่างก่อนเผยแพร่)</label>
-                    {form.file_name && (
+                    <label className="kru-field__label">
+                      ไฟล์สื่อ (PDF, DOCX, PPTX, XLSX, ZIP — ไม่เกิน 50MB{form.delivery_mode === "file_download" ? " จำเป็นสำหรับโหมดไฟล์ดาวน์โหลด" : ""})
+                    </label>
+                    {pendingFile ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)" }}>
                         <span>
-                          {form.file_name} ({formatFileSize(form.file_size)})
+                          {pendingFile.name} ({formatFileSize(pendingFile.size)}) — ไฟล์ใหม่ จะบันทึกเมื่อกด &quot;บันทึก&quot;
                         </span>
                         <button type="button" onClick={handleFileRemove} style={{ border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer", padding: 4 }}>
                           <Trash2 size={16} />
                         </button>
                       </div>
+                    ) : fileRemoved ? (
+                      <div style={{ marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
+                        จะลบไฟล์เดิมเมื่อกด &quot;บันทึก&quot;
+                        <button type="button" onClick={() => setFileRemoved(false)} style={{ marginLeft: 10, border: "none", background: "transparent", color: "var(--brand)", cursor: "pointer" }}>
+                          ยกเลิก
+                        </button>
+                      </div>
+                    ) : (
+                      form.file_name && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)" }}>
+                          <span>
+                            {form.file_name} ({formatFileSize(form.file_size)})
+                          </span>
+                          <button type="button" onClick={handleFileRemove} style={{ border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer", padding: 4 }}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )
                     )}
                     <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.zip" onChange={handleFileUpload} disabled={uploadingFile} />
                     {uploadingFile && <span style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>กำลังอัปโหลด...</span>}

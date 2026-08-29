@@ -26,6 +26,7 @@ import {
   type TeacherRequest,
   type UpgradeRequest,
 } from "@/lib/data";
+import { canAccessResource } from "@/lib/entitlement";
 
 export const dynamic = "force-dynamic";
 
@@ -140,18 +141,37 @@ export default function TeacherAppPage() {
     setView("detail");
   };
 
+  // Every published resource fetched by fetchPublishedResources already has
+  // status "published", so it's hardcoded here rather than carried on Resource.
+  const canAccess = (r: Resource) => canAccessResource({ status: "published", isFree: r.free }, profile && { plan: profile.plan, role: profile.role });
+
   const openResource = async (r: Resource) => {
-    if (!r.free) {
+    if (!canAccess(r)) {
       setView("plans");
       return;
     }
     if (r.affordance === "file_download" && r.filePath) {
-      const url = await getSignedFileUrl(supabase, r.filePath);
+      // Open the tab synchronously, inside the click's own event handler,
+      // so Safari/iOS still recognizes it as a user gesture once the await
+      // below resolves — filling in the URL later (rather than calling
+      // window.open post-await) is what keeps this from being blocked as
+      // a popup.
+      const tab = window.open("", "_blank");
+      const url = await getSignedFileUrl(supabase, r.filePath, r.fileName);
       if (!url) {
+        tab?.close();
         window.alert("ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
         return;
       }
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (tab) {
+        tab.location.href = url;
+      } else {
+        // Gesture wasn't recognized and the tab never opened — falling back
+        // to a same-tab navigation still works, since the signed URL's
+        // Content-Disposition triggers a download rather than losing the
+        // app (see getSignedFileUrl).
+        window.location.assign(url);
+      }
       return;
     }
     if (r.ctaUrl) window.open(r.ctaUrl, "_blank", "noopener,noreferrer");
@@ -244,7 +264,7 @@ export default function TeacherAppPage() {
                         icon={resourceIcon(r.affordance)}
                         tint={resourceTint(r.affordance)}
                         free={r.free}
-                        locked={!r.free}
+                        locked={!canAccess(r)}
                         saved={saved.includes(r.id)}
                         onSave={() => toggleSaved(r.id)}
                         onClick={() => openDetail(r)}
@@ -280,7 +300,7 @@ export default function TeacherAppPage() {
                             icon={resourceIcon(r.affordance)}
                             tint={resourceTint(r.affordance)}
                             free={r.free}
-                            locked={!r.free}
+                            locked={!canAccess(r)}
                             saved={saved.includes(r.id)}
                             onSave={() => toggleSaved(r.id)}
                             onClick={() => openDetail(r)}
@@ -321,10 +341,10 @@ export default function TeacherAppPage() {
                   <div className="kru-detail-side">
                     <div className="kru-card" style={{ padding: "var(--sp-7)" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
-                        {detail.free ? "พร้อมใช้สอนได้เลย" : "สื่อนี้สำหรับสมาชิก"}
+                        {canAccess(detail) ? "พร้อมใช้สอนได้เลย" : "สื่อนี้สำหรับสมาชิก"}
                       </div>
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} onClick={() => openResource(detail)}>
-                        {detail.free ? "เปิดใช้งาน" : "ดูแพ็กที่ปลดล็อก"}
+                        {canAccess(detail) ? "เปิดใช้งาน" : "ดูแพ็กที่ปลดล็อก"}
                       </Button>
                       <Button block variant="ghost" icon={Bookmark} onClick={() => toggleSaved(detail.id)} style={{ marginTop: "var(--sp-4)" }}>
                         {saved.includes(detail.id) ? "บันทึกไว้แล้ว" : "บันทึกไว้ใช้ทีหลัง"}

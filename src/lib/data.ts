@@ -93,8 +93,12 @@ const RESOURCE_FILES_BUCKET = "resource-files";
 // Generates a short-lived signed URL for a private resource file. RLS on
 // storage.objects enforces publish status + plan entitlement server-side;
 // this only succeeds if the caller is actually allowed to read the object.
-export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, expiresInSeconds = 60): Promise<string | null> {
-  const { data, error } = await supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds);
+// `download` sets Content-Disposition: attachment on Supabase's response,
+// so navigating to the URL downloads the file instead of rendering it —
+// this works even cross-origin (unlike an <a download> attribute), which
+// is what lets the caller avoid a same-tab SPA navigation.
+export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true });
   if (error) {
     console.error(`getSignedFileUrl failed: ${error.message}`);
     return null;
