@@ -12,22 +12,28 @@ import {
   formatFileSize,
   publishValidationError,
   evaluatePublishGuard,
+  canProceedAfterFileLookup,
   nextResourceFileFields,
   commitResourceFileChange,
   retryCleanup,
   guardAgainstBusyForm,
   chooseUploadStrategy,
   resumableUploadEndpoint,
+  runResumableUpload,
   type DeliveryMode,
   type PendingFile,
   type CleanupFailure,
+  type StorageObject,
   type UploadStrategy,
+  type TusUploadFactory,
+  type TusUploadHandle,
 } from "@/lib/resourceFile";
 
 export const dynamic = "force-dynamic";
 
 type View = "dash" | "content" | "requests" | "upgrades" | "members";
 type ResourceStatus = "draft" | "published" | "archived";
+type UploadTarget = "cover" | "file";
 
 interface AdminResource {
   id: string;
@@ -63,10 +69,18 @@ interface AdminUpgradeRequest {
 
 type UploadStatus =
   | { phase: "idle" }
-  | { phase: "uploading"; progress: number; strategy: UploadStrategy; onCancel: () => void }
-  | { phase: "error"; message: string; onRetry: () => void };
+  | { phase: "uploading"; target: UploadTarget; progress: number; strategy: UploadStrategy; onPause: (() => void) | null; onCancel: () => void }
+  | { phase: "paused"; target: UploadTarget; onResume: () => void; onCancel: () => void }
+  | { phase: "error"; target: UploadTarget; message: string; onRetry: () => void; onCancel: () => void };
 
-type UploadOutcome = { ok: true; file: PendingFile } | { ok: false };
+type FileUploadOutcome = { ok: true; file: PendingFile } | { ok: false };
+type CoverUploadOutcome = { ok: true; path: string; url: string } | { ok: false };
+
+// The real tus.Upload constructor, adapted to the TusUploadFactory shape
+// runResumableUpload expects — kept as the one place this module touches
+// tus-js-client directly, so the orchestration logic itself (in
+// resourceFile.ts) stays injectable/mockable and framework-free.
+const createTusUpload: TusUploadFactory = (file, options) => new tus.Upload(file, options as unknown as ConstructorParameters<typeof tus.Upload>[1]) as unknown as TusUploadHandle;
 
 const NAV_GROUPS: SideNavGroup[] = [
   {
@@ -115,25 +129,35 @@ export default function AdminConsolePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   // `saving` is the single "an admin mutation is in flight" flag: true for
-  // the entire upload + row-save + cleanup sequence, and for delete/status
-  // changes too. guardAgainstBusyForm(saving) gates every other admin
-  // action so none of them can interrupt it (see resourceFile.ts).
+  // the entire cover-upload + file-upload + row-save + cleanup sequence,
+  // and for delete/status changes too. guardAgainstBusyForm(saving) gates
+  // every other admin action so none of them can interrupt it.
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [uploadingCover, setUploadingCover] = useState(false);
   const [pendingResourceId, setPendingResourceId] = useState<string | null>(null);
-  // The raw File the admin picked, held only in memory. Nothing is
-  // uploaded until Save is clicked (see handleSaveResource/runUpload) —
-  // this removes the entire class of race conditions from uploading
-  // immediately on selection (closing the form, saving, switching to
-  // another item, navigating, or signing out mid-upload could previously
-  // orphan or interrupt an in-flight upload).
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // The object path is generated once, at selection time, and stored
+  // alongside the File — every retry/resume/re-attempt (including a whole
+  // extra click of Save) reuses this exact path. It is never regenerated.
+  const [selectedFile, setSelectedFile] = useState<{ file: File; path: string } | null>(null);
+  // Cover images are also only held in memory until Save — uploading them
+  // immediately (the old behavior) could leave an orphaned file in the
+  // public bucket if the row save never happens (validation failure,
+  // closed form, etc.).
+  const [selectedCoverFile, setSelectedCoverFile] = useState<File | null>(null);
   const [fileRemoved, setFileRemoved] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({ phase: "idle" });
   // Storage cleanup that failed and was NOT dropped — kept here so it can
   // be retried instead of silently becoming an orphaned file forever.
   const [failedCleanups, setFailedCleanups] = useState<CleanupFailure[]>([]);
+
+  // Derived (not state) so nothing calls setState from inside an effect —
+  // the effect below only performs the revoke side effect on cleanup.
+  const coverPreviewUrl = useMemo(() => (selectedCoverFile ? URL.createObjectURL(selectedCoverFile) : null), [selectedCoverFile]);
+  useEffect(() => {
+    return () => {
+      if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
+    };
+  }, [coverPreviewUrl]);
 
   const reloadAdminData = async () => {
     const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }] = await Promise.all([
@@ -214,6 +238,7 @@ export default function AdminConsolePage() {
     setPendingResourceId(crypto.randomUUID());
     setForm(EMPTY_FORM);
     setSelectedFile(null);
+    setSelectedCoverFile(null);
     setFileRemoved(false);
     setFormError(null);
     setShowForm(true);
@@ -226,6 +251,7 @@ export default function AdminConsolePage() {
       return;
     }
     setSelectedFile(null);
+    setSelectedCoverFile(null);
     setFileRemoved(false);
     setForm(EMPTY_FORM);
     setEditingId(null);
@@ -252,6 +278,7 @@ export default function AdminConsolePage() {
     setEditingId(id);
     setPendingResourceId(null);
     setSelectedFile(null);
+    setSelectedCoverFile(null);
     setFileRemoved(false);
     setForm({
       title: data.title ?? "",
@@ -271,7 +298,7 @@ export default function AdminConsolePage() {
     setShowForm(true);
   };
 
-  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -279,25 +306,12 @@ export default function AdminConsolePage() {
       setFormError("กรุณาเลือกไฟล์รูปภาพ");
       return;
     }
-    setUploadingCover(true);
     setFormError(null);
-    try {
-      const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      const { error: uploadError } = await supabase.storage.from("resource-covers").upload(path, file, { upsert: false });
-      if (uploadError) {
-        setFormError(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`);
-        return;
-      }
-      const { data } = supabase.storage.from("resource-covers").getPublicUrl(path);
-      setForm((f) => ({ ...f, cover_image_url: data.publicUrl }));
-    } finally {
-      setUploadingCover(false);
-    }
+    setSelectedCoverFile(file);
   };
 
-  // Selecting a file only validates and stores it in memory — nothing is
-  // uploaded here. The actual upload happens inside handleSaveResource,
-  // only once the admin clicks Save.
+  // The object path is fixed the moment a file is selected — every retry
+  // or later Save click reuses this exact path, never a fresh one.
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -307,14 +321,22 @@ export default function AdminConsolePage() {
       setFormError(validationError);
       return;
     }
+    const resourceId = editingId ?? pendingResourceId;
+    if (!resourceId) {
+      setFormError("เกิดข้อผิดพลาด กรุณาปิดฟอร์มแล้วเปิดใหม่อีกครั้ง");
+      return;
+    }
     setFormError(null);
-    setSelectedFile(file);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${resourceId}/${crypto.randomUUID()}-${safeName}`;
+    setSelectedFile({ file, path });
     setFileRemoved(false);
   };
 
   // Removing a not-yet-uploaded selection just drops it from memory
-  // (nothing was ever written to storage). Removing the currently-saved
-  // file only takes effect once Save succeeds.
+  // (nothing was ever written to storage, so there's no path/fingerprint
+  // to clear on the server). Removing the currently-saved file only takes
+  // effect once Save succeeds.
   const handleFileRemove = () => {
     if (selectedFile) {
       setSelectedFile(null);
@@ -325,121 +347,134 @@ export default function AdminConsolePage() {
     setFileRemoved(true);
   };
 
-  // Uploads the selected file using the strategy Supabase's docs recommend
-  // for its size: the plain upload call for files at or under the 6MB TUS
-  // chunk size, or a resumable TUS upload (direct storage hostname, 6MB
-  // chunks, progress/cancel/retry) for anything larger, up to 50MB.
-  const runUpload = (file: File, resourceId: string): Promise<UploadOutcome> => {
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${resourceId}/${crypto.randomUUID()}-${safeName}`;
-    const strategy = chooseUploadStrategy(file.size);
-
-    if (strategy === "standard") {
-      return (async (): Promise<UploadOutcome> => {
-        setUploadStatus({ phase: "uploading", progress: 0, strategy, onCancel: () => {} });
-        try {
-          const { error } = await supabase.storage.from("resource-files").upload(path, file, { upsert: false });
-          if (error) {
-            setFormError(`อัปโหลดไฟล์ไม่สำเร็จ: ${error.message}`);
-            return { ok: false };
-          }
-          return { ok: true, file: { path, name: file.name, size: file.size, mimeType: file.type } };
-        } finally {
-          setUploadStatus({ phase: "idle" });
-        }
-      })();
-    }
-
-    return new Promise<UploadOutcome>((resolve) => {
-      let settled = false;
-      const finish = (outcome: UploadOutcome) => {
-        if (settled) return;
-        settled = true;
+  // Uploads a cover image with the same retry/cancel discipline as the
+  // resource file. Covers are always small, so no resumable path is
+  // needed — but a "cancel" clicked right as the request finishes must
+  // still not leave an orphaned object, hence the post-await recheck.
+  const runCoverUpload = (file: File): Promise<CoverUploadOutcome> => {
+    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    return new Promise<CoverUploadOutcome>((resolve) => {
+      let cancelled = false;
+      const cancel = () => {
+        cancelled = true;
         setUploadStatus({ phase: "idle" });
-        resolve(outcome);
+        resolve({ ok: false });
       };
-
-      // Wrapped in try/catch (in addition to the finish() guard above) so
-      // any unexpected failure here — not just a tus onError — still
-      // resolves the promise and clears uploadStatus/saving, instead of
-      // leaving the form stuck "busy" forever.
-      (async () => {
+      const attempt = async () => {
+        if (cancelled) return;
+        setUploadStatus({ phase: "uploading", target: "cover", progress: 0, strategy: "standard", onPause: null, onCancel: cancel });
         try {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (!session) {
-            setFormError("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่");
-            finish({ ok: false });
+          const { error } = await supabase.storage.from("resource-covers").upload(path, file, { upsert: false });
+          if (cancelled) {
+            if (!error) await supabase.storage.from("resource-covers").remove([path]);
             return;
           }
-
-          const attempt = () => {
-            const upload: tus.Upload = new tus.Upload(file, {
-              endpoint: resumableUploadEndpoint(process.env.NEXT_PUBLIC_SUPABASE_URL || ""),
-              retryDelays: [0, 3000, 5000, 10000, 20000],
-              headers: {
-                authorization: `Bearer ${session.access_token}`,
-                apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-                "x-upsert": "false",
-              },
-              uploadDataDuringCreation: true,
-              removeFingerprintOnSuccess: true,
-              metadata: {
-                bucketName: "resource-files",
-                objectName: path,
-                contentType: file.type,
-                cacheControl: "3600",
-              },
-              chunkSize: 6 * 1024 * 1024,
-              onError: (error) => {
-                setUploadStatus({ phase: "error", message: `อัปโหลดไฟล์ไม่สำเร็จ: ${error.message}`, onRetry: attempt });
-              },
-              onProgress: (bytesUploaded, bytesTotal) => {
-                setUploadStatus({
-                  phase: "uploading",
-                  progress: Math.round((bytesUploaded / bytesTotal) * 100),
-                  strategy,
-                  onCancel: () => {
-                    upload.abort();
-                    finish({ ok: false });
-                  },
-                });
-              },
-              onSuccess: () => {
-                finish({ ok: true, file: { path, name: file.name, size: file.size, mimeType: file.type } });
-              },
-            });
-
-            setUploadStatus({
-              phase: "uploading",
-              progress: 0,
-              strategy,
-              onCancel: () => {
-                upload.abort();
-                finish({ ok: false });
-              },
-            });
-
-            upload
-              .findPreviousUploads()
-              .then((previousUploads) => {
-                if (previousUploads.length > 0) upload.resumeFromPreviousUpload(previousUploads[0]);
-                upload.start();
-              })
-              .catch((findError: Error) => {
-                setUploadStatus({ phase: "error", message: `อัปโหลดไฟล์ไม่สำเร็จ: ${findError.message}`, onRetry: attempt });
-              });
-          };
-
-          attempt();
-        } catch (unexpectedError) {
-          const message = unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError);
-          setFormError(`อัปโหลดไฟล์ไม่สำเร็จ: ${message}`);
-          finish({ ok: false });
+          if (error) {
+            setUploadStatus({ phase: "error", target: "cover", message: `อัปโหลดรูปปกไม่สำเร็จ: ${error.message}`, onRetry: attempt, onCancel: cancel });
+            return;
+          }
+          const { data } = supabase.storage.from("resource-covers").getPublicUrl(path);
+          setUploadStatus({ phase: "idle" });
+          resolve({ ok: true, path, url: data.publicUrl });
+        } catch (thrown) {
+          if (cancelled) return;
+          const message = thrown instanceof Error ? thrown.message : String(thrown);
+          setUploadStatus({ phase: "error", target: "cover", message: `อัปโหลดรูปปกไม่สำเร็จ: ${message}`, onRetry: attempt, onCancel: cancel });
         }
-      })();
+      };
+      attempt();
     });
+  };
+
+  const runStandardFileUpload = (file: File, path: string): Promise<FileUploadOutcome> => {
+    return new Promise<FileUploadOutcome>((resolve) => {
+      let cancelled = false;
+      const cancel = () => {
+        cancelled = true;
+        setUploadStatus({ phase: "idle" });
+        resolve({ ok: false });
+      };
+      const attempt = async () => {
+        if (cancelled) return;
+        setUploadStatus({ phase: "uploading", target: "file", progress: 0, strategy: "standard", onPause: null, onCancel: cancel });
+        try {
+          const { error } = await supabase.storage.from("resource-files").upload(path, file, { upsert: false });
+          if (cancelled) {
+            if (!error) await supabase.storage.from("resource-files").remove([path]);
+            return;
+          }
+          if (error) {
+            setUploadStatus({ phase: "error", target: "file", message: `อัปโหลดไฟล์ไม่สำเร็จ: ${error.message}`, onRetry: attempt, onCancel: cancel });
+            return;
+          }
+          setUploadStatus({ phase: "idle" });
+          resolve({ ok: true, file: { path, name: file.name, size: file.size, mimeType: file.type } });
+        } catch (thrown) {
+          if (cancelled) return;
+          const message = thrown instanceof Error ? thrown.message : String(thrown);
+          setUploadStatus({ phase: "error", target: "file", message: `อัปโหลดไฟล์ไม่สำเร็จ: ${message}`, onRetry: attempt, onCancel: cancel });
+        }
+      };
+      attempt();
+    });
+  };
+
+  const runResumableFileUpload = async (file: File, path: string): Promise<FileUploadOutcome> => {
+    let session;
+    try {
+      const { data } = await supabase.auth.getSession();
+      session = data.session;
+    } catch (sessionError) {
+      const message = sessionError instanceof Error ? sessionError.message : String(sessionError);
+      setFormError(`ตรวจสอบเซสชันไม่สำเร็จ: ${message}`);
+      return { ok: false };
+    }
+    if (!session) {
+      setFormError("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่");
+      return { ok: false };
+    }
+
+    return new Promise<FileUploadOutcome>((resolve) => {
+      const controller = runResumableUpload({
+        createUpload: createTusUpload,
+        file,
+        path,
+        bucketName: "resource-files",
+        endpoint: resumableUploadEndpoint(process.env.NEXT_PUBLIC_SUPABASE_URL || ""),
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+          "x-upsert": "false",
+        },
+        onStatusChange: (status) => {
+          const onCancel = async () => {
+            const { error } = await controller.cancel();
+            if (error) window.alert(`ยกเลิกการอัปโหลดไม่สมบูรณ์: ${error}`);
+          };
+          if (status.phase === "uploading") {
+            const onPause = async () => {
+              const { error } = await controller.pause();
+              if (error) window.alert(`พักการอัปโหลดไม่สำเร็จ: ${error}`);
+            };
+            setUploadStatus({ phase: "uploading", target: "file", progress: status.progress, strategy: "resumable", onPause, onCancel });
+          } else if (status.phase === "paused") {
+            setUploadStatus({ phase: "paused", target: "file", onResume: () => controller.retry(), onCancel });
+          } else if (status.phase === "error") {
+            setUploadStatus({ phase: "error", target: "file", message: `อัปโหลดไฟล์ไม่สำเร็จ: ${status.message}`, onRetry: () => controller.retry(), onCancel });
+          }
+        },
+      });
+
+      controller.result.then((outcome) => {
+        setUploadStatus({ phase: "idle" });
+        resolve(outcome.ok && outcome.file ? { ok: true, file: outcome.file } : { ok: false });
+      });
+    });
+  };
+
+  const runFileUpload = (selected: { file: File; path: string }): Promise<FileUploadOutcome> => {
+    const strategy = chooseUploadStrategy(selected.file.size);
+    return strategy === "standard" ? runStandardFileUpload(selected.file, selected.path) : runResumableFileUpload(selected.file, selected.path);
   };
 
   const handleSaveResource = async (e: React.FormEvent) => {
@@ -456,17 +491,18 @@ export default function AdminConsolePage() {
     }
 
     // Fail closed on saving an already-published resource into an invalid
-    // state (e.g. clearing its only file/link, or switching delivery mode)
-    // — checked client-side before any upload starts, so the DB constraint
-    // in 015_resource_type_publish_targets.sql is the last resort, not the
-    // only line of defense.
+    // state (e.g. clearing its only file/link/cover, or switching delivery
+    // mode) — checked client-side before any upload starts, so the DB
+    // constraint in 015_resource_type_publish_targets.sql is the last
+    // resort, not the only line of defense.
     const currentStatus = editingId ? resources.find((r) => r.id === editingId)?.status : undefined;
     if (currentStatus === "published") {
       const wouldHaveFile = selectedFile ? true : fileRemoved ? false : Boolean(form.file_path);
+      const wouldHaveCover = selectedCoverFile ? true : Boolean(form.cover_image_url.trim());
       const validationError = publishValidationError({
         status: "published",
         deliveryMode: form.delivery_mode,
-        coverImageUrl: form.cover_image_url.trim() || null,
+        coverImageUrl: wouldHaveCover ? "pending-truthy-placeholder" : null,
         filePath: wouldHaveFile ? "pending-truthy-placeholder" : null,
         ctaUrl: form.cta_url.trim() || null,
       });
@@ -479,16 +515,28 @@ export default function AdminConsolePage() {
     setSaving(true);
     try {
       const resourceId = editingId ?? pendingResourceId;
-      let pendingFile: PendingFile | null = null;
+      const filesStorage = supabase.storage.from("resource-files");
+      const pendingUploads: StorageObject[] = [];
+      const obsoleteOnSuccess: StorageObject[] = [];
 
+      let coverUrl = form.cover_image_url.trim() || null;
+      if (selectedCoverFile) {
+        const coverResult = await runCoverUpload(selectedCoverFile);
+        if (!coverResult.ok) return;
+        coverUrl = coverResult.url;
+        pendingUploads.push({ storage: supabase.storage.from("resource-covers"), path: coverResult.path });
+      }
+
+      let pendingFile: PendingFile | null = null;
       if (selectedFile) {
         if (!resourceId) {
           setFormError("เกิดข้อผิดพลาด กรุณาปิดฟอร์มแล้วเปิดใหม่อีกครั้ง");
           return;
         }
-        const uploaded = await runUpload(selectedFile, resourceId);
+        const uploaded = await runFileUpload(selectedFile);
         if (!uploaded.ok) return;
         pendingFile = uploaded.file;
+        pendingUploads.push({ storage: filesStorage, path: pendingFile.path });
       }
 
       const currentFilePath = form.file_path || null;
@@ -497,6 +545,10 @@ export default function AdminConsolePage() {
         pendingFile,
         fileRemoved,
       );
+      if ((pendingFile || fileRemoved) && currentFilePath) {
+        obsoleteOnSuccess.push({ storage: filesStorage, path: currentFilePath });
+      }
+
       const payload = {
         title: form.title.trim(),
         meta: form.meta.trim() || null,
@@ -504,24 +556,23 @@ export default function AdminConsolePage() {
         category: form.category.trim() || null,
         delivery_mode: form.delivery_mode,
         cta_url: form.cta_url.trim() || null,
-        cover_image_url: form.cover_image_url.trim() || null,
+        cover_image_url: coverUrl,
         is_free: form.is_free,
         ...fileFields,
       };
 
       const result = await commitResourceFileChange({
-        storage: supabase.storage.from("resource-files"),
         saveRow: async () =>
           editingId
             ? await supabase.from("resources").update(payload).eq("id", editingId)
             : await supabase.from("resources").insert({ ...payload, id: pendingResourceId, status: "draft", created_by: adminId }),
-        currentFilePath,
-        pendingFile,
-        fileRemoved,
+        pendingUploads,
+        obsoleteOnSuccess,
       });
 
       // Cleanup failures never block the user-visible outcome, but the
-      // failed path is retained (not dropped) so it can be retried.
+      // failed path (with its storage handle) is retained, not dropped —
+      // it can be retried from the banner below.
       if (result.cleanupFailures.length > 0) {
         setFailedCleanups((prev) => [...prev, ...result.cleanupFailures]);
       }
@@ -538,6 +589,7 @@ export default function AdminConsolePage() {
       setEditingId(null);
       setPendingResourceId(null);
       setSelectedFile(null);
+      setSelectedCoverFile(null);
       setFileRemoved(false);
       setShowForm(false);
       await reloadAdminData();
@@ -591,14 +643,21 @@ export default function AdminConsolePage() {
     if (!window.confirm(`ลบ "${title}" ใช่หรือไม่? ลบแล้วกู้คืนไม่ได้`)) return;
     setSaving(true);
     try {
-      const { data: full } = await supabase.from("resources").select("file_path").eq("id", id).single();
+      const { data: full, error: lookupError } = await supabase.from("resources").select("file_path").eq("id", id).single();
+      // Fail closed: if we can't read file_path we don't know whether a
+      // file needs cleanup, so the resource row must not be deleted either
+      // — otherwise a delete could silently orphan a private file forever.
+      if (!canProceedAfterFileLookup(lookupError ? { message: lookupError.message } : null)) {
+        window.alert(`ลบไม่สำเร็จ: ตรวจสอบไฟล์แนบไม่ได้ (${lookupError?.message ?? ""}) กรุณาลองใหม่ — ไม่ได้ลบข้อมูลสื่อ`);
+        return;
+      }
       const { error } = await supabase.from("resources").delete().eq("id", id);
       if (error) {
         window.alert(`ลบไม่สำเร็จ: ${error.message}`);
         return;
       }
       if (full?.file_path) {
-        const { failed } = await retryCleanup(supabase.storage.from("resource-files"), [full.file_path]);
+        const { failed } = await retryCleanup([{ storage: supabase.storage.from("resource-files"), path: full.file_path }]);
         if (failed.length > 0) {
           setFailedCleanups((prev) => [...prev, ...failed]);
           window.alert(`ลบสื่อ "${title}" สำเร็จ แต่ลบไฟล์แนบไม่สำเร็จ: ${failed[0].message} — ระบบเก็บรายการนี้ไว้ให้ลองใหม่ได้จากแบนเนอร์ด้านบน`);
@@ -614,10 +673,7 @@ export default function AdminConsolePage() {
     if (failedCleanups.length === 0) return;
     setSaving(true);
     try {
-      const { failed } = await retryCleanup(
-        supabase.storage.from("resource-files"),
-        failedCleanups.map((f) => f.path),
-      );
+      const { failed } = await retryCleanup(failedCleanups.map((f) => ({ storage: f.storage, path: f.path })));
       setFailedCleanups(failed);
       window.alert(failed.length === 0 ? "ลบไฟล์ค้างสำเร็จแล้วทั้งหมด" : `ยังลบไฟล์ไม่สำเร็จ ${failed.length} รายการ ลองใหม่ภายหลัง`);
     } finally {
@@ -692,6 +748,59 @@ export default function AdminConsolePage() {
       </div>
     );
   }
+
+  const uploadStatusFor = (target: UploadTarget) => (uploadStatus.phase !== "idle" && uploadStatus.target === target ? uploadStatus : null);
+
+  const renderUploadStatus = (target: UploadTarget) => {
+    const status = uploadStatusFor(target);
+    if (!status) return null;
+    if (status.phase === "uploading") {
+      return (
+        <div style={{ marginBottom: "var(--sp-3)" }}>
+          <div style={{ fontSize: "var(--fs-13)", marginBottom: 4 }}>
+            กำลังอัปโหลด{target === "cover" ? "รูปปก" : "ไฟล์"} ({status.strategy === "resumable" ? "resumable" : "standard"}) — {status.progress}%
+          </div>
+          <div style={{ height: 8, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${status.progress}%`, background: "var(--brand)", transition: "width 0.2s" }} />
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+            {status.onPause && (
+              <button type="button" onClick={status.onPause} style={{ border: "none", background: "transparent", color: "var(--brand)", cursor: "pointer", fontSize: "var(--fs-13)", padding: 0 }}>
+                พักการอัปโหลด
+              </button>
+            )}
+            <button type="button" onClick={status.onCancel} style={{ border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer", fontSize: "var(--fs-13)", padding: 0 }}>
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      );
+    }
+    if (status.phase === "paused") {
+      return (
+        <div style={{ marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)" }}>
+          พักการอัปโหลด{target === "cover" ? "รูปปก" : "ไฟล์"}ไว้
+          <button type="button" onClick={status.onResume} style={{ marginLeft: 10, border: "none", background: "transparent", color: "var(--brand)", cursor: "pointer" }}>
+            ดำเนินการต่อ
+          </button>
+          <button type="button" onClick={status.onCancel} style={{ marginLeft: 10, border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer" }}>
+            ยกเลิก
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div style={{ marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)", color: "var(--status-danger-fg)" }}>
+        {status.message}
+        <button type="button" onClick={status.onRetry} style={{ marginLeft: 10, border: "none", background: "transparent", color: "var(--brand)", cursor: "pointer" }}>
+          ลองใหม่
+        </button>
+        <button type="button" onClick={status.onCancel} style={{ marginLeft: 10, border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer" }}>
+          ยกเลิก
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -790,45 +899,17 @@ export default function AdminConsolePage() {
                     />
                   </div>
                   <Input label="ลิงก์ (URL ปลายทาง)" value={form.cta_url} onChange={(e) => setForm({ ...form, cta_url: e.target.value })} placeholder="https://..." />
+
                   <div className="kru-field">
                     <label className="kru-field__label">
                       ไฟล์สื่อ (PDF, DOCX, PPTX, XLSX, ZIP — ไม่เกิน 50MB{form.delivery_mode === "file_download" ? " จำเป็นสำหรับโหมดไฟล์ดาวน์โหลด" : ""}; ไฟล์เกิน 6MB อัปโหลดแบบ resumable)
                     </label>
-
-                    {uploadStatus.phase === "uploading" && (
-                      <div style={{ marginBottom: "var(--sp-3)" }}>
-                        <div style={{ fontSize: "var(--fs-13)", marginBottom: 4 }}>
-                          กำลังอัปโหลด ({uploadStatus.strategy === "resumable" ? "resumable" : "standard"}) — {uploadStatus.progress}%
-                        </div>
-                        <div style={{ height: 8, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${uploadStatus.progress}%`, background: "var(--brand)", transition: "width 0.2s" }} />
-                        </div>
-                        {uploadStatus.strategy === "resumable" && (
-                          <button
-                            type="button"
-                            onClick={uploadStatus.onCancel}
-                            style={{ marginTop: 6, border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer", fontSize: "var(--fs-13)", padding: 0 }}
-                          >
-                            ยกเลิกการอัปโหลด
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {uploadStatus.phase === "error" && (
-                      <div style={{ marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)", color: "var(--status-danger-fg)" }}>
-                        {uploadStatus.message}
-                        <button type="button" onClick={uploadStatus.onRetry} style={{ marginLeft: 10, border: "none", background: "transparent", color: "var(--brand)", cursor: "pointer" }}>
-                          ลองใหม่
-                        </button>
-                      </div>
-                    )}
-
-                    {uploadStatus.phase === "idle" &&
+                    {renderUploadStatus("file")}
+                    {uploadStatusFor("file") === null &&
                       (selectedFile ? (
                         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)" }}>
                           <span>
-                            {selectedFile.name} ({formatFileSize(selectedFile.size)}) — จะอัปโหลดเมื่อกด &quot;บันทึก&quot;
+                            {selectedFile.file.name} ({formatFileSize(selectedFile.file.size)}) — จะอัปโหลดเมื่อกด &quot;บันทึก&quot;
                           </span>
                           <button type="button" onClick={handleFileRemove} style={{ border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer", padding: 4 }}>
                             <Trash2 size={16} />
@@ -853,18 +934,26 @@ export default function AdminConsolePage() {
                           </div>
                         )
                       ))}
-
-                    <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.zip" onChange={handleFileSelect} disabled={uploadStatus.phase === "uploading"} />
+                    <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.zip" onChange={handleFileSelect} disabled={uploadStatus.phase !== "idle"} />
                   </div>
+
                   <div className="kru-field">
                     <label className="kru-field__label">รูปปก (จำเป็นก่อนเผยแพร่)</label>
-                    {form.cover_image_url && (
+                    {renderUploadStatus("cover")}
+                    {(coverPreviewUrl || form.cover_image_url) && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={form.cover_image_url} alt="ตัวอย่างรูปปก" style={{ width: "100%", maxWidth: 320, height: 160, objectFit: "cover", borderRadius: "var(--r-md)", border: "1px solid var(--border-subtle)", marginBottom: "var(--sp-3)" }} />
+                      <img
+                        src={coverPreviewUrl || form.cover_image_url}
+                        alt="ตัวอย่างรูปปก"
+                        style={{ width: "100%", maxWidth: 320, height: 160, objectFit: "cover", borderRadius: "var(--r-md)", border: "1px solid var(--border-subtle)", marginBottom: "var(--sp-3)" }}
+                      />
                     )}
-                    <input type="file" accept="image/*" onChange={handleCoverUpload} disabled={uploadingCover} />
-                    {uploadingCover && <span style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>กำลังอัปโหลด...</span>}
+                    {selectedCoverFile && uploadStatusFor("cover") === null && (
+                      <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginBottom: "var(--sp-3)" }}>รูปใหม่ — จะอัปโหลดเมื่อกด &quot;บันทึก&quot;</div>
+                    )}
+                    <input type="file" accept="image/*" onChange={handleCoverSelect} disabled={uploadStatus.phase !== "idle"} />
                   </div>
+
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-14)" }}>
                     <input type="checkbox" checked={form.is_free} onChange={(e) => setForm({ ...form, is_free: e.target.checked })} />
                     ให้สมาชิกทุกแพ็กใช้ได้ฟรี
