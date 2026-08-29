@@ -11,7 +11,22 @@ export const dynamic = "force-dynamic";
 
 type View = "dash" | "content" | "requests" | "upgrades" | "members";
 type ResourceStatus = "draft" | "published" | "archived";
-type DeliveryMode = "web_app" | "google_template" | "google_form";
+type DeliveryMode = "web_app" | "google_template" | "google_form" | "file_download";
+
+const ALLOWED_FILE_EXTENSIONS: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+};
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.ceil(bytes / 1024)} KB`;
+}
 
 interface AdminResource {
   id: string;
@@ -61,7 +76,20 @@ const STATUS_TONE: Record<ResourceStatus, "success" | "warning" | "neutral"> = {
 const REQUEST_LABEL: Record<AdminRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
 const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
 
-const EMPTY_FORM = { title: "", meta: "", description: "", category: "", delivery_mode: "web_app" as DeliveryMode, cta_url: "", cover_image_url: "", is_free: true };
+const EMPTY_FORM = {
+  title: "",
+  meta: "",
+  description: "",
+  category: "",
+  delivery_mode: "web_app" as DeliveryMode,
+  cta_url: "",
+  cover_image_url: "",
+  is_free: true,
+  file_path: "",
+  file_name: "",
+  file_size: 0,
+  file_mime_type: "",
+};
 
 export default function AdminConsolePage() {
   const router = useRouter();
@@ -80,6 +108,8 @@ export default function AdminConsolePage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [pendingResourceId, setPendingResourceId] = useState<string | null>(null);
 
   const reloadAdminData = async () => {
     const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }] = await Promise.all([
@@ -125,6 +155,7 @@ export default function AdminConsolePage() {
 
   const openCreateForm = () => {
     setEditingId(null);
+    setPendingResourceId(crypto.randomUUID());
     setForm(EMPTY_FORM);
     setFormError(null);
     setShowForm(true);
@@ -133,7 +164,7 @@ export default function AdminConsolePage() {
   const openEditForm = async (id: string) => {
     const { data, error } = await supabase
       .from("resources")
-      .select("title, meta, description, category, delivery_mode, cta_url, cover_image_url, is_free")
+      .select("title, meta, description, category, delivery_mode, cta_url, cover_image_url, is_free, file_path, file_name, file_size, file_mime_type")
       .eq("id", id)
       .single();
     if (error || !data) {
@@ -141,6 +172,7 @@ export default function AdminConsolePage() {
       return;
     }
     setEditingId(id);
+    setPendingResourceId(null);
     setForm({
       title: data.title ?? "",
       meta: data.meta ?? "",
@@ -150,6 +182,10 @@ export default function AdminConsolePage() {
       cta_url: data.cta_url ?? "",
       cover_image_url: data.cover_image_url ?? "",
       is_free: data.is_free,
+      file_path: data.file_path ?? "",
+      file_name: data.file_name ?? "",
+      file_size: data.file_size ?? 0,
+      file_mime_type: data.file_mime_type ?? "",
     });
     setFormError(null);
     setShowForm(true);
@@ -177,6 +213,51 @@ export default function AdminConsolePage() {
     setUploadingCover(false);
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!ALLOWED_FILE_EXTENSIONS[file.type]) {
+      setFormError("รองรับเฉพาะไฟล์ PDF, DOCX, PPTX, XLSX และ ZIP เท่านั้น");
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setFormError("ไฟล์ต้องมีขนาดไม่เกิน 50MB");
+      return;
+    }
+    const resourceId = editingId ?? pendingResourceId;
+    if (!resourceId) {
+      setFormError("เกิดข้อผิดพลาด กรุณาปิดฟอร์มแล้วเปิดใหม่อีกครั้ง");
+      return;
+    }
+    setUploadingFile(true);
+    setFormError(null);
+    if (form.file_path) {
+      await supabase.storage.from("resource-files").remove([form.file_path]);
+    }
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${resourceId}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from("resource-files").upload(path, file, { upsert: false });
+    if (uploadError) {
+      setUploadingFile(false);
+      setFormError(`อัปโหลดไฟล์ไม่สำเร็จ: ${uploadError.message}`);
+      return;
+    }
+    setForm((f) => ({ ...f, file_path: path, file_name: file.name, file_size: file.size, file_mime_type: file.type }));
+    setUploadingFile(false);
+  };
+
+  const handleFileRemove = async () => {
+    if (!form.file_path) return;
+    if (!window.confirm("ลบไฟล์นี้ใช่หรือไม่?")) return;
+    const { error } = await supabase.storage.from("resource-files").remove([form.file_path]);
+    if (error) {
+      setFormError(`ลบไฟล์ไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    setForm((f) => ({ ...f, file_path: "", file_name: "", file_size: 0, file_mime_type: "" }));
+  };
+
   const handleSaveResource = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -194,10 +275,14 @@ export default function AdminConsolePage() {
       cta_url: form.cta_url.trim() || null,
       cover_image_url: form.cover_image_url.trim() || null,
       is_free: form.is_free,
+      file_path: form.file_path || null,
+      file_name: form.file_name || null,
+      file_size: form.file_size || null,
+      file_mime_type: form.file_mime_type || null,
     };
     const { error } = editingId
       ? await supabase.from("resources").update(payload).eq("id", editingId)
-      : await supabase.from("resources").insert({ ...payload, status: "draft", created_by: adminId });
+      : await supabase.from("resources").insert({ ...payload, id: pendingResourceId, status: "draft", created_by: adminId });
     setSaving(false);
     if (error) {
       setFormError(error.message);
@@ -205,6 +290,7 @@ export default function AdminConsolePage() {
     }
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setPendingResourceId(null);
     setShowForm(false);
     await reloadAdminData();
   };
@@ -212,9 +298,13 @@ export default function AdminConsolePage() {
   const handleStatusChange = async (id: string, status: ResourceStatus) => {
     if (status === "published") {
       const target = resources.find((r) => r.id === id);
-      const { data: full } = await supabase.from("resources").select("cover_image_url").eq("id", id).single();
+      const { data: full } = await supabase.from("resources").select("cover_image_url, file_path, cta_url").eq("id", id).single();
       if (!full?.cover_image_url) {
         window.alert(`ยังเผยแพร่ "${target?.title ?? ""}" ไม่ได้ — ต้องมีรูปปกก่อนเผยแพร่`);
+        return;
+      }
+      if (!full.file_path && !full.cta_url) {
+        window.alert(`ยังเผยแพร่ "${target?.title ?? ""}" ไม่ได้ — ต้องมีไฟล์หรือลิงก์ปลายทางอย่างน้อยหนึ่งอย่าง`);
         return;
       }
     }
@@ -228,10 +318,14 @@ export default function AdminConsolePage() {
 
   const handleDeleteResource = async (id: string, title: string) => {
     if (!window.confirm(`ลบ "${title}" ใช่หรือไม่? ลบแล้วกู้คืนไม่ได้`)) return;
+    const { data: full } = await supabase.from("resources").select("file_path").eq("id", id).single();
     const { error } = await supabase.from("resources").delete().eq("id", id);
     if (error) {
       window.alert(`ลบไม่สำเร็จ: ${error.message}`);
       return;
+    }
+    if (full?.file_path) {
+      await supabase.storage.from("resource-files").remove([full.file_path]);
     }
     await reloadAdminData();
   };
@@ -373,10 +467,26 @@ export default function AdminConsolePage() {
                         { value: "web_app", label: "เว็บแอป (เปิดใช้งาน)" },
                         { value: "google_template", label: "Google Template (ทำสำเนา)" },
                         { value: "google_form", label: "Google Form (เปิดแบบฟอร์ม)" },
+                        { value: "file_download", label: "ไฟล์ดาวน์โหลด" },
                       ]}
                     />
                   </div>
                   <Input label="ลิงก์ (URL ปลายทาง)" value={form.cta_url} onChange={(e) => setForm({ ...form, cta_url: e.target.value })} placeholder="https://..." />
+                  <div className="kru-field">
+                    <label className="kru-field__label">ไฟล์สื่อ (PDF, DOCX, PPTX, XLSX, ZIP — ไม่เกิน 50MB, ต้องมีไฟล์หรือลิงก์อย่างน้อยหนึ่งอย่างก่อนเผยแพร่)</label>
+                    {form.file_name && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--sp-3)", fontSize: "var(--fs-14)" }}>
+                        <span>
+                          {form.file_name} ({formatFileSize(form.file_size)})
+                        </span>
+                        <button type="button" onClick={handleFileRemove} style={{ border: "none", background: "transparent", color: "var(--status-danger-fg)", cursor: "pointer", padding: 4 }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
+                    <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.zip" onChange={handleFileUpload} disabled={uploadingFile} />
+                    {uploadingFile && <span style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>กำลังอัปโหลด...</span>}
+                  </div>
                   <div className="kru-field">
                     <label className="kru-field__label">รูปปก (จำเป็นก่อนเผยแพร่)</label>
                     {form.cover_image_url && (

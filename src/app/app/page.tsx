@@ -19,6 +19,7 @@ import {
   submitUpgradeRequest,
   resourceIcon,
   resourceTint,
+  getSignedFileUrl,
   type Resource,
   type Plan,
   type Profile,
@@ -139,9 +140,18 @@ export default function TeacherAppPage() {
     setView("detail");
   };
 
-  const openResource = (r: Resource) => {
+  const openResource = async (r: Resource) => {
     if (!r.free) {
       setView("plans");
+      return;
+    }
+    if (r.affordance === "file_download" && r.filePath) {
+      const url = await getSignedFileUrl(supabase, r.filePath);
+      if (!url) {
+        window.alert("ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
     if (r.ctaUrl) window.open(r.ctaUrl, "_blank", "noopener,noreferrer");

@@ -5,12 +5,13 @@ import { Bookmark, Lock, type LucideIcon } from "lucide-react";
 import { Badge } from "./Badge";
 import { Tag } from "./Badge";
 
-export type ResourceAffordance = "web_app" | "google_template" | "google_form";
+export type ResourceAffordance = "web_app" | "google_template" | "google_form" | "file_download";
 
 const AFFORDANCE_LABEL: Record<ResourceAffordance, string> = {
   web_app: "เปิดใช้งาน",
   google_template: "ทำสำเนาไปยัง Drive ของฉัน",
   google_form: "เปิดแบบฟอร์ม",
+  file_download: "ดาวน์โหลดไฟล์",
 };
 
 const TINTS: Record<string, { bg: string; fg: string }> = {

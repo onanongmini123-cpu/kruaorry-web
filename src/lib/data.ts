@@ -1,4 +1,4 @@
-import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck } from "lucide-react";
+import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck, FileDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
@@ -18,6 +18,9 @@ export interface Resource {
   coverImageUrl: string | null;
   tags: string[];
   free: boolean;
+  filePath: string | null;
+  fileName: string | null;
+  fileSize: number | null;
 }
 
 export interface Plan {
@@ -40,12 +43,14 @@ const ICON_BY_MODE: Record<ResourceAffordance, LucideIcon> = {
   web_app: Gamepad2,
   google_template: FileSpreadsheet,
   google_form: ClipboardCheck,
+  file_download: FileDown,
 };
 
 const TINT_BY_MODE: Record<ResourceAffordance, "purple" | "pink" | "blue"> = {
   web_app: "pink",
   google_template: "blue",
   google_form: "purple",
+  file_download: "blue",
 };
 
 export function resourceIcon(affordance: ResourceAffordance): LucideIcon {
@@ -59,7 +64,7 @@ export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
   const { data, error } = await supabase
     .from("resources")
-    .select("id, title, meta, description, category, delivery_mode, cta_url, cover_image_url, tags, is_free")
+    .select("id, title, meta, description, category, delivery_mode, cta_url, cover_image_url, tags, is_free, file_path, file_name, file_size")
     .eq("status", "published")
     .order("created_at", { ascending: false });
 
@@ -77,7 +82,24 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     coverImageUrl: r.cover_image_url,
     tags: r.tags ?? [],
     free: r.is_free,
+    filePath: r.file_path,
+    fileName: r.file_name,
+    fileSize: r.file_size,
   }));
+}
+
+const RESOURCE_FILES_BUCKET = "resource-files";
+
+// Generates a short-lived signed URL for a private resource file. RLS on
+// storage.objects enforces publish status + plan entitlement server-side;
+// this only succeeds if the caller is actually allowed to read the object.
+export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, expiresInSeconds = 60): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds);
+  if (error) {
+    console.error(`getSignedFileUrl failed: ${error.message}`);
+    return null;
+  }
+  return data.signedUrl;
 }
 
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
