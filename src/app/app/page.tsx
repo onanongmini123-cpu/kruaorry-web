@@ -154,10 +154,16 @@ export default function TeacherAppPage() {
       // The URL is same-origin and known synchronously, so window.open()
       // happens immediately inside this click handler — no async gap, so
       // no risk of a blank tab left hanging (see downloadWindow.ts for why
-      // that used to happen). The route itself does the async entitlement
-      // + signed-URL work and answers with a redirect or a Thai error page.
-      const result = openDownloadInNewTab(`/api/resources/${r.id}/download`, {
-        open: (url, target) => window.open(url, target),
+      // that used to happen). This targets /download/[id] rather than the
+      // API route directly: that page fetches the file as a Blob (the API
+      // route itself is unchanged, still doing all the async entitlement
+      // + signing work and redirecting) and closes its own tab once the
+      // whole file is in hand — see triggerBlobDownload.ts for why that's
+      // the deterministic point to do it from, and why a plain redirect
+      // straight to the file can't reliably self-close a tab at all.
+      const target = `/download/${r.id}${r.fileName ? `?name=${encodeURIComponent(r.fileName)}` : ""}`;
+      const result = openDownloadInNewTab(target, {
+        open: (url, tab) => window.open(url, tab),
         assign: (url) => window.location.assign(url),
       });
       if (result.outcome === "failed") {
