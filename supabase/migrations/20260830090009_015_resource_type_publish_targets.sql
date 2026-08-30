@@ -1,6 +1,6 @@
--- DRAFT — NOT YET APPLIED to the production project as of this commit.
--- Reviewed alongside the app-side changes; apply after sign-off with:
---   supabase db push   (or the equivalent apply_migration call)
+-- Applied to the live project (ghwpmtmbqtchsrnagoir) as version
+-- 20260830090009, after manual review and a passing live upload test on
+-- the Vercel preview for commit acbdf2afaa74f08bb3a2f1fd44537d35ce653174.
 --
 -- Tightens the publish requirement added in 014_resource_file_uploads:
 -- that migration only required "a cover image, and a file OR a link" for
