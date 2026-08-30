@@ -19,7 +19,6 @@ import {
   submitUpgradeRequest,
   resourceIcon,
   resourceTint,
-  getSignedFileUrl,
   type Resource,
   type Plan,
   type Profile,
@@ -27,6 +26,7 @@ import {
   type UpgradeRequest,
 } from "@/lib/data";
 import { canAccessResource } from "@/lib/entitlement";
+import { openDownloadInNewTab } from "@/lib/downloadWindow";
 
 export const dynamic = "force-dynamic";
 
@@ -145,32 +145,32 @@ export default function TeacherAppPage() {
   // status "published", so it's hardcoded here rather than carried on Resource.
   const canAccess = (r: Resource) => canAccessResource({ status: "published", isFree: r.free }, profile && { plan: profile.plan, role: profile.role });
 
-  const openResource = async (r: Resource) => {
+  const openResource = (r: Resource) => {
     if (!canAccess(r)) {
       setView("plans");
       return;
     }
     if (r.affordance === "file_download" && r.filePath) {
-      // Open the tab synchronously, inside the click's own event handler,
-      // so Safari/iOS still recognizes it as a user gesture once the await
-      // below resolves — filling in the URL later (rather than calling
-      // window.open post-await) is what keeps this from being blocked as
-      // a popup.
-      const tab = window.open("", "_blank");
-      const url = await getSignedFileUrl(supabase, r.filePath, r.fileName);
-      if (!url) {
-        tab?.close();
+      // The URL is same-origin and known synchronously, so window.open()
+      // happens immediately inside this click handler — no async gap, so
+      // no risk of a blank tab left hanging (see downloadWindow.ts for why
+      // that used to happen). This targets /download/[id] rather than the
+      // API route directly: that page fetches the file as a Blob (the API
+      // route itself is unchanged, still doing all the async entitlement
+      // + signing work and redirecting) and closes its own tab once the
+      // whole file is in hand — see triggerBlobDownload.ts for why that's
+      // the deterministic point to do it from, and why a plain redirect
+      // straight to the file can't reliably self-close a tab at all.
+      const target = `/download/${r.id}${r.fileName ? `?name=${encodeURIComponent(r.fileName)}` : ""}`;
+      const result = openDownloadInNewTab(target, {
+        open: (url, tab) => window.open(url, tab),
+        assign: (url) => window.location.assign(url),
+      });
+      if (result.outcome === "failed") {
+        // The real cause (never the URL itself — it's our own same-origin
+        // route, not a signed URL) is logged structured, not swallowed.
+        console.error("[download] could not open or navigate to the download route", { openError: result.openError, assignError: result.assignError });
         window.alert("ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-        return;
-      }
-      if (tab) {
-        tab.location.href = url;
-      } else {
-        // Gesture wasn't recognized and the tab never opened — falling back
-        // to a same-tab navigation still works, since the signed URL's
-        // Content-Disposition triggers a download rather than losing the
-        // app (see getSignedFileUrl).
-        window.location.assign(url);
       }
       return;
     }

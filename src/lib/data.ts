@@ -2,6 +2,8 @@ import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck, FileDown } from "l
 import type { LucideIcon } from "lucide-react";
 import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { withTimeout } from "@/lib/asyncTimeout";
+import { redactSensitive } from "@/lib/redact";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -90,20 +92,44 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
 
 const RESOURCE_FILES_BUCKET = "resource-files";
 
+export interface SignedFileUrlResult {
+  url: string | null;
+  error: string | null;
+}
+
 // Generates a short-lived signed URL for a private resource file. RLS on
 // storage.objects enforces publish status + plan entitlement server-side;
 // this only succeeds if the caller is actually allowed to read the object.
 // `download` sets Content-Disposition: attachment on Supabase's response,
-// so navigating to the URL downloads the file instead of rendering it —
-// this works even cross-origin (unlike an <a download> attribute), which
-// is what lets the caller avoid a same-tab SPA navigation.
-export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<string | null> {
-  const { data, error } = await supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true });
-  if (error) {
-    console.error(`getSignedFileUrl failed: ${error.message}`);
-    return null;
+// so navigating to the URL downloads the file instead of rendering it.
+//
+// Called from the /api/resources/[id]/download route handler (server-side,
+// with a per-request client bound to the caller's own session — RLS still
+// applies exactly as it would client-side, no service-role key involved).
+// Previously this was called directly from the browser before navigating a
+// pre-opened blank tab; that pattern turned out to be unreliable (an async
+// gap between window.open() and setting its location gets treated as an
+// untrusted navigation by some browsers, and a hang here left the blank tab
+// stuck forever with no feedback) — see the route handler for the fix.
+//
+// Never throws (withTimeout bounds and catches the underlying call), and
+// never logs or returns the resulting signed URL itself, or any part of an
+// underlying error that might embed it — only the input path and a
+// redacted, generic error description (see redact.ts).
+export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<SignedFileUrlResult> {
+  const result = await withTimeout(supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true }), "createSignedUrl");
+
+  if (!result.ok) {
+    console.error(`getSignedFileUrl failed for path=${filePath}: ${result.reason}`);
+    return { url: null, error: result.reason };
   }
-  return data.signedUrl;
+  const { data, error } = result.value;
+  if (error || !data) {
+    const message = redactSensitive(error?.message ?? "no data returned");
+    console.error(`getSignedFileUrl failed for path=${filePath}: ${message}`);
+    return { url: null, error: message };
+  }
+  return { url: data.signedUrl, error: null };
 }
 
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
