@@ -19,7 +19,6 @@ import {
   submitUpgradeRequest,
   resourceIcon,
   resourceTint,
-  getSignedFileUrl,
   type Resource,
   type Plan,
   type Profile,
@@ -27,6 +26,7 @@ import {
   type UpgradeRequest,
 } from "@/lib/data";
 import { canAccessResource } from "@/lib/entitlement";
+import { openDownloadInNewTab } from "@/lib/downloadWindow";
 
 export const dynamic = "force-dynamic";
 
@@ -145,32 +145,23 @@ export default function TeacherAppPage() {
   // status "published", so it's hardcoded here rather than carried on Resource.
   const canAccess = (r: Resource) => canAccessResource({ status: "published", isFree: r.free }, profile && { plan: profile.plan, role: profile.role });
 
-  const openResource = async (r: Resource) => {
+  const openResource = (r: Resource) => {
     if (!canAccess(r)) {
       setView("plans");
       return;
     }
     if (r.affordance === "file_download" && r.filePath) {
-      // Open the tab synchronously, inside the click's own event handler,
-      // so Safari/iOS still recognizes it as a user gesture once the await
-      // below resolves — filling in the URL later (rather than calling
-      // window.open post-await) is what keeps this from being blocked as
-      // a popup.
-      const tab = window.open("", "_blank");
-      const url = await getSignedFileUrl(supabase, r.filePath, r.fileName);
-      if (!url) {
-        tab?.close();
+      // The URL is same-origin and known synchronously, so window.open()
+      // happens immediately inside this click handler — no async gap, so
+      // no risk of a blank tab left hanging (see downloadWindow.ts for why
+      // that used to happen). The route itself does the async entitlement
+      // + signed-URL work and answers with a redirect or a Thai error page.
+      const outcome = openDownloadInNewTab(`/api/resources/${r.id}/download`, {
+        open: (url, target, features) => window.open(url, target, features),
+        assign: (url) => window.location.assign(url),
+      });
+      if (outcome === "failed") {
         window.alert("ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-        return;
-      }
-      if (tab) {
-        tab.location.href = url;
-      } else {
-        // Gesture wasn't recognized and the tab never opened — falling back
-        // to a same-tab navigation still works, since the signed URL's
-        // Content-Disposition triggers a download rather than losing the
-        // app (see getSignedFileUrl).
-        window.location.assign(url);
       }
       return;
     }

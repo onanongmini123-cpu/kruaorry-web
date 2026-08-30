@@ -89,21 +89,58 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
 }
 
 const RESOURCE_FILES_BUCKET = "resource-files";
+const SIGNED_URL_TIMEOUT_MS = 10000;
+
+export interface SignedFileUrlResult {
+  url: string | null;
+  error: string | null;
+}
 
 // Generates a short-lived signed URL for a private resource file. RLS on
 // storage.objects enforces publish status + plan entitlement server-side;
 // this only succeeds if the caller is actually allowed to read the object.
 // `download` sets Content-Disposition: attachment on Supabase's response,
-// so navigating to the URL downloads the file instead of rendering it —
-// this works even cross-origin (unlike an <a download> attribute), which
-// is what lets the caller avoid a same-tab SPA navigation.
-export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<string | null> {
-  const { data, error } = await supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true });
-  if (error) {
-    console.error(`getSignedFileUrl failed: ${error.message}`);
-    return null;
+// so navigating to the URL downloads the file instead of rendering it.
+//
+// Called from the /api/resources/[id]/download route handler (server-side,
+// with a per-request client bound to the caller's own session — RLS still
+// applies exactly as it would client-side, no service-role key involved).
+// Previously this was called directly from the browser before navigating a
+// pre-opened blank tab; that pattern turned out to be unreliable (an async
+// gap between window.open() and setting its location gets treated as an
+// untrusted navigation by some browsers, and a hang here left the blank tab
+// stuck forever with no feedback) — see the route handler for the fix.
+//
+// Never throws: a thrown/rejected error from the underlying call, or the
+// call simply taking too long, both come back as a normal error result
+// instead of hanging or propagating an unhandled rejection. Never logs the
+// resulting signed URL itself (it's a bearer credential) — only the input
+// path and a generic error description.
+export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<SignedFileUrlResult> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ timedOut: true }>((resolve) => {
+    timeoutId = setTimeout(() => resolve({ timedOut: true }), SIGNED_URL_TIMEOUT_MS);
+  });
+
+  try {
+    const outcome = await Promise.race([supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true }), timeout]);
+
+    if ("timedOut" in outcome) {
+      console.error(`getSignedFileUrl timed out after ${SIGNED_URL_TIMEOUT_MS}ms for path=${filePath}`);
+      return { url: null, error: "timeout" };
+    }
+    if (outcome.error || !outcome.data) {
+      console.error(`getSignedFileUrl failed for path=${filePath}: ${outcome.error?.message ?? "no data returned"}`);
+      return { url: null, error: outcome.error?.message ?? "no data returned" };
+    }
+    return { url: outcome.data.signedUrl, error: null };
+  } catch (thrown) {
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    console.error(`getSignedFileUrl threw for path=${filePath}: ${message}`);
+    return { url: null, error: message };
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return data.signedUrl;
 }
 
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
