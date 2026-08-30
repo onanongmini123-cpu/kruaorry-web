@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { triggerBlobDownload, shouldCloseTabAfterDownload, thaiDownloadErrorMessage } from "@/lib/triggerBlobDownload";
+import { AUTO_CLOSE_PARAM } from "@/lib/downloadWindow";
 
 // This page only exists so the tab window.open() targets can close itself
 // deterministically once the file is fully downloaded — see
@@ -16,13 +17,19 @@ export default function DownloadPage() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"working" | "done" | "error">("working");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Read before this page nulls its own window.opener (reverse-tabnabbing
-  // mitigation) — a tab the user navigated to directly (the same-tab
-  // fallback when a popup is blocked) has no opener, and window.close()
-  // on it would be refused by the browser anyway.
-  const hadOpenerRef = useRef(typeof window !== "undefined" && window.opener != null);
+  // Whether this tab should try to close itself once the download finishes
+  // — set from the AUTO_CLOSE_PARAM marker downloadWindow.ts adds only to
+  // the popup URL (never the same-tab fallback URL), not from
+  // window.opener: the parent tab already nulls this popup's window.opener
+  // (see downloadWindow.ts) before this page's own JS ever runs, so by the
+  // time any effect here could read it, it's always null — on every
+  // successful popup open, not just the fallback path. Reading it as the
+  // close signal made the auto-close path unreachable.
+  const openedAsPopup = searchParams.get(AUTO_CLOSE_PARAM) === "1";
 
   useEffect(() => {
+    // Reverse-tabnabbing mitigation, independent of the auto-close signal
+    // above: sever this popup's own back-reference to the opener too.
     try {
       if (window.opener) window.opener = null;
     } catch {
@@ -40,18 +47,30 @@ export default function DownloadPage() {
       appendToBody: (el) => document.body.appendChild(el as unknown as HTMLAnchorElement),
       removeFromBody: (el) => (el as unknown as HTMLAnchorElement).remove(),
       wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    }).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) {
+    })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setStatus("error");
+          setErrorMessage(thaiDownloadErrorMessage(result.status));
+          return;
+        }
+        setStatus("done");
+        if (shouldCloseTabAfterDownload(openedAsPopup, result)) {
+          window.close();
+        }
+      })
+      .catch((thrown) => {
+        // triggerBlobDownload itself always resolves, never rejects — this
+        // is a last-resort safety net so a bug there (or in one of the DOM
+        // deps above) leaves the user an error to act on instead of a tab
+        // stuck on "กำลังดาวน์โหลดไฟล์..." forever with an unhandled
+        // rejection in the console.
+        if (cancelled) return;
+        console.error("[download] unexpected failure", thrown);
         setStatus("error");
-        setErrorMessage(thaiDownloadErrorMessage(result.status));
-        return;
-      }
-      setStatus("done");
-      if (shouldCloseTabAfterDownload(hadOpenerRef.current, result)) {
-        window.close();
-      }
-    });
+        setErrorMessage(thaiDownloadErrorMessage(undefined));
+      });
 
     return () => {
       cancelled = true;
@@ -77,9 +96,10 @@ export default function DownloadPage() {
           </>
         )}
         {status === "done" && (
-          // Only reachable when this tab couldn't close itself (opened
-          // directly, not via window.open()) — the script-opened case
-          // closes automatically and never renders this.
+          // Normally only reachable on the same-tab fallback path
+          // (openedAsPopup false — window.close() is never attempted there)
+          // — the popup path closes itself automatically and only falls
+          // through to render this if the browser refuses window.close().
           <>
             <p>ดาวน์โหลดเสร็จแล้ว</p>
             <a href="/app" style={{ color: "var(--brand)" }}>

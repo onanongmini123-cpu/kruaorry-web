@@ -40,7 +40,10 @@ describe("triggerBlobDownload", () => {
     // The click must happen only once the file is fully buffered, and the
     // object URL must not be revoked until after the wait margin — never
     // before the click, which would risk the browser reading a dead URL.
-    expect(calls).toEqual(["fetch", "createObjectUrl", "append", "click", "remove", "wait", "revokeObjectUrl"]);
+    // remove/revoke both happen last, together, in a single cleanup step —
+    // harmless to defer past the wait, since click()'s synchronous handling
+    // of the download has already completed by then regardless.
+    expect(calls).toEqual(["fetch", "createObjectUrl", "append", "click", "wait", "remove", "revokeObjectUrl"]);
     expect(deps.wait).toHaveBeenCalledWith(REVOKE_MARGIN_MS);
   });
 
@@ -95,6 +98,130 @@ describe("triggerBlobDownload", () => {
     expect(deps.createObjectUrl).not.toHaveBeenCalled();
     expect(deps.createAnchor).not.toHaveBeenCalled();
     expect(deps.revokeObjectUrl).not.toHaveBeenCalled();
+  });
+
+  // Regression coverage: the DOM/cleanup stage (createObjectUrl through the
+  // post-click wait) previously ran with no try/catch at all. Any of these
+  // steps throwing left the returned promise *rejecting* instead of
+  // resolving with { ok: false } — and the download page only ever attaches
+  // a plain .then(), so that became an unhandled rejection that left the
+  // tab stuck on "กำลังดาวน์โหลดไฟล์..." forever. Every one of these must
+  // resolve with { ok: false }, and — since the file was already fully
+  // fetched by this point — must still attempt cleanup (best-effort, so a
+  // cleanup failure itself must not throw or skip the other cleanup step).
+  it("resolves with { ok: false } (never rejects) when createObjectUrl throws, and skips anchor cleanup since no anchor was ever created", async () => {
+    const { deps, calls } = fakeDeps({
+      createObjectUrl: vi.fn(() => {
+        throw new Error("createObjectURL quota exceeded");
+      }),
+    });
+
+    const result = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", deps);
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/quota exceeded/) });
+    expect(deps.createAnchor).not.toHaveBeenCalled();
+    expect(deps.removeFromBody).not.toHaveBeenCalled();
+    expect(deps.revokeObjectUrl).not.toHaveBeenCalled();
+    expect(calls).toEqual(["fetch"]);
+  });
+
+  it("resolves with { ok: false } and still revokes the object URL when createAnchor throws", async () => {
+    const { deps } = fakeDeps({
+      createAnchor: vi.fn(() => {
+        throw new Error("anchor creation failed");
+      }),
+    });
+
+    const result = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", deps);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/anchor creation failed/);
+    expect(deps.revokeObjectUrl).toHaveBeenCalledTimes(1);
+    expect(deps.removeFromBody).not.toHaveBeenCalled(); // no anchor ever existed to remove
+  });
+
+  it("resolves with { ok: false } and still cleans up (remove + revoke, exactly once each) when appendToBody throws", async () => {
+    const { deps } = fakeDeps({
+      appendToBody: vi.fn(() => {
+        throw new Error("appendChild failed");
+      }),
+    });
+
+    const result = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", deps);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/appendChild failed/);
+    expect(deps.removeFromBody).toHaveBeenCalledTimes(1);
+    expect(deps.revokeObjectUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves with { ok: false } and still cleans up (remove + revoke, exactly once each) when anchor.click() throws", async () => {
+    const anchor: AnchorLike = {
+      href: "",
+      download: "",
+      click: vi.fn(() => {
+        throw new Error("click blocked by popup policy");
+      }),
+    };
+    const { deps } = fakeDeps({ createAnchor: vi.fn(() => anchor) });
+
+    const result = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", deps);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/click blocked/);
+    expect(deps.removeFromBody).toHaveBeenCalledTimes(1);
+    expect(deps.revokeObjectUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves with { ok: false } and still cleans up when the post-click wait rejects", async () => {
+    const { deps } = fakeDeps({
+      wait: vi.fn(async () => {
+        throw new Error("timer failure");
+      }),
+    });
+
+    const result = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", deps);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/timer failure/);
+    expect(deps.removeFromBody).toHaveBeenCalledTimes(1);
+    expect(deps.revokeObjectUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not throw, and still revokes the object URL, when removeFromBody itself throws during cleanup", async () => {
+    const { deps } = fakeDeps({
+      removeFromBody: vi.fn(() => {
+        throw new Error("remove failed — node already detached");
+      }),
+    });
+
+    const result = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", deps);
+
+    // The download itself succeeded (click already happened) — a cosmetic
+    // cleanup failure must not turn a real success into a reported failure.
+    expect(result).toEqual({ ok: true });
+    expect(deps.revokeObjectUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not throw when revokeObjectUrl itself throws during cleanup, on either the success or failure path", async () => {
+    const { deps: successDeps } = fakeDeps({
+      revokeObjectUrl: vi.fn(() => {
+        throw new Error("revoke failed");
+      }),
+    });
+    await expect(triggerBlobDownload("/api/resources/r1/download", "x.pdf", successDeps)).resolves.toEqual({ ok: true });
+
+    const { deps: failureDeps } = fakeDeps({
+      revokeObjectUrl: vi.fn(() => {
+        throw new Error("revoke failed");
+      }),
+      wait: vi.fn(async () => {
+        throw new Error("timer failure");
+      }),
+    });
+    const failureResult = await triggerBlobDownload("/api/resources/r1/download", "x.pdf", failureDeps);
+    expect(failureResult.ok).toBe(false);
+    expect(failureResult.error).toMatch(/timer failure/); // the real cause, not masked by the cleanup failure
   });
 });
 

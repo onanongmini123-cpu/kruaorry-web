@@ -28,6 +28,31 @@
 // genuine block apart from success. The download route itself also sends
 // `Referrer-Policy: no-referrer`, so the destination never learns this
 // page's URL regardless of the opener relationship.
+//
+// That same `win.opener = null` above runs in THIS (parent) tab, before the
+// popup's own JS ever gets to run — and it mutates the real window.opener
+// property on the child, not a copy. So by the time /download/[id] mounts
+// and could check `window.opener`, it has already been nulled and always
+// reads as falsy, even on a completely normal, successful popup open. A
+// previous version of this module relied on exactly that check to decide
+// whether the download page should try to close its own tab, which made
+// the auto-close path dead code — it could never fire. Since the JS-level
+// opener relationship is deliberately destroyed for security regardless of
+// outcome, it cannot double as the "was I opened as a popup" signal. A
+// marker on the URL itself survives that nulling because it's read from
+// the page's own location, not from window.opener.
+
+export const AUTO_CLOSE_PARAM = "autoclose";
+
+// Appended only to the URL handed to window.open() — never to the same-tab
+// fallback URL. The fallback navigates the user's own existing tab (they
+// were never looking at a popup), so it must never attempt to close itself
+// — browsers refuse window.close() there regardless, but the download page
+// also uses this marker's absence to decide which "finished" UI to render.
+function withAutoCloseMarker(url: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${AUTO_CLOSE_PARAM}=1`;
+}
 
 export interface OpenedWindow {
   opener: unknown;
@@ -59,7 +84,7 @@ export function openDownloadInNewTab(url: string, opener: WindowOpener): OpenDow
   let win: OpenedWindow | null = null;
   let openError: string | undefined;
   try {
-    win = opener.open(url, "_blank");
+    win = opener.open(withAutoCloseMarker(url), "_blank");
   } catch (thrown) {
     win = null;
     openError = thrown instanceof Error ? thrown.message : String(thrown);

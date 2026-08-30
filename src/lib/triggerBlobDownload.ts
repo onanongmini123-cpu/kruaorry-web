@@ -60,12 +60,16 @@ export interface BlobDownloadResult {
 
 export const REVOKE_MARGIN_MS = 200;
 
+function describeError(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
+}
+
 export async function triggerBlobDownload(url: string, fileName: string | null, deps: BlobDownloadDeps): Promise<BlobDownloadResult> {
   let response: FetchResponseLike;
   try {
     response = await deps.fetchImpl(url, { referrerPolicy: "no-referrer" });
   } catch (thrown) {
-    return { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
+    return { ok: false, error: describeError(thrown) };
   }
 
   if (!response.ok) {
@@ -76,31 +80,61 @@ export async function triggerBlobDownload(url: string, fileName: string | null, 
   try {
     blob = await response.blob();
   } catch (thrown) {
-    return { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
+    return { ok: false, error: describeError(thrown) };
   }
 
-  const objectUrl = deps.createObjectUrl(blob);
-  const anchor = deps.createAnchor();
-  anchor.href = objectUrl;
-  if (fileName) anchor.download = fileName;
-  deps.appendToBody(anchor);
-  anchor.click();
-  deps.removeFromBody(anchor);
-
-  await deps.wait(REVOKE_MARGIN_MS);
-  deps.revokeObjectUrl(objectUrl);
-
-  return { ok: true };
+  // From here on, a failure at any step (creating the object URL, the
+  // anchor, appending/clicking/removing it, or the post-click wait) must
+  // still resolve with { ok: false } rather than reject — this function's
+  // caller only ever attaches a plain .then(), so an uncaught rejection
+  // here becomes an unhandled promise rejection that leaves the download
+  // page stuck showing "กำลังดาวน์โหลดไฟล์...' forever. Cleanup runs
+  // exactly once, in `finally`, and is itself best-effort: a failure to
+  // remove the anchor or revoke the object URL must not mask the real
+  // outcome or skip the other cleanup step.
+  let objectUrl: string | null = null;
+  let anchor: AnchorLike | null = null;
+  try {
+    objectUrl = deps.createObjectUrl(blob);
+    anchor = deps.createAnchor();
+    anchor.href = objectUrl;
+    if (fileName) anchor.download = fileName;
+    deps.appendToBody(anchor);
+    anchor.click();
+    await deps.wait(REVOKE_MARGIN_MS);
+    return { ok: true };
+  } catch (thrown) {
+    return { ok: false, error: describeError(thrown) };
+  } finally {
+    if (anchor) {
+      try {
+        deps.removeFromBody(anchor);
+      } catch {
+        // best-effort — the anchor is a detached/inert node either way
+      }
+    }
+    if (objectUrl) {
+      try {
+        deps.revokeObjectUrl(objectUrl);
+      } catch {
+        // best-effort — an unrevoked blob: URL outliving the tab is
+        // harmless compared to letting a cleanup failure mask the real
+        // download outcome
+      }
+    }
+  }
 }
 
-// A tab should only try to close itself if it was actually opened via
-// script (window.opener was non-null at mount, before it gets nulled for
-// the reverse-tabnabbing mitigation) — the same-tab fallback path (popup
-// blocked) navigates the user's existing tab here, and window.close()
-// on a tab the user opened themselves is refused by the browser anyway,
-// so attempting it there would just be confusing dead code.
-export function shouldCloseTabAfterDownload(hadOpener: boolean, result: BlobDownloadResult): boolean {
-  return hadOpener && result.ok;
+// A tab should only try to close itself if it was actually opened as a
+// popup (see downloadWindow.ts's AUTO_CLOSE_PARAM — NOT window.opener,
+// which this page itself nulls for reverse-tabnabbing before it could ever
+// be read as a signal, and which the parent tab already nulled before that)
+// — the same-tab fallback path (popup blocked) navigates the user's
+// existing tab here, and window.close() on a tab the user opened
+// themselves is refused by the browser anyway, so attempting it there
+// would just be confusing dead code.
+export function shouldCloseTabAfterDownload(openedAsPopup: boolean, result: BlobDownloadResult): boolean {
+  return openedAsPopup && result.ok;
 }
 
 // Mirrors the Thai messages the /api/resources/[id]/download route itself
