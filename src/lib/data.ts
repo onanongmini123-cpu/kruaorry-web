@@ -2,6 +2,8 @@ import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck, FileDown } from "l
 import type { LucideIcon } from "lucide-react";
 import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { withTimeout } from "@/lib/asyncTimeout";
+import { redactSensitive } from "@/lib/redact";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -89,7 +91,6 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
 }
 
 const RESOURCE_FILES_BUCKET = "resource-files";
-const SIGNED_URL_TIMEOUT_MS = 10000;
 
 export interface SignedFileUrlResult {
   url: string | null;
@@ -111,36 +112,24 @@ export interface SignedFileUrlResult {
 // untrusted navigation by some browsers, and a hang here left the blank tab
 // stuck forever with no feedback) — see the route handler for the fix.
 //
-// Never throws: a thrown/rejected error from the underlying call, or the
-// call simply taking too long, both come back as a normal error result
-// instead of hanging or propagating an unhandled rejection. Never logs the
-// resulting signed URL itself (it's a bearer credential) — only the input
-// path and a generic error description.
+// Never throws (withTimeout bounds and catches the underlying call), and
+// never logs or returns the resulting signed URL itself, or any part of an
+// underlying error that might embed it — only the input path and a
+// redacted, generic error description (see redact.ts).
 export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<SignedFileUrlResult> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<{ timedOut: true }>((resolve) => {
-    timeoutId = setTimeout(() => resolve({ timedOut: true }), SIGNED_URL_TIMEOUT_MS);
-  });
+  const result = await withTimeout(supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true }), "createSignedUrl");
 
-  try {
-    const outcome = await Promise.race([supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true }), timeout]);
-
-    if ("timedOut" in outcome) {
-      console.error(`getSignedFileUrl timed out after ${SIGNED_URL_TIMEOUT_MS}ms for path=${filePath}`);
-      return { url: null, error: "timeout" };
-    }
-    if (outcome.error || !outcome.data) {
-      console.error(`getSignedFileUrl failed for path=${filePath}: ${outcome.error?.message ?? "no data returned"}`);
-      return { url: null, error: outcome.error?.message ?? "no data returned" };
-    }
-    return { url: outcome.data.signedUrl, error: null };
-  } catch (thrown) {
-    const message = thrown instanceof Error ? thrown.message : String(thrown);
-    console.error(`getSignedFileUrl threw for path=${filePath}: ${message}`);
-    return { url: null, error: message };
-  } finally {
-    clearTimeout(timeoutId);
+  if (!result.ok) {
+    console.error(`getSignedFileUrl failed for path=${filePath}: ${result.reason}`);
+    return { url: null, error: result.reason };
   }
+  const { data, error } = result.value;
+  if (error || !data) {
+    const message = redactSensitive(error?.message ?? "no data returned");
+    console.error(`getSignedFileUrl failed for path=${filePath}: ${message}`);
+    return { url: null, error: message };
+  }
+  return { url: data.signedUrl, error: null };
 }
 
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {

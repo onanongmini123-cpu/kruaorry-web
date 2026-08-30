@@ -1,53 +1,103 @@
 import { describe, expect, it, vi } from "vitest";
-import { openDownloadInNewTab } from "../downloadWindow";
+import { openDownloadInNewTab, type OpenedWindow } from "../downloadWindow";
 
 describe("openDownloadInNewTab", () => {
-  it("returns 'opened' when window.open succeeds, and never touches the same-tab fallback", () => {
-    const opener = { open: vi.fn(() => ({ closed: false })), assign: vi.fn() };
-    const outcome = openDownloadInNewTab("/api/resources/r1/download", opener);
-    expect(outcome).toBe("opened");
-    expect(opener.open).toHaveBeenCalledWith("/api/resources/r1/download", "_blank", "noopener,noreferrer");
+  // Per the WHATWG window.open() algorithm, a call with the noopener flag
+  // set returns null unconditionally, even when the new browsing context
+  // was created successfully — so a spec-correct mock for a *successful*
+  // open must return a real handle only when "noopener" is NOT requested.
+  // This is the exact case that broke the previous version of this module.
+
+  it("returns 'opened' when window.open() returns a handle, and never touches the same-tab fallback", () => {
+    const win: OpenedWindow = { opener: "something" };
+    const opener = { open: vi.fn(() => win), assign: vi.fn() };
+    const result = openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(result.outcome).toBe("opened");
     expect(opener.assign).not.toHaveBeenCalled();
   });
 
-  it("falls back to a same-tab navigation when window.open returns null (popup blocked)", () => {
+  it("does not pass 'noopener' (or any features string) to window.open — that would make success and blocked indistinguishable", () => {
+    const opener = { open: vi.fn(() => ({ opener: null }) as OpenedWindow), assign: vi.fn() };
+    openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(opener.open).toHaveBeenCalledWith("/api/resources/r1/download", "_blank");
+    expect(opener.open).toHaveBeenCalledTimes(1);
+    const call = opener.open.mock.calls[0];
+    expect(call).toHaveLength(2); // exactly (url, target) — no features/noopener argument
+  });
+
+  it("severs window.opener on the newly opened tab as a reverse-tabnabbing mitigation, instead of relying on 'noopener'", () => {
+    const win: OpenedWindow = { opener: "the calling page" };
+    const opener = { open: vi.fn(() => win), assign: vi.fn() };
+    openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(win.opener).toBeNull();
+  });
+
+  it("does not throw, and still reports 'opened', if nulling .opener itself throws (non-configurable property)", () => {
+    const win = {} as OpenedWindow;
+    Object.defineProperty(win, "opener", {
+      configurable: false,
+      get() {
+        return "locked";
+      },
+      set() {
+        throw new Error("Cannot assign to read only property 'opener'");
+      },
+    });
+    const opener = { open: vi.fn(() => win), assign: vi.fn() };
+    expect(() => openDownloadInNewTab("/api/resources/r1/download", opener)).not.toThrow();
+    const result = openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(result.outcome).toBe("opened");
+    expect(opener.assign).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a same-tab navigation when window.open() returns null (a genuine block)", () => {
     const opener = { open: vi.fn(() => null), assign: vi.fn() };
-    const outcome = openDownloadInNewTab("/api/resources/r1/download", opener);
-    expect(outcome).toBe("fallback");
+    const result = openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(result.outcome).toBe("fallback");
     expect(opener.assign).toHaveBeenCalledWith("/api/resources/r1/download");
   });
 
-  it("falls back to a same-tab navigation when window.open throws instead of returning null", () => {
+  it("falls back to a same-tab navigation when window.open() throws, and surfaces the real cause as openError", () => {
     const opener = {
       open: vi.fn(() => {
-        throw new Error("blocked by policy");
+        throw new Error("blocked by extension policy");
       }),
       assign: vi.fn(),
     };
-    const outcome = openDownloadInNewTab("/api/resources/r1/download", opener);
-    expect(outcome).toBe("fallback");
+    const result = openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(result.outcome).toBe("fallback");
+    expect(result.openError).toMatch(/blocked by extension policy/);
     expect(opener.assign).toHaveBeenCalledWith("/api/resources/r1/download");
   });
 
-  // The closest analogue to the old "navigation assignment failure" case:
-  // with no pre-opened blank tab left to clean up (the whole point of this
-  // module is that one is never created), the only failure mode left is
-  // both the popup and the same-tab fallback failing — this must report
-  // "failed" instead of throwing, so the caller can show an error.
-  it("reports 'failed' — never throws — when both the popup and the same-tab fallback fail", () => {
+  it("reports 'failed' — never throws — when both the popup and the same-tab fallback fail, with both real causes attached", () => {
+    const opener = {
+      open: vi.fn(() => {
+        throw new Error("popup rejected");
+      }),
+      assign: vi.fn(() => {
+        throw new Error("navigation blocked");
+      }),
+    };
+    let result;
+    expect(() => {
+      result = openDownloadInNewTab("/api/resources/r1/download", opener);
+    }).not.toThrow();
+    expect(result!.outcome).toBe("failed");
+    expect(result!.openError).toMatch(/popup rejected/);
+    expect(result!.assignError).toMatch(/navigation blocked/);
+  });
+
+  it("reports 'failed' with only assignError when open() returns null (not thrown) and assign() throws", () => {
     const opener = {
       open: vi.fn(() => null),
       assign: vi.fn(() => {
         throw new Error("navigation blocked");
       }),
     };
-    expect(() => openDownloadInNewTab("/api/resources/r1/download", opener)).not.toThrow();
-    expect(openDownloadInNewTab("/api/resources/r1/download", opener)).toBe("failed");
-  });
-
-  it("passes noopener/noreferrer so the opened tab never gets a reference back to window.opener", () => {
-    const opener = { open: vi.fn(() => ({ closed: false })), assign: vi.fn() };
-    openDownloadInNewTab("/api/resources/r1/download", opener);
-    expect(opener.open).toHaveBeenCalledWith(expect.any(String), "_blank", "noopener,noreferrer");
+    const result = openDownloadInNewTab("/api/resources/r1/download", opener);
+    expect(result.outcome).toBe("failed");
+    expect(result.openError).toBeUndefined();
+    expect(result.assignError).toMatch(/navigation blocked/);
   });
 });

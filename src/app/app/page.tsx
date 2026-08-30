@@ -156,11 +156,14 @@ export default function TeacherAppPage() {
       // no risk of a blank tab left hanging (see downloadWindow.ts for why
       // that used to happen). The route itself does the async entitlement
       // + signed-URL work and answers with a redirect or a Thai error page.
-      const outcome = openDownloadInNewTab(`/api/resources/${r.id}/download`, {
-        open: (url, target, features) => window.open(url, target, features),
+      const result = openDownloadInNewTab(`/api/resources/${r.id}/download`, {
+        open: (url, target) => window.open(url, target),
         assign: (url) => window.location.assign(url),
       });
-      if (outcome === "failed") {
+      if (result.outcome === "failed") {
+        // The real cause (never the URL itself — it's our own same-origin
+        // route, not a signed URL) is logged structured, not swallowed.
+        console.error("[download] could not open or navigate to the download route", { openError: result.openError, assignError: result.assignError });
         window.alert("ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       }
       return;
