@@ -1,0 +1,53 @@
+name: Database backup
+
+on:
+  schedule:
+    # 19:00 UTC = 02:00 ICT (Thailand) daily.
+    - cron: "0 19 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      # ubuntu-latest ships an older postgresql-client than the Supabase
+      # project's Postgres 17, which pg_dump refuses to run against
+      # ("server version mismatch") — add the official PGDG apt repo to get
+      # a matching client.
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          pg_dump "$DATABASE_URL" --no-owner --no-privileges -Fc -f backup.dump
+
+      # This repo is public, and GitHub Actions artifacts on a public repo
+      # are downloadable by anyone with a GitHub account — the dump
+      # contains member emails/names, so it must never be stored as
+      # plaintext. Symmetric-encrypt with a passphrase only the project
+      # owner has.
+      - name: Encrypt backup
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-fd 0 -o backup.dump.gpg backup.dump <<< "$PASSPHRASE"
+          rm backup.dump
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup.dump.gpg
+          retention-days: 30
