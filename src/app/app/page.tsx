@@ -212,7 +212,7 @@ export default function TeacherAppPage() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <SideNav groups={NAV_GROUPS} value={view === "detail" ? "library" : view} onChange={(k) => setView(k as View)} />
           </div>
-          {profile?.role === "admin" && (
+          {(profile?.role === "admin" || profile?.role === "owner") && (
             <Button size="sm" block variant="soft" icon={ShieldCheck} onClick={() => router.push("/admin")} style={{ marginTop: "var(--sp-4)" }}>
               ไปที่หลังบ้านแอดมิน
             </Button>

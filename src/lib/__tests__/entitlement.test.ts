@@ -9,6 +9,7 @@ describe("canAccessResource", () => {
   const freeProfile = { plan: "free", role: "member" as const };
   const paidProfile = { plan: "plus", role: "member" as const };
   const adminProfile = { plan: "free", role: "admin" as const };
+  const ownerProfile = { plan: "free", role: "owner" as const };
 
   it("free user can download only free published media", () => {
     expect(canAccessResource(published(true), freeProfile)).toBe(true);
@@ -26,6 +27,14 @@ describe("canAccessResource", () => {
     expect(canAccessResource(draft(true), adminProfile)).toBe(true);
     expect(canAccessResource(draft(false), adminProfile)).toBe(true);
     expect(canAccessResource(archived(false), adminProfile)).toBe(true);
+  });
+
+  it("owner can download everything, including drafts and archived resources", () => {
+    expect(canAccessResource(published(true), ownerProfile)).toBe(true);
+    expect(canAccessResource(published(false), ownerProfile)).toBe(true);
+    expect(canAccessResource(draft(true), ownerProfile)).toBe(true);
+    expect(canAccessResource(draft(false), ownerProfile)).toBe(true);
+    expect(canAccessResource(archived(false), ownerProfile)).toBe(true);
   });
 
   it("draft or archived resources are never downloadable by a non-admin, regardless of plan", () => {

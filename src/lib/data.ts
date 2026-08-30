@@ -35,7 +35,7 @@ export interface Profile {
   id: string;
   email: string;
   fullName: string | null;
-  role: "member" | "admin";
+  role: "member" | "admin" | "owner";
   plan: string;
 }
 
