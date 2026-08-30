@@ -28,6 +28,7 @@ import {
   type TusUploadFactory,
   type TusUploadHandle,
 } from "@/lib/resourceFile";
+import { applySelfRoleChange } from "@/lib/memberRole";
 
 export const dynamic = "force-dynamic";
 
@@ -756,15 +757,31 @@ export default function AdminConsolePage() {
     }
     const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
     if (error) {
+      // Failed (e.g. the last-owner guard rejected it) — nothing actually
+      // changed server-side, so local role/UI must stay exactly as it was.
       const friendly = /last remaining owner/i.test(error.message)
         ? "ไม่สามารถลดสิทธิ์เจ้าของระบบคนสุดท้ายได้ — ต้องมีเจ้าของระบบอย่างน้อย 1 คนเสมอ"
         : `อัปเดตบทบาทไม่สำเร็จ: ${error.message}`;
       window.alert(friendly);
       return;
     }
-    if (id === adminId && role === "member") {
-      router.push("/app");
-      return;
+    if (id === adminId && viewerRole) {
+      // The update above actually took effect on the viewer's own row —
+      // the locally-cached viewerRole this page has been rendering from
+      // (and everything derived from it: isOwner, the audit nav item, the
+      // editable role <select> vs. read-only badge) is now stale. Correct
+      // it immediately rather than continuing to render a privilege level
+      // the server no longer grants until the next full page load.
+      const effect = applySelfRoleChange(viewerRole, role, view);
+      if (effect) {
+        setViewerRole(effect.viewerRole);
+        if (effect.clearAuditLog) setAuditLog([]);
+        if (effect.view) setView(effect.view as View);
+        if (effect.redirectToApp) {
+          router.push("/app");
+          return;
+        }
+      }
     }
     await reloadAdminData();
   };
