@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
-import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X } from "lucide-react";
+import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -28,10 +28,11 @@ import {
   type TusUploadFactory,
   type TusUploadHandle,
 } from "@/lib/resourceFile";
+import { applySelfRoleChange } from "@/lib/memberRole";
 
 export const dynamic = "force-dynamic";
 
-type View = "dash" | "content" | "requests" | "upgrades" | "members";
+type View = "dash" | "content" | "requests" | "upgrades" | "members" | "audit";
 type ResourceStatus = "draft" | "published" | "archived";
 type UploadTarget = "cover" | "file";
 
@@ -48,7 +49,17 @@ interface AdminMember {
   full_name: string | null;
   email: string;
   plan: string;
-  role: "member" | "admin";
+  role: "member" | "admin" | "owner";
+}
+
+interface AdminAuditLogRow {
+  id: string;
+  actor_id: string | null;
+  target_id: string;
+  field: "role" | "plan";
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
 }
 
 interface AdminRequest {
@@ -82,22 +93,22 @@ type CoverUploadOutcome = { ok: true; path: string; url: string } | { ok: false 
 // resourceFile.ts) stays injectable/mockable and framework-free.
 const createTusUpload: TusUploadFactory = (file, options) => new tus.Upload(file, options as unknown as ConstructorParameters<typeof tus.Upload>[1]) as unknown as TusUploadHandle;
 
-const NAV_GROUPS: SideNavGroup[] = [
-  {
-    items: [
-      { key: "dash", label: "ภาพรวม", icon: LayoutDashboard },
-      { key: "content", label: "จัดการสื่อ", icon: FolderCog },
-      { key: "requests", label: "คำขอจากครู", icon: MessageSquareText },
-      { key: "upgrades", label: "คำขออัปเกรด", icon: Wallet },
-      { key: "members", label: "สมาชิก", icon: Users },
-    ],
-  },
+const BASE_NAV_ITEMS: SideNavGroup["items"] = [
+  { key: "dash", label: "ภาพรวม", icon: LayoutDashboard },
+  { key: "content", label: "จัดการสื่อ", icon: FolderCog },
+  { key: "requests", label: "คำขอจากครู", icon: MessageSquareText },
+  { key: "upgrades", label: "คำขออัปเกรด", icon: Wallet },
+  { key: "members", label: "สมาชิก", icon: Users },
 ];
+
+const OWNER_NAV_ITEM = { key: "audit", label: "ประวัติการแก้ไข", icon: History };
 
 const STATUS_LABEL: Record<ResourceStatus, string> = { draft: "ฉบับร่าง", published: "เผยแพร่แล้ว", archived: "เก็บถาวร" };
 const STATUS_TONE: Record<ResourceStatus, "success" | "warning" | "neutral"> = { draft: "warning", published: "success", archived: "neutral" };
 const REQUEST_LABEL: Record<AdminRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
 const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
+const ROLE_LABEL: Record<AdminMember["role"], string> = { member: "สมาชิก", admin: "แอดมิน", owner: "เจ้าของระบบ" };
+const AUDIT_FIELD_LABEL: Record<AdminAuditLogRow["field"], string> = { role: "บทบาท", plan: "แพ็ก" };
 
 const EMPTY_FORM = {
   title: "",
@@ -120,11 +131,13 @@ export default function AdminConsolePage() {
   const [checking, setChecking] = useState(true);
   const [allowed, setAllowed] = useState(false);
   const [adminId, setAdminId] = useState<string | null>(null);
+  const [viewerRole, setViewerRole] = useState<AdminMember["role"] | null>(null);
   const [view, setView] = useState<View>("dash");
   const [resources, setResources] = useState<AdminResource[]>([]);
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [requests, setRequests] = useState<AdminRequest[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<AdminUpgradeRequest[]>([]);
+  const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -160,17 +173,21 @@ export default function AdminConsolePage() {
   }, [coverPreviewUrl]);
 
   const reloadAdminData = async () => {
-    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }] = await Promise.all([
+    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }, { data: auditRows, error: auditError }] = await Promise.all([
       supabase.from("resources").select("id, title, meta, status, delivery_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status").order("votes", { ascending: false }),
       supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
+      // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
+      supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
     ]);
     setResources(resourceRows ?? []);
     setMembers(memberRows ?? []);
     setRequests(requestRows ?? []);
     if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
     setUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []);
+    if (auditError) console.error("Failed to load audit log:", auditError.message);
+    setAuditLog(auditRows ?? []);
   };
 
   useEffect(() => {
@@ -183,11 +200,12 @@ export default function AdminConsolePage() {
         return;
       }
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile?.role !== "admin") {
+      if (profile?.role !== "admin" && profile?.role !== "owner") {
         router.push("/app");
         return;
       }
       setAdminId(user.id);
+      setViewerRole(profile.role);
       setAllowed(true);
       setChecking(false);
       await reloadAdminData();
@@ -725,18 +743,45 @@ export default function AdminConsolePage() {
     await reloadAdminData();
   };
 
+  // Only an owner can reach this at all — the role <select> in the members
+  // table below is only rendered as editable for an owner viewer, and the
+  // server independently enforces the same rule (is_owner() in the
+  // prevent_self_privilege_escalation trigger), so this is UX, not the
+  // actual security boundary.
   const handleMemberRoleChange = async (id: string, role: AdminMember["role"]) => {
-    if (id === adminId && role !== "admin" && !window.confirm("นี่คือบัญชีของคุณเอง — ลดสิทธิ์ตัวเองจะทำให้ออกจากหลังบ้านทันที ยืนยันหรือไม่?")) {
+    if (id === adminId && role === "member" && !window.confirm("นี่คือบัญชีของคุณเอง — ลดสิทธิ์เป็นสมาชิกจะทำให้ออกจากหลังบ้านทันที ยืนยันหรือไม่?")) {
+      return;
+    }
+    if (id === adminId && viewerRole === "owner" && role !== "owner" && !window.confirm("นี่คือบัญชีของคุณเอง — สละสิทธิ์เจ้าของระบบ ยืนยันหรือไม่? ระบบต้องมีเจ้าของระบบอย่างน้อย 1 คนเสมอ")) {
       return;
     }
     const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
     if (error) {
-      window.alert(`อัปเดตบทบาทไม่สำเร็จ: ${error.message}`);
+      // Failed (e.g. the last-owner guard rejected it) — nothing actually
+      // changed server-side, so local role/UI must stay exactly as it was.
+      const friendly = /last remaining owner/i.test(error.message)
+        ? "ไม่สามารถลดสิทธิ์เจ้าของระบบคนสุดท้ายได้ — ต้องมีเจ้าของระบบอย่างน้อย 1 คนเสมอ"
+        : `อัปเดตบทบาทไม่สำเร็จ: ${error.message}`;
+      window.alert(friendly);
       return;
     }
-    if (id === adminId && role !== "admin") {
-      router.push("/app");
-      return;
+    if (id === adminId && viewerRole) {
+      // The update above actually took effect on the viewer's own row —
+      // the locally-cached viewerRole this page has been rendering from
+      // (and everything derived from it: isOwner, the audit nav item, the
+      // editable role <select> vs. read-only badge) is now stale. Correct
+      // it immediately rather than continuing to render a privilege level
+      // the server no longer grants until the next full page load.
+      const effect = applySelfRoleChange(viewerRole, role, view);
+      if (effect) {
+        setViewerRole(effect.viewerRole);
+        if (effect.clearAuditLog) setAuditLog([]);
+        if (effect.view) setView(effect.view as View);
+        if (effect.redirectToApp) {
+          router.push("/app");
+          return;
+        }
+      }
     }
     await reloadAdminData();
   };
@@ -748,6 +793,9 @@ export default function AdminConsolePage() {
       </div>
     );
   }
+
+  const isOwner = viewerRole === "owner";
+  const navGroups: SideNavGroup[] = [{ items: isOwner ? [...BASE_NAV_ITEMS, OWNER_NAV_ITEM] : BASE_NAV_ITEMS }];
 
   const uploadStatusFor = (target: UploadTarget) => (uploadStatus.phase !== "idle" && uploadStatus.target === target ? uploadStatus : null);
 
@@ -814,7 +862,7 @@ export default function AdminConsolePage() {
             </div>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <SideNav groups={NAV_GROUPS} value={view} onChange={handleNavChange} />
+            <SideNav groups={navGroups} value={view} onChange={handleNavChange} />
           </div>
           <Button size="sm" block variant="ghost" icon={LogOut} onClick={handleSignOut} disabled={saving}>
             ออกจากระบบ
@@ -1117,18 +1165,64 @@ export default function AdminConsolePage() {
                             </select>
                           </td>
                           <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-                            <select
-                              className="kru-select"
-                              style={{ minHeight: 36, width: "auto" }}
-                              value={m.role}
-                              onChange={(e) => handleMemberRoleChange(m.id, e.target.value as AdminMember["role"])}
-                            >
-                              <option value="member">สมาชิก</option>
-                              <option value="admin">แอดมิน</option>
-                            </select>
+                            {isOwner ? (
+                              <select
+                                className="kru-select"
+                                style={{ minHeight: 36, width: "auto" }}
+                                value={m.role}
+                                onChange={(e) => handleMemberRoleChange(m.id, e.target.value as AdminMember["role"])}
+                              >
+                                <option value="member">สมาชิก</option>
+                                <option value="admin">แอดมิน</option>
+                                <option value="owner">เจ้าของระบบ</option>
+                              </select>
+                            ) : (
+                              <Badge tone={m.role === "member" ? "neutral" : "success"}>{ROLE_LABEL[m.role]}</Badge>
+                            )}
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {view === "audit" && isOwner && (
+            <div>
+              <h1 style={{ fontSize: "var(--fs-30)" }}>ประวัติการแก้ไข</h1>
+              <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>การเปลี่ยนบทบาทและแพ็กของสมาชิกทั้งหมด เรียงจากล่าสุด</p>
+              {auditLog.length === 0 ? (
+                <EmptyState icon={History} title="ยังไม่มีประวัติ" description="" />
+              ) : (
+                <div className="kru-card" style={{ overflow: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+                    <thead>
+                      <tr style={{ background: "var(--surface-sunken)", textAlign: "left" }}>
+                        {["ผู้แก้ไข", "เป้าหมาย", "รายการ", "จาก", "เป็น", "เมื่อ"].map((h) => (
+                          <th key={h} style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-13)", color: "var(--text-faint)" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.map((entry) => {
+                        const actor = members.find((m) => m.id === entry.actor_id);
+                        const target = members.find((m) => m.id === entry.target_id);
+                        const displayValue = (v: string | null) => (v == null ? "—" : entry.field === "role" ? (ROLE_LABEL[v as AdminMember["role"]] ?? v) : v);
+                        return (
+                          <tr key={entry.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                            <td style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-14)" }}>{actor?.full_name || actor?.email || "ระบบ"}</td>
+                            <td style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-14)" }}>{target?.full_name || target?.email || "(ไม่พบผู้ใช้)"}</td>
+                            <td style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-14)" }}>{AUDIT_FIELD_LABEL[entry.field]}</td>
+                            <td style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{displayValue(entry.old_value)}</td>
+                            <td style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-14)" }}>{displayValue(entry.new_value)}</td>
+                            <td style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{new Date(entry.created_at).toLocaleString("th-TH")}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
