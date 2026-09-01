@@ -110,6 +110,7 @@ export default function LandingPage() {
             {plans.map((plan) => (
               <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
+                {plan.isPopular && <div style={{ alignSelf: "flex-start", borderRadius: "var(--r-pill)", padding: "4px 10px", background: "var(--status-success-bg)", color: "var(--status-success-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>ยอดนิยม</div>}
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)" }}>{plan.priceLabel}</div>
                 <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{plan.note}</p>
                 <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 6 }}>

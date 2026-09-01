@@ -10,6 +10,7 @@ import { PAYMENT_LINE_ID } from "@/lib/config";
 import {
   fetchPublishedResources,
   fetchPlans,
+  fetchEntitlements,
   fetchProfile,
   fetchRequests,
   submitRequest,
@@ -25,7 +26,7 @@ import {
   type TeacherRequest,
   type UpgradeRequest,
 } from "@/lib/data";
-import { canAccessResource } from "@/lib/entitlement";
+import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,7 @@ export default function TeacherAppPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [resources, setResources] = useState<Resource[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [entitlements, setEntitlements] = useState<EntitlementSnapshot>(EMPTY_ENTITLEMENTS);
   const [view, setView] = useState<View>("home");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -76,10 +78,11 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
-      const [profileData, resourceData, planData, requestData, savedIds, upgradeData] = await Promise.all([
+      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, upgradeData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
+        fetchEntitlements(supabase),
         fetchRequests(supabase),
         fetchSavedResourceIds(supabase, user.id),
         fetchUpgradeRequests(supabase, user.id),
@@ -87,6 +90,7 @@ export default function TeacherAppPage() {
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
+      setEntitlements(entitlementData);
       setRequests(requestData);
       setSaved(savedIds);
       setUpgradeRequests(upgradeData);
@@ -143,7 +147,7 @@ export default function TeacherAppPage() {
 
   // Every published resource fetched by fetchPublishedResources already has
   // status "published", so it's hardcoded here rather than carried on Resource.
-  const canAccess = (r: Resource) => canAccessResource({ status: "published", isFree: r.free }, profile && { plan: profile.plan, role: profile.role });
+  const canAccess = (r: Resource) => canAccessResource({ status: "published", isFree: r.free }, profile && { role: profile.role }, entitlements);
 
   const openResource = (r: Resource) => {
     if (!canAccess(r)) {
@@ -232,7 +236,7 @@ export default function TeacherAppPage() {
               </span>
               <div style={{ fontSize: "var(--fs-14)", lineHeight: 1.3 }}>
                 <div style={{ fontWeight: "var(--fw-semibold)" }}>{profile?.fullName || profile?.email}</div>
-                <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-13)" }}>แพ็ก {profile?.plan}</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-13)" }}>แพ็ก {entitlements.planId}</div>
               </div>
             </div>
           </header>
@@ -389,14 +393,15 @@ export default function TeacherAppPage() {
             {view === "plans" && (
               <div>
                 <h1 style={{ fontSize: "var(--fs-30)" }}>แพ็กเกจ</h1>
-                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {profile?.plan}</p>
+                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {entitlements.planId}</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
                   {plans.map((plan) => {
-                    const isCurrent = profile?.plan === plan.id;
+                    const isCurrent = entitlements.planId === plan.id;
                     const pendingRequest = upgradeRequests.find((r) => r.planId === plan.id && r.status === "pending");
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
+                        {plan.isPopular && <Badge tone="success">ยอดนิยม</Badge>}
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
                         <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
                         <div style={{ marginTop: "var(--sp-6)" }}>

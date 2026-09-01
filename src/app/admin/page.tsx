@@ -78,6 +78,12 @@ interface AdminUpgradeRequest {
   profiles: { full_name: string | null; email: string } | null;
 }
 
+interface AdminPlan {
+  id: string;
+  name: string;
+  lifecycle_status: "active" | "legacy" | "retired";
+}
+
 type UploadStatus =
   | { phase: "idle" }
   | { phase: "uploading"; target: UploadTarget; progress: number; strategy: UploadStrategy; onPause: (() => void) | null; onCancel: () => void }
@@ -137,6 +143,7 @@ export default function AdminConsolePage() {
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [requests, setRequests] = useState<AdminRequest[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<AdminUpgradeRequest[]>([]);
+  const [plans, setPlans] = useState<AdminPlan[]>([]);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -173,11 +180,12 @@ export default function AdminConsolePage() {
   }, [coverPreviewUrl]);
 
   const reloadAdminData = async () => {
-    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }, { data: auditRows, error: auditError }] = await Promise.all([
+    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }, { data: planRows, error: planError }, { data: auditRows, error: auditError }] = await Promise.all([
       supabase.from("resources").select("id, title, meta, status, delivery_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status").order("votes", { ascending: false }),
       supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
+      supabase.from("plans").select("id, name, lifecycle_status").order("sort_order", { ascending: true }),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
     ]);
@@ -186,6 +194,8 @@ export default function AdminConsolePage() {
     setRequests(requestRows ?? []);
     if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
     setUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []);
+    if (planError) console.error("Failed to load plans:", planError.message);
+    setPlans((planRows as AdminPlan[]) ?? []);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
   };
@@ -708,25 +718,20 @@ export default function AdminConsolePage() {
     await reloadAdminData();
   };
 
-  const handleApproveUpgrade = async (request: AdminUpgradeRequest, userId: string) => {
-    const { error: planError } = await supabase.from("profiles").update({ plan: request.plan_id }).eq("id", userId);
-    if (planError) {
-      window.alert(`อัปเกรดแพ็กไม่สำเร็จ: ${planError.message}`);
-      return;
-    }
-    const { error: statusError } = await supabase
-      .from("upgrade_requests")
-      .update({ status: "approved", resolved_at: new Date().toISOString() })
-      .eq("id", request.id);
-    if (statusError) {
-      window.alert(`อัปเดตสถานะคำขอไม่สำเร็จ: ${statusError.message}`);
+  const handleApproveUpgrade = async (request: AdminUpgradeRequest) => {
+    const { error } = await supabase.rpc("approve_upgrade_request", { p_request_id: request.id });
+    if (error) {
+      const friendly = /Founder 100 is full/i.test(error.message)
+        ? "Founder ครบ 100 สิทธิ์แล้ว ไม่สามารถอนุมัติเพิ่มได้"
+        : `อัปเกรดแพ็กไม่สำเร็จ: ${error.message}`;
+      window.alert(friendly);
       return;
     }
     await reloadAdminData();
   };
 
   const handleDeclineUpgrade = async (id: string) => {
-    const { error } = await supabase.from("upgrade_requests").update({ status: "declined", resolved_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.rpc("decline_upgrade_request", { p_request_id: id });
     if (error) {
       window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
       return;
@@ -735,7 +740,7 @@ export default function AdminConsolePage() {
   };
 
   const handleMemberPlanChange = async (id: string, plan: string) => {
-    const { error } = await supabase.from("profiles").update({ plan }).eq("id", id);
+    const { error } = await supabase.rpc("set_member_plan", { p_user_id: id, p_plan_id: plan, p_reason: "admin_members_table" });
     if (error) {
       window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error.message}`);
       return;
@@ -1079,7 +1084,7 @@ export default function AdminConsolePage() {
                       </div>
                       {r.status === "pending" ? (
                         <div style={{ display: "flex", gap: "var(--sp-3)" }}>
-                          <Button size="sm" icon={Check} onClick={() => handleApproveUpgrade(r, r.user_id)}>
+                          <Button size="sm" icon={Check} onClick={() => handleApproveUpgrade(r)}>
                             อนุมัติและอัปเกรด
                           </Button>
                           <Button size="sm" variant="ghost" icon={X} onClick={() => handleDeclineUpgrade(r.id)}>
@@ -1160,8 +1165,13 @@ export default function AdminConsolePage() {
                               value={m.plan}
                               onChange={(e) => handleMemberPlanChange(m.id, e.target.value)}
                             >
-                              <option value="free">free</option>
-                              <option value="plus">plus</option>
+                              {plans
+                                .filter((plan) => plan.lifecycle_status === "active" || plan.id === m.plan)
+                                .map((plan) => (
+                                  <option key={plan.id} value={plan.id}>
+                                    {plan.name}{plan.lifecycle_status === "legacy" ? " — เดิม" : ""}
+                                  </option>
+                                ))}
                             </select>
                           </td>
                           <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSignedFileUrl } from "../data";
+import { fetchEntitlements, getSignedFileUrl } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -125,5 +125,39 @@ describe("getSignedFileUrl", () => {
 
     const joined = errors.map((a) => a.join(" ")).join("\n");
     expect(joined).not.toMatch(/eyJ/);
+  });
+});
+
+describe("fetchEntitlements", () => {
+  it("converts RPC rows into a keyed capability snapshot", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: [
+          { plan_id: "teacher", feature_id: "download.premium", enabled: true, limit_value: null },
+          { plan_id: "teacher", feature_id: "favorites.limit", enabled: true, limit_value: 50 },
+        ],
+        error: null,
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchEntitlements(supabase)).resolves.toEqual({
+      planId: "teacher",
+      features: {
+        "download.premium": { enabled: true, limit: null },
+        "favorites.limit": { enabled: true, limit: 50 },
+      },
+    });
+  });
+
+  it("fails closed to free with no capabilities when the RPC fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "permission denied", code: "42501", details: "", hint: "" },
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
   });
 });

@@ -4,6 +4,7 @@ import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
+import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -31,6 +32,7 @@ export interface Plan {
   priceLabel: string;
   note: string | null;
   features: string[];
+  isPopular: boolean;
 }
 
 export interface Profile {
@@ -135,7 +137,9 @@ export async function getSignedFileUrl(supabase: SupabaseClient, filePath: strin
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("id, name, price_label, note, features")
+    .select("id, name, price_label, note, features, is_popular")
+    .eq("is_public", true)
+    .eq("lifecycle_status", "active")
     .order("sort_order", { ascending: true });
 
   if (error) logError("fetchPlans failed", error);
@@ -147,7 +151,30 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     priceLabel: p.price_label,
     note: p.note,
     features: p.features ?? [],
+    isPopular: p.is_popular ?? false,
   }));
+}
+
+interface EntitlementRow {
+  plan_id: string;
+  feature_id: string;
+  enabled: boolean;
+  limit_value: number | null;
+}
+
+export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+  const { data, error } = await supabase.rpc("get_my_entitlements");
+  if (error) {
+    logError("fetchEntitlements failed", error);
+    return EMPTY_ENTITLEMENTS;
+  }
+
+  const rows = (data ?? []) as EntitlementRow[];
+  const planId = rows[0]?.plan_id ?? "free";
+  const features = Object.fromEntries(
+    rows.map((row) => [row.feature_id, { enabled: row.enabled, limit: row.limit_value }]),
+  );
+  return { planId, features };
 }
 
 export interface TeacherRequest {
