@@ -1,13 +1,21 @@
 -- NOT YET APPLIED to the live project — prepared on review branch
 -- claude/hide-unavailable-features, deliberately left for manual apply so
--- this can be reviewed alongside the copy changes it matches.
+-- this can be reviewed alongside the copy changes it matches. Live-verified
+-- not-applied immediately before this comment was last updated: the `plus`
+-- plan row's `features` still contains the old, false AI-tool wording this
+-- migration replaces.
 --
--- Numbered 016d rather than 016 because, as of this migration, the live
--- project (ghwpmtmbqtchsrnagoir) already has 016/016b/016c applied from
--- the still-unmerged claude/admin-owner-roles branch — those files don't
--- exist yet in this branch's history (branched from main before that
--- work merged), but the version numbering here follows the live database's
--- actual sequence so it doesn't collide once the two branches converge.
+-- Numbered 016d rather than 016 because, at the time this file was
+-- authored, the live project (ghwpmtmbqtchsrnagoir) already had
+-- 016/016b/016c applied from the then-unmerged claude/admin-owner-roles
+-- branch, while this branch (cut from main before that work landed) didn't
+-- have those files yet. That's since changed: origin/main has been merged
+-- into this branch, so 001 through 016c are now present here too, along
+-- with 017_serialize_owner_role_transitions.sql (an unrelated fix — a
+-- last-owner-guard concurrency race in two trigger functions, nothing to
+-- do with plan copy). 016d and 017 remain independent and apply cleanly in
+-- either order regardless of which lands first, since they touch disjoint
+-- objects (a `plans` row's `features` column vs. two trigger functions).
 -- Per this directory's own README.md convention, rename this file to match
 -- the exact version supabase_migrations.schema_migrations records once it
 -- is actually applied.
