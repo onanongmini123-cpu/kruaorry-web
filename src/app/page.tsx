@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FolderOpen, Sparkles, Timer, CheckCircle2 } from "lucide-react";
+import { FolderOpen, FileSpreadsheet, Timer, CheckCircle2 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, PillarTile } from "@/components/ui";
 import { fetchPlans, type Plan } from "@/lib/data";
@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 
 const PILLARS = [
   { icon: FolderOpen, tone: "purple" as const, title: "คลังสื่อพร้อมสอน", desc: "ดาวน์โหลดแล้วใช้สอนได้เลย ไม่ต้องทำเอง" },
-  { icon: Sparkles, tone: "pink" as const, title: "เครื่องมือ AI", desc: "บอกหัวข้อ ได้ข้อสอบและแผนการสอนพร้อมใช้" },
+  { icon: FileSpreadsheet, tone: "pink" as const, title: "เทมเพลต Google พร้อมใช้", desc: "ทำสำเนา Google Sheets, Docs, Slides และฟอร์มไปใช้ได้ทันที" },
   { icon: Timer, tone: "blue" as const, title: "เครื่องมือในห้องเรียน", desc: "จับเวลา สุ่มชื่อ จับกลุ่ม เปิดใช้ได้ทันที" },
 ];
 
@@ -77,7 +77,7 @@ export default function LandingPage() {
                 ครูมีงานเยอะพออยู่แล้ว ให้ครูอรรี่ช่วย
               </h1>
               <p style={{ marginTop: "var(--sp-5)", fontSize: "var(--fs-18)", color: "var(--text-body)", maxWidth: 560, marginInline: "auto" }}>
-                สื่อพร้อมสอนภาษาไทย เครื่องมือ AI และเครื่องมือในห้องเรียน ใช้งานง่าย ดาวน์โหลดแล้วสอนได้เลย
+                สื่อพร้อมสอนภาษาไทย เทมเพลต Google พร้อมใช้ และเครื่องมือในห้องเรียน ใช้งานง่าย ดาวน์โหลดแล้วสอนได้เลย
               </p>
               <div style={{ marginTop: "var(--sp-8)", display: "flex", gap: "var(--sp-4)", justifyContent: "center", flexWrap: "wrap" }}>
                 <Link href="/login">
