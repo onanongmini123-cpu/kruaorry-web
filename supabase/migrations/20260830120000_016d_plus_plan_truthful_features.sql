@@ -1,29 +1,39 @@
--- NOT YET APPLIED to the live project — prepared on review branch
--- claude/hide-unavailable-features, deliberately left for manual apply so
--- this can be reviewed alongside the copy changes it matches. Live-verified
--- not-applied immediately before this comment was last updated: the `plus`
--- plan row's `features` still contains the old, false AI-tool wording this
--- migration replaces.
+-- LIVE AND VERIFIED, but NOT RECORDED in supabase_migrations.schema_migrations.
+-- This exact UPDATE was run manually against the live project
+-- (ghwpmtmbqtchsrnagoir) via the Supabase SQL Editor on 2026-09-01 and
+-- returned Success; a read-only query the same day confirmed the `plus`
+-- plan row's `features` column now holds exactly the three-element array
+-- below. What did NOT happen is a matching row being added to
+-- schema_migrations — a manual SQL Editor run isn't the same as applying
+-- the migration through Supabase's migration tooling. Recorded history
+-- (see this directory's README.md) still stops at 016c, 19 rows. Do not
+-- re-run this UPDATE assuming nothing happened — the live row already
+-- matches it; what's missing is only the bookkeeping row. The same is
+-- true of 017_serialize_owner_role_transitions.sql, applied the same way
+-- the same day. Reconciling the schema_migrations gap for either file is
+-- a decision for whoever formally closes this out, not something this
+-- comment resolves.
 --
 -- Numbered 016d rather than 016 because, at the time this file was
--- authored, the live project (ghwpmtmbqtchsrnagoir) already had
--- 016/016b/016c applied from the then-unmerged claude/admin-owner-roles
--- branch, while this branch (cut from main before that work landed) didn't
--- have those files yet. That's since changed: origin/main has been merged
--- into this branch, so 001 through 016c are now present here too, along
--- with 017_serialize_owner_role_transitions.sql (an unrelated fix — a
+-- authored, the live project already had 016/016b/016c applied from the
+-- then-unmerged claude/admin-owner-roles branch, while this branch (cut
+-- from main before that work landed) didn't have those files yet. That's
+-- since changed: origin/main has been merged into this branch, so 001
+-- through 016c are now present here too, along with
+-- 017_serialize_owner_role_transitions.sql (an unrelated fix — a
 -- last-owner-guard concurrency race in two trigger functions, nothing to
 -- do with plan copy). 016d and 017 remain independent and apply cleanly in
 -- either order regardless of which lands first, since they touch disjoint
 -- objects (a `plans` row's `features` column vs. two trigger functions).
 -- Per this directory's own README.md convention, rename this file to match
--- the exact version supabase_migrations.schema_migrations records once it
--- is actually applied.
+-- the exact version supabase_migrations.schema_migrations records once
+-- that bookkeeping row is added.
 --
--- The Plus plan's features list still promises an "AI ออกข้อสอบ/แผนการสอน"
--- (AI exam/lesson-plan generator) tool that does not exist anywhere in this
--- app — no AI content-generation feature has been built. Replaces that
--- line with the truthful equivalent of what Plus actually unlocks today:
+-- Before this ran, the Plus plan's features list promised an "AI
+-- ออกข้อสอบ/แผนการสอน" (AI exam/lesson-plan generator) tool that does not
+-- exist anywhere in this app — no AI content-generation feature has been
+-- built. Replaces that line with the truthful equivalent of what Plus
+-- actually unlocks today:
 -- the full resource library, which already includes downloadable files and
 -- Google Sheets/Docs/Slides templates and forms (see the four resource
 -- delivery modes in resources.delivery_mode), plus the in-app classroom
