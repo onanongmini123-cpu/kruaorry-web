@@ -84,6 +84,7 @@ describe("Phase 1B membership migration invariants", () => {
     expect(renew).toContain("v_subscription.source = 'legacy'");
     expect(renew).toContain("v_subscription.current_period_end is null");
     expect(renew).toContain("v_plan.lifecycle_status <> 'active'");
+    expect(renew).toContain("when v_subscription.plan_id = 'founder' then 299");
     expect(renew.indexOf("pg_advisory_xact_lock")).toBeLessThan(renew.indexOf("for update"));
   });
 

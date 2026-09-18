@@ -217,7 +217,10 @@ begin
         else v_subscription.current_period_start
       end,
       current_period_end = v_new_period_end,
-      price_amount_thb = v_plan.price_amount_thb
+      price_amount_thb = case
+        when v_subscription.plan_id = 'founder' then 299
+        else v_plan.price_amount_thb
+      end
   where id = v_subscription.id;
 
   insert into public.subscription_events (
@@ -226,7 +229,13 @@ begin
   ) values (
     v_subscription.id, v_subscription.user_id, v_subscription.plan_id,
     'renewed', v_subscription.status, 'active', (select auth.uid()),
-    jsonb_build_object('new_period_end', v_new_period_end, 'price_amount_thb', v_plan.price_amount_thb)
+    jsonb_build_object(
+      'new_period_end', v_new_period_end,
+      'price_amount_thb', case
+        when v_subscription.plan_id = 'founder' then 299
+        else v_plan.price_amount_thb
+      end
+    )
   );
 
   perform set_config('app.membership_plan_change_allowed', 'on', true);
