@@ -73,6 +73,70 @@ grant execute on function public.current_user_plan_id() to authenticated;
 grant execute on function public.has_feature(text) to authenticated;
 grant execute on function public.get_my_entitlements() to authenticated;
 
+-- A Founder seat is one of the first 100 people ever admitted. Keep a
+-- transactionally maintained seat ledger outside the subscription cascade.
+-- Account erasure nulls user_id but does not recycle the seat or retain an
+-- identifying user reference.
+create table public.founder_seat_ledger (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid unique references public.profiles(id) on delete set null,
+  granted_at timestamptz not null default now()
+);
+
+alter table public.founder_seat_ledger enable row level security;
+revoke all on public.founder_seat_ledger from public, anon, authenticated;
+
+insert into public.founder_seat_ledger (user_id, granted_at)
+select s.user_id, min(coalesce(s.founder_started_at, s.created_at))
+from public.subscriptions s
+where s.plan_id = 'founder'
+group by s.user_id;
+
+do $$
+begin
+  if (select count(*) from public.founder_seat_ledger) > 100 then
+    raise exception 'Existing Founder history already exceeds 100 people';
+  end if;
+end;
+$$;
+
+-- This trigger also protects privileged/direct inserts. The ledger insert and
+-- subscription insert commit or roll back together under the same lock.
+create function public.enforce_founder_100_cap()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.plan_id <> 'founder' then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
+
+  if exists (
+    select 1 from public.founder_seat_ledger where user_id = new.user_id
+  ) then
+    raise exception 'Founder membership cannot be claimed twice';
+  end if;
+
+  if (select count(*) from public.founder_seat_ledger) >= 100 then
+    raise exception 'Founder 100 is full';
+  end if;
+
+  insert into public.founder_seat_ledger (user_id, granted_at)
+  values (new.user_id, coalesce(new.founder_started_at, now()));
+  return new;
+end;
+$$;
+
+create trigger trg_enforce_founder_100_cap
+  before insert on public.subscriptions
+  for each row execute function public.enforce_founder_100_cap();
+
+revoke execute on function public.enforce_founder_100_cap() from public, anon, authenticated;
+
 create function public.activate_membership_internal(
   p_user_id uuid,
   p_plan_id text,
@@ -114,22 +178,12 @@ begin
   if p_plan_id = 'founder' then
     perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
 
-    if exists (
-      select 1
-      from public.subscriptions s
-      where s.user_id = p_user_id
-        and s.plan_id = 'founder'
-    ) then
+    if exists (select 1 from public.founder_seat_ledger where user_id = p_user_id) then
       raise exception 'Founder price lock cannot be claimed again; use the renewal flow while continuity is active';
     end if;
 
     select count(*) into v_founder_count
-    from public.subscriptions s
-    where s.plan_id = 'founder'
-      and s.status in ('active', 'past_due')
-      and s.founder_status = 'active'
-      and s.founder_price_lock = true
-      and s.current_period_end > v_now;
+    from public.founder_seat_ledger;
 
     if v_founder_count >= 100 then
       raise exception 'Founder 100 is full';
@@ -389,11 +443,15 @@ set search_path = public
 as $$
 declare
   v_subscription public.subscriptions%rowtype;
+  v_plan public.plans%rowtype;
   v_new_period_end timestamptz;
 begin
   if not public.is_admin() then
     raise exception 'Admin access required' using errcode = '42501';
   end if;
+
+  -- Use the same lock order as Founder activation, before locking a row.
+  perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
 
   select * into v_subscription
   from public.subscriptions
@@ -404,16 +462,25 @@ begin
     raise exception 'Subscription not found';
   end if;
 
-  if v_subscription.billing_interval <> 'year' then
-    raise exception 'Only annual subscriptions can be renewed';
+  if v_subscription.status not in ('active', 'past_due') then
+    raise exception 'Cancelled, revoked, or expired subscriptions cannot be renewed';
+  end if;
+
+  if v_subscription.billing_interval <> 'year'
+    or v_subscription.source = 'legacy'
+    or v_subscription.current_period_end is null
+  then
+    raise exception 'Preserved or non-annual memberships cannot be renewed';
+  end if;
+
+  select * into v_plan from public.plans where id = v_subscription.plan_id for share;
+  if not found or v_plan.lifecycle_status <> 'active' then
+    raise exception 'This plan cannot be renewed; choose a current plan';
   end if;
 
   if v_subscription.plan_id = 'founder' then
-    perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
-
     if v_subscription.founder_price_lock = false
       or v_subscription.founder_status <> 'active'
-      or v_subscription.current_period_end is null
       or v_subscription.current_period_end <= now()
     then
       update public.subscriptions
@@ -441,19 +508,27 @@ begin
       );
 
       perform set_config('app.membership_plan_change_allowed', 'on', true);
-      update public.profiles set plan = 'free' where id = v_subscription.user_id;
+      update public.profiles set plan = 'free'
+      where id = v_subscription.user_id and plan = 'founder';
+      perform set_config('app.membership_plan_change_allowed', 'off', true);
       return null;
     end if;
   end if;
 
-  v_new_period_end := greatest(coalesce(v_subscription.current_period_end, now()), now()) + interval '1 year';
+  v_new_period_end := greatest(v_subscription.current_period_end, now()) + interval '1 year';
 
   update public.subscriptions
   set
     status = 'active',
-    current_period_start = now(),
+    current_period_start = case
+      when v_subscription.current_period_end <= now() then now()
+      else v_subscription.current_period_start
+    end,
     current_period_end = v_new_period_end,
-    price_amount_thb = case when plan_id = 'founder' then 299 else price_amount_thb end
+    price_amount_thb = case
+      when v_subscription.plan_id = 'founder' then 299
+      else v_plan.price_amount_thb
+    end
   where id = v_subscription.id;
 
   insert into public.subscription_events (
@@ -473,8 +548,22 @@ begin
     v_subscription.status,
     'active',
     (select auth.uid()),
-    jsonb_build_object('new_period_end', v_new_period_end)
+    jsonb_build_object(
+      'new_period_end', v_new_period_end,
+      'price_amount_thb', case
+        when v_subscription.plan_id = 'founder' then 299
+        else v_plan.price_amount_thb
+      end
+    )
   );
+
+  perform set_config('app.membership_plan_change_allowed', 'on', true);
+  update public.profiles set plan = v_subscription.plan_id
+  where id = v_subscription.user_id and plan in ('free', v_subscription.plan_id);
+  if not found then
+    raise exception 'Profile plan conflicts with the subscription being renewed';
+  end if;
+  perform set_config('app.membership_plan_change_allowed', 'off', true);
 
   return v_new_period_end;
 end;
@@ -521,6 +610,8 @@ create policy "upgrade_requests_insert_own"
   on public.upgrade_requests for insert
   with check (
     (select auth.uid()) = user_id
+    and status = 'pending'
+    and resolved_at is null
     and exists (
       select 1
       from public.plans p
@@ -547,7 +638,8 @@ create policy resource_files_entitled_read on storage.objects
       or exists (
         select 1
         from public.resources r
-        where r.id::text = (regexp_match(storage.objects.name, '^([^/]+)/'))[1]
+        where r.file_path = storage.objects.name
+          and r.id::text = (regexp_match(storage.objects.name, '^([^/]+)/'))[1]
           and r.status = 'published'
           and (
             r.is_free

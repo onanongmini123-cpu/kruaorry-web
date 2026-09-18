@@ -78,10 +78,12 @@ approval updates on `upgrade_requests` are blocked.
 ## Founder 100 invariant
 
 Every new Founder activation obtains the same transaction-level advisory lock.
-An additional database insert trigger counts distinct members who have **ever**
-held Founder under that lock and rejects the 101st unique member. Expired seats
-are not recycled. A user with any previous Founder subscription cannot claim
-Founder again; renewal is the only path that keeps the 299 THB price lock.
+The subscription insert trigger reserves one row in `founder_seat_ledger` in
+the same transaction and rejects the 101st row. Expired seats are not recycled.
+The ledger survives account deletion: its user reference becomes null for
+erasure, but the anonymous seat row remains counted. A user with a previous
+Founder seat cannot claim it again; renewal is the only path that keeps the
+299 THB price lock.
 
 If renewal occurs after the Founder period has ended, the subscription history
 is retained, the lock becomes `lost_price_lock`, and the effective plan becomes
@@ -93,3 +95,20 @@ The capability catalogue already reserves ids for workspace, history,
 generators, AI and School. They remain disabled until those workflows exist.
 AI quotas, School plans, analytics events, payment-provider integration and
 automatic expiry scheduling are intentionally outside Phase 1B.
+
+## Verification and release limits
+
+`npm test` exercises UI/data helpers and static migration invariants.
+`npm run test:membership-sql` additionally runs the four pending SQL files
+against an isolated PGlite database with a minimal stub of the older schema.
+It checks the Plus copy, legacy backfill, Free favorite limit, Founder cap
+including account deletion, and renewal behavior. PGlite is **not** a copy of
+Supabase production and cannot prove real multi-connection concurrency, all
+Storage RLS behavior, or compatibility with the actual live dataset.
+
+Before deployment, reconcile the two older migrations that were executed
+manually but are absent from `schema_migrations`, then validate 017b–020 in a
+staging copy of the actual database. Apply them in order during a maintenance
+window, verify RLS and payment/approval flows as real roles, and only then
+enable the new membership surface. No migration in this branch has been
+applied to the live project yet.

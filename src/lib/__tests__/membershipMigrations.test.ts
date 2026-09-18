@@ -4,12 +4,19 @@ import { describe, expect, it } from "vitest";
 
 const migration = (name: string) => readFileSync(join(process.cwd(), "supabase", "migrations", name), "utf8");
 
-const catalogueSql = migration("20260901090000_017_membership_catalog_and_capabilities.sql");
+const catalogueSql = migration("20260901090000_017b_membership_catalog_and_capabilities.sql");
 const subscriptionsSql = migration("20260901090100_018_subscriptions_and_legacy_backfill.sql");
 const membershipSql = migration("20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql");
 const safetySql = migration("20260901090300_020_membership_safety_guards.sql");
 
 describe("Phase 1B membership migration invariants", () => {
+  it("preserves the live Plus customer copy from 016d on an existing row", () => {
+    const plusInsert = catalogueSql.slice(catalogueSql.indexOf("-- Plus already has verified"), catalogueSql.indexOf("create table public.features"));
+    expect(plusInsert).toContain("'เทมเพลต Google และฟอร์มพร้อมใช้งาน'");
+    expect(plusInsert).toContain("on conflict (id) do update set");
+    expect(plusInsert).not.toMatch(/(?:name|price_label|note|features|sort_order)\s*=\s*excluded\./);
+  });
+
   it("keeps legacy plans hidden and unavailable for new upgrades", () => {
     expect(catalogueSql).toMatch(/'plus'[\s\S]*?'legacy',[\s\S]*?false,[\s\S]*?false/);
     expect(catalogueSql).toMatch(/'lifetime'[\s\S]*?'retired',[\s\S]*?false,[\s\S]*?false/);
@@ -47,8 +54,21 @@ describe("Phase 1B membership migration invariants", () => {
 
   it("uses a capability in Storage RLS and guards the profile plan cache", () => {
     expect(membershipSql).toContain("public.has_feature('download.premium')");
+    expect(membershipSql).toContain("r.file_path = storage.objects.name");
     expect(membershipSql).toContain("create trigger trg_enforce_membership_plan_change");
     expect(membershipSql).toContain("Plan changes must use a membership RPC");
+  });
+
+  it("keeps 019 safe before the additive 020 migration runs", () => {
+    const renew = membershipSql.slice(
+      membershipSql.indexOf("create function public.renew_subscription"),
+      membershipSql.indexOf("revoke execute on function public.approve_upgrade_request"),
+    );
+    expect(renew).toContain("v_subscription.source = 'legacy'");
+    expect(renew).toContain("else v_plan.price_amount_thb");
+    expect(renew.indexOf("pg_advisory_xact_lock")).toBeLessThan(renew.indexOf("for update"));
+    expect(membershipSql).toContain("and status = 'pending'");
+    expect(membershipSql).toContain("and resolved_at is null");
   });
 
   it("does not delete profiles, subscriptions, events, or upgrade requests", () => {
@@ -60,13 +80,15 @@ describe("Phase 1B membership migration invariants", () => {
     expect(executableSql).not.toMatch(/truncate/i);
   });
 
-  it("caps Founder at 100 distinct members ever, including expired history", () => {
-    const trigger = safetySql.slice(
-      safetySql.indexOf("create function public.enforce_founder_100_cap"),
-      safetySql.indexOf("create trigger trg_enforce_founder_100_cap"),
+  it("uses a durable ledger so deleted Founder profiles never recycle a seat", () => {
+    const trigger = membershipSql.slice(
+      membershipSql.indexOf("create function public.enforce_founder_100_cap"),
+      membershipSql.indexOf("create trigger trg_enforce_founder_100_cap"),
     );
+    expect(membershipSql).toContain("create table public.founder_seat_ledger");
+    expect(membershipSql).toContain("on delete set null");
     expect(trigger).toContain("pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0))");
-    expect(trigger).toContain("count(distinct user_id)");
+    expect(trigger).toContain("count(*) from public.founder_seat_ledger");
     expect(trigger).not.toMatch(/status\s+in\s*\(/i);
     expect(trigger).toContain(">= 100");
   });

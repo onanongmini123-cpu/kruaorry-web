@@ -90,20 +90,6 @@ insert into public.plans (
     false
   ),
   (
-    'plus',
-    'Plus (Legacy)',
-    '990 บาท/ปี',
-    'แพ็กเดิมสำหรับสมาชิกและคำขอที่มีอยู่ก่อน Phase 1B',
-    array['คลังสื่อพรีเมียมทั้งหมด', 'บันทึกสื่อที่ชอบได้ไม่จำกัด', 'ดาวน์โหลดไฟล์อย่างปลอดภัย'],
-    90,
-    990,
-    'year',
-    'legacy',
-    false,
-    false,
-    false
-  ),
-  (
     'lifetime',
     'Lifetime (Legacy)',
     'สิทธิ์เดิม',
@@ -123,6 +109,27 @@ on conflict (id) do update set
   note = excluded.note,
   features = excluded.features,
   sort_order = excluded.sort_order,
+  price_amount_thb = excluded.price_amount_thb,
+  billing_interval = excluded.billing_interval,
+  lifecycle_status = excluded.lifecycle_status,
+  is_public = excluded.is_public,
+  is_upgradeable = excluded.is_upgradeable,
+  is_popular = excluded.is_popular;
+
+-- Plus already has verified, truthful customer-facing copy from 016d on the
+-- live project. Preserve its existing name, price label, note, features, and
+-- display order; Phase 1B only adds lifecycle and pricing metadata. Fresh
+-- databases still receive the same features copy as 016d.
+insert into public.plans (
+  id, name, price_label, note, features, sort_order,
+  price_amount_thb, billing_interval, lifecycle_status,
+  is_public, is_upgradeable, is_popular
+) values (
+  'plus', 'Plus', '990 บาท/ปี', 'ต่ออายุทุกปี ยกเลิกได้ทุกเมื่อ',
+  array['คลังสื่อพร้อมสอนทั้งหมด', 'เทมเพลต Google และฟอร์มพร้อมใช้งาน', 'เครื่องมือในห้องเรียนครบชุด'],
+  2, 990, 'year', 'legacy', false, false, false
+)
+on conflict (id) do update set
   price_amount_thb = excluded.price_amount_thb,
   billing_interval = excluded.billing_interval,
   lifecycle_status = excluded.lifecycle_status,

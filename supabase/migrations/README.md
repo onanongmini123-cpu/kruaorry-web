@@ -62,7 +62,7 @@ independently without colliding, despite `016d` sorting before `017`.
 Phase 1B membership migrations on the feature branch are **not yet applied**
 and **not recorded** on the live project:
 
-- `20260901090000_017_membership_catalog_and_capabilities.sql`
+- `20260901090000_017b_membership_catalog_and_capabilities.sql`
 - `20260901090100_018_subscriptions_and_legacy_backfill.sql`
 - `20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql`
 - `20260901090300_020_membership_safety_guards.sql`
@@ -70,3 +70,9 @@ and **not recorded** on the live project:
 Before any migration push, reconcile the two manually executed but
 unrecorded migrations above against `schema_migrations`. Do not assume that
 their presence in Git means the migration runner has recorded them.
+The Phase 1B catalogue deliberately preserves the live Plus plan's
+customer-facing copy from `016d` while adding only lifecycle/pricing metadata.
+Apply the Phase 1B files together during a maintenance window. `019` already
+contains the durable Founder cap, correct renewal lock order and price, and
+exact-file Storage policy; `020` adds Free favorites enforcement and reasserts
+the same request, renewal, and Storage rules as defense in depth.
