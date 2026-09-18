@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, Eye, EyeOff, CheckCircle2, User } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { safeAuthNext } from "@/lib/authReturnPath";
 
 const POINTS = [
   "สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง",
@@ -13,83 +14,120 @@ const POINTS = [
   "เครื่องมือในห้องเรียน จับเวลา สุ่มชื่อ จับกลุ่ม",
 ];
 
+const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
 export const dynamic = "force-dynamic";
 
 type Mode = "signin" | "signup";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>กำลังโหลด...</div>}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeAuthNext(searchParams.get("next"));
   const supabase = useMemo(() => createClient(), []);
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "signup" ? "signup" : "signin");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "confirmation" ? "ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบหรือสมัครใหม่" : null
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) router.replace("/app");
+      if (user) router.replace(next);
+    }).catch(() => {
+      // A temporary auth/network failure must not prevent manual sign-in.
     });
-  }, [supabase, router]);
+  }, [supabase, router, next]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setNotice(null);
+    if (!isSupabaseConfigured) {
+      setError("ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
+      return;
+    }
     setLoading(true);
 
-    if (mode === "signup") {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: fullName } },
-      });
-      setLoading(false);
-      if (signUpError) {
-        setError(signUpError.message);
+    try {
+      if (mode === "signup") {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName },
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          },
+        });
+        if (signUpError) {
+          setError(signUpError.message);
+          return;
+        }
+        if (!data.session) {
+          setNotice("สมัครสำเร็จ กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตนก่อนเข้าสู่ระบบ");
+          setMode("signin");
+          return;
+        }
+        router.replace(next);
+        router.refresh();
         return;
       }
-      if (!data.session) {
-        setNotice("สมัครสำเร็จ กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตนก่อนเข้าสู่ระบบ");
-        setMode("signin");
-        return;
-      }
-      router.push("/app");
-      router.refresh();
-      return;
-    }
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (signInError) {
-      setError(signInError.message === "Invalid login credentials" ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : signInError.message);
-      return;
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setError(signInError.message === "Invalid login credentials" ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : signInError.message);
+        return;
+      }
+      router.replace(next);
+      router.refresh();
+    } catch {
+      setError("เชื่อมต่อระบบสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setLoading(false);
     }
-    router.push("/app");
-    router.refresh();
   };
 
   const handleForgotPassword = async () => {
     setError(null);
     setNotice(null);
+    if (!isSupabaseConfigured) {
+      setError("ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
+      return;
+    }
     if (!email.trim()) {
       setError("กรอกอีเมลก่อนกดลืมรหัสผ่าน");
       return;
     }
     setResetting(true);
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    setResetting(false);
-    if (resetError) {
-      setError(resetError.message);
-      return;
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (resetError) {
+        setError(resetError.message);
+        return;
+      }
+      setNotice("ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่อีเมลแล้ว กรุณาตรวจสอบกล่องจดหมาย");
+    } catch {
+      setError("ส่งลิงก์ไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setResetting(false);
     }
-    setNotice("ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่อีเมลแล้ว กรุณาตรวจสอบกล่องจดหมาย");
   };
 
   return (
@@ -135,6 +173,11 @@ export default function LoginPage() {
               {notice}
             </p>
           )}
+          {!isSupabaseConfigured && (
+            <p role="status" style={{ fontSize: "var(--fs-14)", color: "var(--status-warning-fg)", background: "var(--status-warning-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
+              ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณากลับมาใหม่ภายหลัง
+            </p>
+          )}
           {error && (
             <p style={{ fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
               {error}
@@ -170,7 +213,7 @@ export default function LoginPage() {
                 </button>
               </div>
             )}
-            <Button size="lg" block loading={loading} type="submit">
+            <Button size="lg" block loading={loading} disabled={!isSupabaseConfigured} type="submit">
               {mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
             </Button>
           </form>

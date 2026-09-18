@@ -28,6 +28,7 @@ import {
 } from "@/lib/data";
 import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
+import { resourceIdFromSearch } from "@/lib/resourceDeepLink";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,8 @@ export default function TeacherAppPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
-        router.push("/login");
+        const requestedPath = `${window.location.pathname}${window.location.search}`;
+        router.replace(`/login?next=${encodeURIComponent(requestedPath)}`);
         return;
       }
       setUserId(user.id);
@@ -95,6 +97,11 @@ export default function TeacherAppPage() {
       setRequests(requestData);
       setSaved(savedIds);
       setUpgradeRequests(upgradeData);
+      const requestedResourceId = resourceIdFromSearch(window.location.search, resourceData);
+      if (requestedResourceId) {
+        setDetailId(requestedResourceId);
+        setView("detail");
+      }
       setLoading(false);
     })();
   }, [supabase, router]);

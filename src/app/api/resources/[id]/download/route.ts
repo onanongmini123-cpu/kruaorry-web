@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getSignedFileUrl } from "@/lib/data";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
+import { downloadLoginHref } from "@/lib/downloadReturnPath";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ const RESPONSE_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-r
 // indefinitely or falling through to Next's generic error page.
 // `Referrer-Policy: no-referrer` on every response (including the
 // redirect) means the destination never learns this page's URL.
-function errorPage(status: number, message: string): NextResponse {
+function errorPage(status: number, message: string, action?: { href: string; label: string }): NextResponse {
   const html = `<!doctype html>
 <html lang="th">
 <head>
@@ -42,7 +43,7 @@ function errorPage(status: number, message: string): NextResponse {
   <main>
     <h1>ดาวน์โหลดไม่สำเร็จ</h1>
     <p>${message}</p>
-    <p><a href="/app">กลับไปที่แอป</a></p>
+    <p><a href="${action?.href ?? "/app"}">${action?.label ?? "กลับไปที่แอป"}</a></p>
   </main>
 </body>
 </html>`;
@@ -68,7 +69,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
   const { user } = authResult.value.data;
   if (!user) {
-    return errorPage(401, "กรุณาเข้าสู่ระบบก่อนดาวน์โหลดไฟล์");
+    return errorPage(401, "กรุณาเข้าสู่ระบบก่อนดาวน์โหลดไฟล์", {
+      href: downloadLoginHref(id),
+      label: "เข้าสู่ระบบเพื่อดาวน์โหลดไฟล์นี้",
+    });
   }
 
   // RLS (resources_public_read_published) already restricts this to

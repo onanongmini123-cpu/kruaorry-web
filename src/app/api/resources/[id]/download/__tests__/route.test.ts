@@ -65,7 +65,17 @@ describe("GET /api/resources/[id]/download", () => {
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toMatch(/เข้าสู่ระบบ/);
+    expect(body).toContain('href="/login?next=%2Fdownload%2Fr1"');
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("encodes the resource id in the login return link without rendering HTML from it", async () => {
+    mockedCreateClient.mockResolvedValue(fakeSupabase({ getUserImpl: async () => ({ data: { user: null } }) }) as never);
+    const response = await GET(new Request("http://localhost/api/resources/bad/download"), makeParams('bad"><script>alert(1)</script>'));
+    const body = await response.text();
+    expect(response.status).toBe(401);
+    expect(body).not.toContain('<script>alert(1)</script>');
+    expect(body).toContain("%253Cscript%253E");
   });
 
   it("returns a Thai 404 error page when the resource lookup returns an error (e.g. RLS filtered it out)", async () => {

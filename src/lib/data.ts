@@ -5,6 +5,7 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
+import { isUsableResourceTarget } from "@/lib/resourceVisibility";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -66,16 +67,22 @@ export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" 
 }
 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
-  const { data, error } = await supabase
+  const outcome = await withTimeout(Promise.resolve(supabase
     .from("resources")
     .select("id, title, meta, description, category, delivery_mode, cta_url, cover_image_url, tags, is_free, file_path, file_name, file_size")
     .eq("status", "published")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })), "published resource listing");
+
+  if (!outcome.ok) {
+    console.error(`fetchPublishedResources failed: ${outcome.reason}`);
+    return [];
+  }
+  const { data, error } = outcome.value;
 
   if (error) logError("fetchPublishedResources failed", error);
   if (error || !data) return [];
 
-  return data.map((r) => ({
+  return data.filter((r) => isUsableResourceTarget({ deliveryMode: r.delivery_mode, ctaUrl: r.cta_url, filePath: r.file_path })).map((r) => ({
     id: r.id,
     title: r.title,
     meta: r.meta ?? "",
@@ -135,12 +142,18 @@ export async function getSignedFileUrl(supabase: SupabaseClient, filePath: strin
 }
 
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
-  const { data, error } = await supabase
+  const outcome = await withTimeout(Promise.resolve(supabase
     .from("plans")
     .select("id, name, price_label, note, features, is_popular")
     .eq("is_public", true)
     .eq("lifecycle_status", "active")
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })), "public plan listing");
+
+  if (!outcome.ok) {
+    console.error(`fetchPlans failed: ${outcome.reason}`);
+    return [];
+  }
+  const { data, error } = outcome.value;
 
   if (error) logError("fetchPlans failed", error);
   if (error || !data) return [];

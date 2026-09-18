@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, getSignedFileUrl, setResourceSaved } from "../data";
+import { fetchEntitlements, fetchPlans, fetchPublishedResources, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -159,6 +159,30 @@ describe("fetchEntitlements", () => {
     } as unknown as SupabaseClient;
 
     await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+  });
+});
+
+describe("public catalog reads", () => {
+  it("excludes seeded placeholder destinations from the member library", async () => {
+    const rows = [
+      { id: "one", title: "แบบฝึกจริง", meta: "", description: "", category: "", delivery_mode: "file_download", cta_url: null, cover_image_url: null, tags: [], is_free: true, file_path: "worksheets/real.pdf", file_name: "real.pdf", file_size: 100 },
+      { id: "two", title: "ลิงก์ทดสอบ", meta: "", description: "", category: "", delivery_mode: "web_app", cta_url: "https://example.com/classroom-timer", cover_image_url: null, tags: [], is_free: true, file_path: null, file_name: null, file_size: null },
+    ];
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: rows, error: null }) };
+    const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง" }]);
+  });
+
+  it("ends a stalled plan request instead of leaving the home page loading forever", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnValue(new Promise(() => {})) };
+    const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    const result = fetchPlans(client);
+    await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
+    await expect(result).resolves.toEqual([]);
   });
 });
 

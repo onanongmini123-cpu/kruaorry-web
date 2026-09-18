@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+For the public teaching-resource preview, signup return path, and the steps to publish a genuine free sample, see [docs/public-resource-funnel.md](docs/public-resource-funnel.md).
+
 ## Getting Started
 
 First, run the development server:
