@@ -16,11 +16,23 @@ const PILLARS = [
 
 export default function LandingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
+    let active = true;
     const supabase = createClient();
-    fetchPlans(supabase).then(setPlans);
-  }, []);
+    fetchPlans(supabase)
+      .then((rows) => {
+        if (!active) return;
+        setPlans(rows);
+        setPlansLoaded(true);
+      })
+      .catch(() => {
+        if (active) setPlansLoaded(true);
+      });
+    return () => { active = false; };
+  }, [loadAttempt]);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -106,6 +118,14 @@ export default function LandingPage() {
           <p style={{ marginTop: "var(--sp-3)", textAlign: "center", color: "var(--text-muted)" }}>
             เลือกแพ็กที่เหมาะกับคุณ สมัครสมาชิกฟรีแล้วอัปเกรดได้ทุกเมื่อ
           </p>
+          {plansLoaded && plans.length === 0 && (
+            <div role="status" className="kru-card" style={{ marginTop: "var(--sp-8)", padding: "var(--sp-7)", textAlign: "center" }}>
+              <p style={{ marginBottom: "var(--sp-4)" }}>ขณะนี้ยังแสดงแพ็กเกจไม่ได้ โปรดลองใหม่อีกครั้งในภายหลัง</p>
+              <Button variant="secondary" onClick={() => { setPlansLoaded(false); setLoadAttempt((attempt) => attempt + 1); }}>
+                ลองโหลดอีกครั้ง
+              </Button>
+            </div>
+          )}
           <div style={{ marginTop: "var(--sp-8)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
             {plans.map((plan) => (
               <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
