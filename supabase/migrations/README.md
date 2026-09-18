@@ -65,6 +65,7 @@ and **not recorded** on the live project:
 - `20260901090000_017_membership_catalog_and_capabilities.sql`
 - `20260901090100_018_subscriptions_and_legacy_backfill.sql`
 - `20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql`
+- `20260901090300_020_membership_safety_guards.sql`
 
 Before any migration push, reconcile the two manually executed but
 unrecorded migrations above against `schema_migrations`. Do not assume that

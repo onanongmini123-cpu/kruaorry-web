@@ -7,6 +7,7 @@ const migration = (name: string) => readFileSync(join(process.cwd(), "supabase",
 const catalogueSql = migration("20260901090000_017_membership_catalog_and_capabilities.sql");
 const subscriptionsSql = migration("20260901090100_018_subscriptions_and_legacy_backfill.sql");
 const membershipSql = migration("20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql");
+const safetySql = migration("20260901090300_020_membership_safety_guards.sql");
 
 describe("Phase 1B membership migration invariants", () => {
   it("keeps legacy plans hidden and unavailable for new upgrades", () => {
@@ -51,11 +52,45 @@ describe("Phase 1B membership migration invariants", () => {
   });
 
   it("does not delete profiles, subscriptions, events, or upgrade requests", () => {
-    const executableSql = `${catalogueSql}\n${subscriptionsSql}\n${membershipSql}`
+    const executableSql = `${catalogueSql}\n${subscriptionsSql}\n${membershipSql}\n${safetySql}`
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("--"))
       .join("\n");
     expect(executableSql).not.toMatch(/delete\s+from\s+public\.(profiles|subscriptions|subscription_events|upgrade_requests)/i);
     expect(executableSql).not.toMatch(/truncate/i);
+  });
+
+  it("caps Founder at 100 distinct members ever, including expired history", () => {
+    const trigger = safetySql.slice(
+      safetySql.indexOf("create function public.enforce_founder_100_cap"),
+      safetySql.indexOf("create trigger trg_enforce_founder_100_cap"),
+    );
+    expect(trigger).toContain("pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0))");
+    expect(trigger).toContain("count(distinct user_id)");
+    expect(trigger).not.toMatch(/status\s+in\s*\(/i);
+    expect(trigger).toContain(">= 100");
+  });
+
+  it("enforces Free saved-resource limits under a per-user lock", () => {
+    expect(safetySql).toContain("pg_advisory_xact_lock(hashtextextended('saved-resources:' || new.user_id::text, 0))");
+    expect(safetySql).toContain("feature_id = 'favorites.enabled'");
+    expect(safetySql).toContain("feature_id = 'favorites.limit'");
+    expect(safetySql).toContain("count(*) from public.saved_resources where user_id = new.user_id");
+  });
+
+  it("does not renew cancelled, revoked, or perpetual legacy subscriptions", () => {
+    const renew = safetySql.slice(safetySql.indexOf("create or replace function public.renew_subscription"));
+    expect(renew).toContain("status not in ('active', 'past_due')");
+    expect(renew).toContain("v_subscription.source = 'legacy'");
+    expect(renew).toContain("v_subscription.current_period_end is null");
+    expect(renew).toContain("v_plan.lifecycle_status <> 'active'");
+    expect(renew.indexOf("pg_advisory_xact_lock")).toBeLessThan(renew.indexOf("for update"));
+  });
+
+  it("requires an upgrade request to be pending and entitles only the current published file", () => {
+    expect(safetySql).toContain("and status = 'pending'");
+    expect(safetySql).toContain("and resolved_at is null");
+    expect(safetySql).toContain("r.file_path = storage.objects.name");
+    expect(safetySql).toContain("r.id::text = (regexp_match(storage.objects.name, '^([^/]+)/'))[1]");
   });
 });

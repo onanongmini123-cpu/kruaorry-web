@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText, MessageCircle } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
@@ -60,6 +60,7 @@ export default function TeacherAppPage() {
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
+  const savingResourceIds = useRef<Set<string>>(new Set());
   const [userId, setUserId] = useState<string | null>(null);
   const [requests, setRequests] = useState<TeacherRequest[]>([]);
   const [newRequestTitle, setNewRequestTitle] = useState("");
@@ -133,11 +134,24 @@ export default function TeacherAppPage() {
     return Array.from(seen.entries()).map(([value, label]) => ({ value, label }));
   }, [resources]);
 
-  const toggleSaved = (id: string) => {
-    if (!userId) return;
+  const toggleSaved = async (id: string) => {
+    if (!userId || savingResourceIds.current.has(id)) return;
+    savingResourceIds.current.add(id);
     const nowSaved = !saved.includes(id);
-    setSaved((prev) => (nowSaved ? [...prev, id] : prev.filter((s) => s !== id)));
-    setResourceSaved(supabase, userId, id, nowSaved);
+    try {
+      const error = await setResourceSaved(supabase, userId, id, nowSaved);
+      if (error) {
+        window.alert(nowSaved
+          ? "บันทึกรายการไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือจำนวนรายการที่แพ็กของคุณบันทึกได้"
+          : "นำรายการที่บันทึกไว้ออกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        return;
+      }
+      setSaved((prev) => (nowSaved ? [...prev, id] : prev.filter((s) => s !== id)));
+    } catch {
+      window.alert("เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      savingResourceIds.current.delete(id);
+    }
   };
 
   const openDetail = (r: Resource) => {

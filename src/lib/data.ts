@@ -211,14 +211,15 @@ export async function fetchSavedResourceIds(supabase: SupabaseClient, userId: st
   return data.map((r) => r.resource_id);
 }
 
-export async function setResourceSaved(supabase: SupabaseClient, userId: string, resourceId: string, saved: boolean): Promise<void> {
+export async function setResourceSaved(supabase: SupabaseClient, userId: string, resourceId: string, saved: boolean): Promise<string | null> {
   if (saved) {
     const { error } = await supabase.from("saved_resources").insert({ user_id: userId, resource_id: resourceId });
     if (error) logError("setResourceSaved (save) failed", error);
-    return;
+    return error?.message ?? null;
   }
   const { error } = await supabase.from("saved_resources").delete().eq("user_id", userId).eq("resource_id", resourceId);
   if (error) logError("setResourceSaved (unsave) failed", error);
+  return error?.message ?? null;
 }
 
 export interface UpgradeRequest {

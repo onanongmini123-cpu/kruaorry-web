@@ -8,7 +8,7 @@ Supabase remains authoritative; frontend checks are presentation only.
 Public plans:
 
 - `free` — 0 THB
-- `founder` — 299 THB/year, capped at 100 active continuous subscriptions
+- `founder` — 299 THB/year, capped at 100 distinct members ever admitted
 - `teacher` — 599 THB/year and the primary public plan
 - `teacher_pro` — 990 THB/year
 
@@ -55,6 +55,10 @@ one-time historical plan.
 `subscription_events` is append-only from the browser's perspective and keeps
 activation, renewal, cancellation, expiry and Founder price-lock history.
 
+Free members may save at most 10 resources. A database trigger checks the
+catalogue limit under a per-member transaction lock. Existing saved rows are
+preserved if a member was already over that limit; only new inserts are denied.
+
 ## Manual operations
 
 - `approve_upgrade_request(request_id)` activates a subscription and resolves
@@ -62,7 +66,10 @@ activation, renewal, cancellation, expiry and Founder price-lock history.
 - `decline_upgrade_request(request_id)` resolves a pending request without
   changing membership.
 - `set_member_plan(user_id, plan_id, reason)` handles explicit admin changes.
-- `renew_subscription(subscription_id)` renews an annual subscription.
+- `renew_subscription(subscription_id)` renews a current annual subscription.
+  It cannot revive cancelled/revoked records or add an expiry to preserved
+  legacy access. Late Teacher/Teacher Pro renewal uses the current plan price;
+  late Founder renewal records the lost price lock instead.
 
 All mutation RPCs are `SECURITY DEFINER`, verify `is_admin()` internally and
 write a subscription event. Direct updates to `profiles.plan` and direct
@@ -70,11 +77,11 @@ approval updates on `upgrade_requests` are blocked.
 
 ## Founder 100 invariant
 
-Every new Founder activation obtains the same transaction-level advisory lock,
-counts valid active Founder subscriptions under that lock, rejects activation
-at 100, then inserts the new subscription before releasing the lock. A user
-with any previous Founder subscription cannot claim Founder again; renewal is
-the only path that keeps the 299 THB price lock.
+Every new Founder activation obtains the same transaction-level advisory lock.
+An additional database insert trigger counts distinct members who have **ever**
+held Founder under that lock and rejects the 101st unique member. Expired seats
+are not recycled. A user with any previous Founder subscription cannot claim
+Founder again; renewal is the only path that keeps the 299 THB price lock.
 
 If renewal occurs after the Founder period has ended, the subscription history
 is retained, the lock becomes `lost_price_lock`, and the effective plan becomes

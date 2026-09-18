@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, getSignedFileUrl } from "../data";
+import { fetchEntitlements, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -159,5 +159,24 @@ describe("fetchEntitlements", () => {
     } as unknown as SupabaseClient;
 
     await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+  });
+});
+
+describe("setResourceSaved", () => {
+  it("returns a write error so the UI does not show a failed save as successful", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const insert = vi.fn().mockResolvedValue({ error: { message: "Saved resource limit reached", code: "P0001", details: "", hint: "" } });
+    const supabase = { from: vi.fn().mockReturnValue({ insert }) } as unknown as SupabaseClient;
+
+    await expect(setResourceSaved(supabase, "user-1", "resource-1", true)).resolves.toBe("Saved resource limit reached");
+    expect(insert).toHaveBeenCalledWith({ user_id: "user-1", resource_id: "resource-1" });
+  });
+
+  it("returns null after a successful save", async () => {
+    const supabase = {
+      from: vi.fn().mockReturnValue({ insert: vi.fn().mockResolvedValue({ error: null }) }),
+    } as unknown as SupabaseClient;
+
+    await expect(setResourceSaved(supabase, "user-1", "resource-1", true)).resolves.toBeNull();
   });
 });
