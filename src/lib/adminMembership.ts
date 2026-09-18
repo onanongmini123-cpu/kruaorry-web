@@ -29,3 +29,18 @@ export function canRenewMember(subscription: AdminSubscription | null, now = Dat
   }
   return true; // A late normal-plan renewal uses the current catalogue price.
 }
+
+export function memberPlanChangeConfirmation(
+  currentPlanName: string,
+  nextPlanName: string,
+  subscription: AdminSubscription | null,
+): string {
+  const warnings = ["การเปลี่ยนแพ็กจะยกเลิกสิทธิ์แพ็กเดิมที่ยังมีผลทันที (ถ้ามี)"];
+  if (subscription?.source === "legacy" || subscription?.billing_interval === "one_time") {
+    warnings.push("สิทธิ์เดิม/ตลอดชีพอาจกู้คืนไม่ได้");
+  }
+  if (subscription?.plan_id === "founder" && subscription.founder_price_lock) {
+    warnings.push("สิทธิ์ราคาพิเศษ Founder จะสิ้นสุดและไม่สามารถกู้คืนได้");
+  }
+  return `เปลี่ยนแพ็กจาก ${currentPlanName} เป็น ${nextPlanName} ใช่หรือไม่?\n\n${warnings.join("\n")}\n\nกรุณายืนยันก่อนดำเนินการ`;
+}

@@ -30,7 +30,7 @@ import {
   type TusUploadHandle,
 } from "@/lib/resourceFile";
 import { applySelfRoleChange } from "@/lib/memberRole";
-import { canRenewMember, effectiveMemberPlan, type AdminSubscription } from "@/lib/adminMembership";
+import { canRenewMember, effectiveMemberPlan, memberPlanChangeConfirmation, type AdminSubscription } from "@/lib/adminMembership";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +151,7 @@ export default function AdminConsolePage() {
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
   const [founderSeatsUsed, setFounderSeatsUsed] = useState<number | null>(null);
   const [renewingId, setRenewingId] = useState<string | null>(null);
+  const [changingPlanId, setChangingPlanId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -779,13 +780,25 @@ export default function AdminConsolePage() {
     await reloadAdminData();
   };
 
-  const handleMemberPlanChange = async (id: string, plan: string) => {
-    const { error } = await supabase.rpc("set_member_plan", { p_user_id: id, p_plan_id: plan, p_reason: "admin_members_table" });
-    if (error) {
-      window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error.message}`);
-      return;
+  const handleMemberPlanChange = async (id: string, currentPlan: string, nextPlan: string, subscription: AdminSubscription | null) => {
+    if (subscriptions === null || changingPlanId !== null || currentPlan === nextPlan) return;
+    const currentName = plans.find((plan) => plan.id === currentPlan)?.name ?? currentPlan;
+    const nextName = plans.find((plan) => plan.id === nextPlan && plan.lifecycle_status === "active")?.name;
+    if (!nextName) return;
+    if (!window.confirm(memberPlanChangeConfirmation(currentName, nextName, subscription))) return;
+    setChangingPlanId(id);
+    try {
+      const { error } = await supabase.rpc("set_member_plan", { p_user_id: id, p_plan_id: nextPlan, p_reason: "admin_members_table" });
+      if (error) {
+        window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error.message}`);
+        return;
+      }
+      await reloadAdminData();
+    } catch (error) {
+      window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
+    } finally {
+      setChangingPlanId(null);
     }
-    await reloadAdminData();
   };
 
   const handleRenewSubscription = async (subscription: AdminSubscription) => {
@@ -1237,8 +1250,13 @@ export default function AdminConsolePage() {
                               className="kru-select"
                               style={{ minHeight: 36, width: "auto" }}
                               value={effectivePlan}
-                              disabled={subscriptions === null || renewingId !== null}
-                              onChange={(e) => handleMemberPlanChange(m.id, e.target.value)}
+                              disabled={subscriptions === null || renewingId !== null || changingPlanId !== null}
+                              onChange={(e) => {
+                                const nextPlan = e.currentTarget.value;
+                                // Keep the visible selection unchanged until the confirmed RPC succeeds.
+                                e.currentTarget.value = effectivePlan;
+                                void handleMemberPlanChange(m.id, effectivePlan, nextPlan, subscription);
+                              }}
                             >
                               {plans
                                 .filter((plan) => plan.lifecycle_status === "active" || plan.id === effectivePlan)

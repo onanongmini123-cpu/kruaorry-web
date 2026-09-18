@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canRenewMember, effectiveMemberPlan, type AdminSubscription } from "../adminMembership";
+import { canRenewMember, effectiveMemberPlan, memberPlanChangeConfirmation, type AdminSubscription } from "../adminMembership";
 
 const member = (overrides: Partial<AdminSubscription> = {}): AdminSubscription => ({
   id: "subscription-1",
@@ -42,5 +42,29 @@ describe("admin membership display", () => {
       expect(effectiveMemberPlan(member({ status }), now)).toBe("free");
       expect(canRenewMember(member({ status }), now)).toBe(false);
     }
+  });
+});
+
+describe("admin plan change confirmation", () => {
+  it("names both plans and warns that existing access is cancelled", () => {
+    const message = memberPlanChangeConfirmation("Teacher", "Free", member());
+    expect(message).toContain("จาก Teacher เป็น Free");
+    expect(message).toContain("ยกเลิกสิทธิ์แพ็กเดิม");
+    expect(message).not.toContain("ตลอดชีพ");
+    expect(message).not.toContain("Founder");
+  });
+
+  it("warns that legacy or lifetime access may not be recoverable", () => {
+    const legacy = member({ plan_id: "plus", source: "legacy", billing_interval: "one_time", current_period_end: null });
+    const message = memberPlanChangeConfirmation("Plus เดิม", "Teacher", legacy);
+    expect(message).toContain("จาก Plus เดิม เป็น Teacher");
+    expect(message).toContain("สิทธิ์เดิม/ตลอดชีพอาจกู้คืนไม่ได้");
+  });
+
+  it("warns that changing Founder forfeits the locked price", () => {
+    const founder = member({ plan_id: "founder", founder_status: "active", founder_price_lock: true });
+    const message = memberPlanChangeConfirmation("Founder", "Teacher", founder);
+    expect(message).toContain("จาก Founder เป็น Teacher");
+    expect(message).toContain("สิทธิ์ราคาพิเศษ Founder จะสิ้นสุดและไม่สามารถกู้คืนได้");
   });
 });
