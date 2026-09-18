@@ -2,14 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, KeyRound, Eye, EyeOff, Globe, CheckCircle2, User } from "lucide-react";
+import { Mail, KeyRound, Eye, EyeOff, CheckCircle2, User } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { Button, Input, Checkbox, IconButton } from "@/components/ui";
+import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 
 const POINTS = [
   "สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง",
-  "AI ช่วยออกข้อสอบ ตรวจงาน และเขียนแผนการสอน",
+  "เทมเพลต Google Sheets/Docs/Slides และฟอร์มพร้อมใช้งาน",
   "เครื่องมือในห้องเรียน จับเวลา สุ่มชื่อ จับกลุ่ม",
 ];
 
@@ -25,7 +25,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -142,16 +141,6 @@ export default function LoginPage() {
             </p>
           )}
 
-          <div style={{ display: "grid", gap: "var(--sp-4)" }}>
-            <Button variant="secondary" size="lg" block icon={Globe} type="button" disabled title="เร็วๆ นี้">
-              เข้าสู่ระบบด้วย Google (เร็วๆ นี้)
-            </Button>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-4)", margin: "var(--sp-7) 0" }}>
-            <span style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
-            <span style={{ fontSize: "var(--fs-14)", color: "var(--text-faint)" }}>หรือใช้อีเมล</span>
-            <span style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
-          </div>
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: "var(--sp-5)" }}>
             {mode === "signup" && (
               <Input label="ชื่อ-นามสกุล" icon={User} placeholder="ครูนภา ใจดี" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" required />
@@ -170,8 +159,7 @@ export default function LoginPage() {
               trailing={<IconButton icon={showPassword ? EyeOff : Eye} label="แสดงรหัสผ่าน" onClick={() => setShowPassword((v) => !v)} />}
             />
             {mode === "signin" && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <Checkbox label="จำการเข้าสู่ระบบไว้" checked={remember} onChange={setRemember} />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
                   type="button"
                   onClick={handleForgotPassword}
