@@ -1,4 +1,4 @@
-import { isUsableResourceTarget, publicCoverUrl } from "@/lib/resourceVisibility";
+import { publicCoverUrl } from "@/lib/resourceVisibility";
 
 export type PublicResource = {
   id: string;
@@ -10,7 +10,6 @@ export type PublicResource = {
   coverImageUrl: string;
   tags: string[];
   isFree: boolean;
-  fileName: string | null;
 };
 
 type Row = Record<string, unknown>;
@@ -19,10 +18,8 @@ const DELIVERY_MODES = new Set<PublicResource["deliveryMode"]>([
   "web_app", "google_template", "google_form", "file_download",
 ]);
 
-// The starter SQL publishes three design fixtures with placeholder CTAs.
-// They are not usable resources, so a public showcase must never advertise
-// them or route a visitor toward a dead download/link. All other rows still
-// require a real cover and a usable publish target.
+// The resource_catalog view filters unusable/private targets before these
+// metadata rows reach the app. Never request a destination in public pages.
 export function toPublicResource(value: unknown): PublicResource | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Row;
@@ -32,11 +29,6 @@ export function toPublicResource(value: unknown): PublicResource | null {
   if (!DELIVERY_MODES.has(row.delivery_mode as PublicResource["deliveryMode"])) return null;
   const cover = publicCoverUrl(row.cover_image_url);
   if (!cover) return null;
-  if (!isUsableResourceTarget({
-    deliveryMode: row.delivery_mode as string,
-    ctaUrl: typeof row.cta_url === "string" ? row.cta_url : null,
-    filePath: typeof row.file_path === "string" ? row.file_path : null,
-  })) return null;
   return {
     id: row.id,
     title: row.title.trim(),
@@ -47,11 +39,10 @@ export function toPublicResource(value: unknown): PublicResource | null {
     coverImageUrl: cover,
     tags: Array.isArray(row.tags) ? row.tags.filter((tag): tag is string => typeof tag === "string").slice(0, 5) : [],
     isFree: row.is_free === true,
-    fileName: typeof row.file_name === "string" ? row.file_name : null,
   };
 }
 
-export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cta_url, cover_image_url, tags, is_free, file_path, file_name, status";
+export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status";
 
 export function signupHref(resource: PublicResource): string {
   const destination = resource.isFree && resource.deliveryMode === "file_download"

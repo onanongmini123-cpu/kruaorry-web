@@ -10,10 +10,12 @@ Public plans:
 - `free` — 0 THB
 - `founder` — 299 THB/year, capped at 100 distinct members ever admitted
 - `teacher` — 599 THB/year and the primary public plan
-- `teacher_pro` — 990 THB/year
 
 Compatibility plans:
 
+- `teacher_pro` keeps its 990 THB/year catalogue row but is hidden and not
+  upgradeable until advanced tools actually ship. No existing membership is
+  deleted or downgraded.
 - `plus` remains a hidden legacy plan. Existing profiles and upgrade requests
   retain it, but new requests and manual assignments cannot select it.
 - `lifetime` is a hidden retired compatibility row. It exists only so a
@@ -111,9 +113,11 @@ member table displays the effective subscription plan (not the potentially
 stale profile cache) and offers manual annual renewal only when the
 server-side rules permit it. No automatic payment is collected.
 
-Before deployment, reconcile the two older migrations that were executed
-manually but are absent from `schema_migrations`, then validate 017b–021 in a
-staging copy of the actual database. Apply them in order during a maintenance
-window, verify RLS and payment/approval flows as real roles, and only then
-enable the new membership surface. No migration in this branch has been
-applied to the live project yet.
+The two older migrations executed manually (016d and 017) were verified
+against the live schema and recorded with `supabase migration repair` on
+2026-09-18 without rerunning their SQL. Recheck the ledger and dry-run before
+release. The pending 017b–023 chain must be applied in order in a coordinated
+maintenance window with the matching frontend deployment: older production
+code would break after the restrictive migrations, while new code needs the
+new views and RPCs. Verify RLS and approval flows as real roles. As of this
+note, none of the seven pending migrations has been applied live.

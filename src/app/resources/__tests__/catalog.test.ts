@@ -35,16 +35,14 @@ describe("public resource showcase", () => {
     expect(safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"))).toBe(`/app?resource=${id}`);
   });
 
-  it("never advertises the published starter fixtures with placeholder or example links", () => {
-    expect(toPublicResource({ ...base, delivery_mode: "google_template", file_path: null, cta_url: "https://docs.google.com/document/d/placeholder/copy" })).toBeNull();
-    expect(toPublicResource({ ...base, delivery_mode: "web_app", file_path: null, cta_url: "https://example.com/classroom-timer" })).toBeNull();
-    expect(toPublicResource({ ...base, delivery_mode: "google_form", file_path: null, cta_url: "https://forms.gle/placeholder" })).toBeNull();
+  it("never puts private destinations into the public page model", () => {
+    const item = toPublicResource({ ...base, delivery_mode: "google_template", cta_url: "https://private.example/?token=SECRET", file_path: "private/path" });
+    expect(JSON.stringify(item)).not.toMatch(/SECRET|private\/path|worksheet[.]pdf/);
   });
 
-  it("fails closed for drafts, missing cover, missing target and invalid ids", () => {
+  it("fails closed for drafts, missing cover and invalid ids", () => {
     expect(toPublicResource({ ...base, status: "draft" })).toBeNull();
     expect(toPublicResource({ ...base, cover_image_url: null })).toBeNull();
-    expect(toPublicResource({ ...base, file_path: null })).toBeNull();
     expect(toPublicResource({ ...base, id: "../admin" })).toBeNull();
   });
 });

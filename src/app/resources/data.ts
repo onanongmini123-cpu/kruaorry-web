@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { PUBLIC_RESOURCE_SELECT, toPublicResource, type PublicResource } from "./catalog";
+import { collectResourcePages } from "./pagination";
 
 type LoadResult = { status: "ready"; resources: PublicResource[] } | { status: "unavailable"; resources: [] };
 
@@ -10,17 +11,21 @@ export async function loadPublicResources(): Promise<LoadResult> {
   }
   try {
     const client = await createClient();
-    const outcome = await withTimeout(
-      Promise.resolve(client.from("resources").select(PUBLIC_RESOURCE_SELECT).eq("status", "published").order("published_at", { ascending: false }).limit(100)),
-      "public resource listing",
-    );
-    if (!outcome.ok || outcome.value.error || !outcome.value.data) {
+    const rows = await collectResourcePages(async (from, to) => {
+      const outcome = await withTimeout(
+        Promise.resolve(client.from("resource_catalog").select(PUBLIC_RESOURCE_SELECT)
+          .order("published_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
+        "public resource listing",
+      );
+      return outcome.ok ? outcome.value : { data: null, error: outcome.reason };
+    });
+    if (!rows) {
       console.error("Public resource listing is unavailable");
       return { status: "unavailable", resources: [] };
     }
     return {
       status: "ready",
-      resources: outcome.value.data.map(toPublicResource).filter((item): item is PublicResource => item !== null),
+      resources: rows.map(toPublicResource).filter((item): item is PublicResource => item !== null),
     };
   } catch {
     console.error("Public resource listing failed");
@@ -34,7 +39,7 @@ export async function loadPublicResource(id: string): Promise<PublicResource | n
   try {
     const client = await createClient();
     const outcome = await withTimeout(
-      Promise.resolve(client.from("resources").select(PUBLIC_RESOURCE_SELECT).eq("id", id).eq("status", "published").maybeSingle()),
+      Promise.resolve(client.from("resource_catalog").select(PUBLIC_RESOURCE_SELECT).eq("id", id).maybeSingle()),
       "public resource detail",
     );
     return outcome.ok && !outcome.value.error ? toPublicResource(outcome.value.data) : null;

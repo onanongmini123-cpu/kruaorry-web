@@ -7,6 +7,7 @@ import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpe
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { loadResourceTarget } from "@/lib/resourceTarget";
 import {
   validateResourceFile,
   formatFileSize,
@@ -329,13 +330,14 @@ export default function AdminConsolePage() {
       window.alert(guard.message);
       return;
     }
-    const { data, error } = await supabase
-      .from("resources")
-      .select("title, meta, description, category, delivery_mode, cta_url, cover_image_url, is_free, file_path, file_name, file_size, file_mime_type")
-      .eq("id", id)
-      .single();
-    if (error || !data) {
-      window.alert(`โหลดข้อมูลสื่อไม่สำเร็จ: ${error?.message ?? ""}`);
+    const [{ data, error }, { target: resolved, error: targetError }] = await Promise.all([
+      supabase.from("resources")
+        .select("title, meta, description, category, delivery_mode, cover_image_url, is_free, file_size, file_mime_type")
+        .eq("id", id).single(),
+      loadResourceTarget(supabase, id),
+    ]);
+    if (error || !data || targetError || !resolved) {
+      window.alert(`โหลดข้อมูลสื่อไม่สำเร็จ: ${error?.message ?? targetError ?? ""}`);
       return;
     }
     setEditingId(id);
@@ -349,11 +351,11 @@ export default function AdminConsolePage() {
       description: data.description ?? "",
       category: data.category ?? "",
       delivery_mode: data.delivery_mode,
-      cta_url: data.cta_url ?? "",
+      cta_url: resolved.cta_url ?? "",
       cover_image_url: data.cover_image_url ?? "",
       is_free: data.is_free,
-      file_path: data.file_path ?? "",
-      file_name: data.file_name ?? "",
+      file_path: resolved.file_path ?? "",
+      file_name: resolved.file_name ?? "",
       file_size: data.file_size ?? 0,
       file_mime_type: data.file_mime_type ?? "",
     });
@@ -672,14 +674,17 @@ export default function AdminConsolePage() {
     try {
       if (status === "published") {
         const target = resources.find((r) => r.id === id);
-        const { data: full, error: queryError } = await supabase.from("resources").select("delivery_mode, cover_image_url, file_path, cta_url").eq("id", id).single();
+        const [{ data: metadata, error: queryError }, { target: resolved, error: targetError }] = await Promise.all([
+          supabase.from("resources").select("delivery_mode, cover_image_url").eq("id", id).single(),
+          loadResourceTarget(supabase, id),
+        ]);
         // Fail closed: a query error or a missing row must never be treated
         // as "no problems found" — both block the publish.
         const publishGuard = evaluatePublishGuard({
-          data: full
-            ? { status: "published", deliveryMode: full.delivery_mode, coverImageUrl: full.cover_image_url, filePath: full.file_path, ctaUrl: full.cta_url }
+          data: metadata && resolved
+            ? { status: "published", deliveryMode: metadata.delivery_mode, coverImageUrl: metadata.cover_image_url, filePath: resolved.file_path, ctaUrl: resolved.cta_url }
             : null,
-          error: queryError ? { message: queryError.message } : null,
+          error: queryError || targetError ? { message: queryError?.message ?? targetError ?? "" } : null,
         });
         if (!publishGuard.allow) {
           window.alert(`ยังเผยแพร่ "${target?.title ?? ""}" ไม่ได้ — ${publishGuard.reason}`);
@@ -706,12 +711,12 @@ export default function AdminConsolePage() {
     if (!window.confirm(`ลบ "${title}" ใช่หรือไม่? ลบแล้วกู้คืนไม่ได้`)) return;
     setSaving(true);
     try {
-      const { data: full, error: lookupError } = await supabase.from("resources").select("file_path").eq("id", id).single();
+      const { target, error: lookupError } = await loadResourceTarget(supabase, id);
       // Fail closed: if we can't read file_path we don't know whether a
       // file needs cleanup, so the resource row must not be deleted either
       // — otherwise a delete could silently orphan a private file forever.
-      if (!canProceedAfterFileLookup(lookupError ? { message: lookupError.message } : null)) {
-        window.alert(`ลบไม่สำเร็จ: ตรวจสอบไฟล์แนบไม่ได้ (${lookupError?.message ?? ""}) กรุณาลองใหม่ — ไม่ได้ลบข้อมูลสื่อ`);
+      if (!target || !canProceedAfterFileLookup(lookupError ? { message: lookupError } : null)) {
+        window.alert(`ลบไม่สำเร็จ: ตรวจสอบไฟล์แนบไม่ได้ (${lookupError ?? ""}) กรุณาลองใหม่ — ไม่ได้ลบข้อมูลสื่อ`);
         return;
       }
       const { error } = await supabase.from("resources").delete().eq("id", id);
@@ -719,8 +724,8 @@ export default function AdminConsolePage() {
         window.alert(`ลบไม่สำเร็จ: ${error.message}`);
         return;
       }
-      if (full?.file_path) {
-        const { failed } = await retryCleanup([{ storage: supabase.storage.from("resource-files"), path: full.file_path }]);
+      if (target.file_path) {
+        const { failed } = await retryCleanup([{ storage: supabase.storage.from("resource-files"), path: target.file_path }]);
         if (failed.length > 0) {
           setFailedCleanups((prev) => [...prev, ...failed]);
           window.alert(`ลบสื่อ "${title}" สำเร็จ แต่ลบไฟล์แนบไม่สำเร็จ: ${failed[0].message} — ระบบเก็บรายการนี้ไว้ให้ลองใหม่ได้จากแบนเนอร์ด้านบน`);

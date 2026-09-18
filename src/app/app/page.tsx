@@ -175,7 +175,7 @@ export default function TeacherAppPage() {
       setView("plans");
       return;
     }
-    if (r.affordance === "file_download" && r.filePath) {
+    if (r.affordance === "file_download") {
       // The URL is same-origin and known synchronously, so window.open()
       // happens immediately inside this click handler — no async gap, so
       // no risk of a blank tab left hanging (see downloadWindow.ts for why
@@ -186,7 +186,7 @@ export default function TeacherAppPage() {
       // whole file is in hand — see triggerBlobDownload.ts for why that's
       // the deterministic point to do it from, and why a plain redirect
       // straight to the file can't reliably self-close a tab at all.
-      const target = `/download/${r.id}${r.fileName ? `?name=${encodeURIComponent(r.fileName)}` : ""}`;
+      const target = `/download/${r.id}`;
       const result = openDownloadInNewTab(target, {
         open: (url, tab) => window.open(url, tab),
         assign: (url) => window.location.assign(url),
@@ -199,7 +199,9 @@ export default function TeacherAppPage() {
       }
       return;
     }
-    if (r.ctaUrl) window.open(r.ctaUrl, "_blank", "noopener,noreferrer");
+    // The server resolves the private destination only after rechecking the
+    // session and current entitlement. No external URL reaches the catalog.
+    window.open(`/api/resources/${r.id}/open`, "_blank", "noopener,noreferrer");
   };
 
   const handleSignOut = async () => {

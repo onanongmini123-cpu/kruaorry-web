@@ -8,6 +8,7 @@ The `/resources` catalog and `/resources/[id]` detail pages show only published 
 - In Supabase Auth URL Configuration, set the production Site URL and explicitly allow the production and each preview origin's `/auth/callback` URL before testing confirmation emails. Do not rely on a broad redirect wildcard.
 - Apply the existing resource-file Storage/RLS and membership migrations before publishing a downloadable file. The download API uses the signed-in visitor's own session, not an elevated key.
 - Apply `20260918090000_022_resource_file_signup_gate.sql` before advertising a free download. It closes the old Storage-policy path that let signed-out clients create their own signed URL for a free file. First inspect the live `storage.objects` SELECT/ALL policies: another permissive policy could still grant access. Test direct anonymous Storage access is denied and a signed-in free account can download its free file.
+- Apply the following `20260918090100_023_split_public_resource_read_policy.sql` in the same release. Its public catalogue exposes only display metadata; the actual external URL or private file path is resolved only after server-side membership checks. Do not deploy frontend code that reads `resource_catalog` before this migration is applied.
 
 Read-only preflight in the Supabase SQL Editor:
 
@@ -21,7 +22,7 @@ order by policyname;
 select id, public from storage.buckets where id = 'resource-files';
 ```
 
-Before applying migration 022, confirm `resource_files_entitled_read` is the active read rule for `resource-files` and the bucket remains private. Post-migration, test that an unauthenticated client cannot call Storage `createSignedUrl` for a free file, a permanent free account can download it, and that same account cannot download a premium file. Also test a premium member and an admin. Already-issued signed URLs cannot be revoked by this policy change; the app issues them for only 60 seconds.
+Before applying migrations 022–023, confirm `resource_files_entitled_read` is the active read rule for `resource-files` and the bucket remains private. Post-migration, test that an unauthenticated client cannot call Storage `createSignedUrl` for a free file or read a premium `cta_url` directly, a permanent free account can download its free file but cannot resolve a premium destination, and premium members/admins can open their entitled resources. Already-issued signed URLs cannot be revoked by this policy change; the app issues them for only 60 seconds. External Google/web destinations may still be reshared after an entitled member opens them; truly non-shareable access requires authorization at the destination service too.
 
 ## Publish the first genuine free sample
 
@@ -34,4 +35,4 @@ The code path is ready without an initial sample file, but a real end-to-end dow
 
 ## Local checks
 
-Run `npm test`, `npm run test:resource-file-sql`, `npm run lint`, and `npx tsc --noEmit`. The SQL test uses an isolated PGlite database and never contacts Supabase; it does not replace testing against the live project's policy set. Run `npm run build` in an environment that can reach Google Fonts. When Turbopack cannot spawn a local worker in a restricted sandbox, `npm run build -- --webpack` verifies the same production routes with Next.js's documented Webpack mode.
+Run `npm test`, `npm run test:resource-file-sql`, `npm run test:public-resource-sql`, `npm run lint`, and `npx tsc --noEmit`. The SQL tests use an isolated PGlite database and never contact Supabase; they do not replace testing against the live project's policy set. Run `npm run build` in an environment that can reach Google Fonts. When Turbopack cannot spawn a local worker in a restricted sandbox, `npm run build -- --webpack` verifies the same production routes with Next.js's documented Webpack mode.

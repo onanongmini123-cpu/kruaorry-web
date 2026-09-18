@@ -125,6 +125,14 @@ try {
 
   const plus = await db.query("select features from public.plans where id = 'plus'");
   assert.deepEqual(plus.rows[0].features, plusFeatures, "016d Plus copy was overwritten");
+  const teacherPro = await db.query(
+    "select is_public, is_upgradeable from public.plans where id = 'teacher_pro'",
+  );
+  assert.deepEqual(
+    teacherPro.rows[0],
+    { is_public: false, is_upgradeable: false },
+    "Teacher Pro must stay hidden until its advanced capabilities ship",
+  );
   const legacy = await db.query(
     "select source, status, current_period_end from public.subscriptions where user_id = $1",
     [legacyUser],

@@ -5,7 +5,6 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
-import { isUsableResourceTarget } from "@/lib/resourceVisibility";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -18,12 +17,9 @@ export interface Resource {
   description: string | null;
   category: string | null;
   affordance: ResourceAffordance;
-  ctaUrl: string | null;
   coverImageUrl: string | null;
   tags: string[];
   free: boolean;
-  filePath: string | null;
-  fileName: string | null;
   fileSize: number | null;
 }
 
@@ -68,9 +64,8 @@ export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" 
 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
   const outcome = await withTimeout(Promise.resolve(supabase
-    .from("resources")
-    .select("id, title, meta, description, category, delivery_mode, cta_url, cover_image_url, tags, is_free, file_path, file_name, file_size")
-    .eq("status", "published")
+    .from("resource_catalog")
+    .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, file_size")
     .order("created_at", { ascending: false })), "published resource listing");
 
   if (!outcome.ok) {
@@ -82,19 +77,16 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
   if (error) logError("fetchPublishedResources failed", error);
   if (error || !data) return [];
 
-  return data.filter((r) => isUsableResourceTarget({ deliveryMode: r.delivery_mode, ctaUrl: r.cta_url, filePath: r.file_path })).map((r) => ({
+  return data.map((r) => ({
     id: r.id,
     title: r.title,
     meta: r.meta ?? "",
     description: r.description,
     category: r.category,
     affordance: r.delivery_mode as ResourceAffordance,
-    ctaUrl: r.cta_url,
     coverImageUrl: r.cover_image_url,
     tags: r.tags ?? [],
     free: r.is_free,
-    filePath: r.file_path,
-    fileName: r.file_name,
     fileSize: r.file_size,
   }));
 }

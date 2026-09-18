@@ -4,6 +4,7 @@ import { getSignedFileUrl } from "@/lib/data";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { downloadLoginHref } from "@/lib/downloadReturnPath";
+import { parseResourceTarget } from "@/lib/resourceTarget";
 
 export const dynamic = "force-dynamic";
 
@@ -75,16 +76,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     });
   }
 
-  // RLS (resources_public_read_published) already restricts this to
-  // published resources, or any resource at all for an admin — a draft,
-  // archived, or nonexistent id all come back as no row here.
-  const lookupResult = await withTimeout(Promise.resolve(supabase.from("resources").select("file_path, file_name").eq("id", id).single()), "resources lookup");
+  // The private file path is never selectable from public.resources. This
+  // RPC checks the current user and entitlement before revealing it; Storage
+  // RLS independently checks the exact object again when signing the URL.
+  const lookupResult = await withTimeout(Promise.resolve(supabase.rpc("resolve_resource_target", { p_resource_id: id }).maybeSingle()), "resources lookup");
   if (!lookupResult.ok) {
     console.error(`[download] ${lookupResult.reason}`);
     return errorPage(500, "ตรวจสอบข้อมูลไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
   }
-  const { data: resource, error: resourceError } = lookupResult.value;
-  if (resourceError || !resource?.file_path) {
+  const { data, error: resourceError } = lookupResult.value;
+  const resource = parseResourceTarget(data);
+  if (resourceError || resource?.delivery_mode !== "file_download" || !resource.file_path) {
     console.error(`[download] resource lookup returned an error for id=${id}: ${redactSensitive(resourceError?.message ?? "no file_path")}`);
     return errorPage(404, "ไม่พบไฟล์นี้ หรือคุณไม่มีสิทธิ์เข้าถึง");
   }
