@@ -84,6 +84,8 @@ The ledger survives account deletion: its user reference becomes null for
 erasure, but the anonymous seat row remains counted. A user with a previous
 Founder seat cannot claim it again; renewal is the only path that keeps the
 299 THB price lock.
+The admin-only `get_founder_seat_count()` RPC displays this permanent seat
+usage without exposing ledger entries or erased member identities.
 
 If renewal occurs after the Founder period has ended, the subscription history
 is retained, the lock becomes `lost_price_lock`, and the effective plan becomes
@@ -99,15 +101,18 @@ automatic expiry scheduling are intentionally outside Phase 1B.
 ## Verification and release limits
 
 `npm test` exercises UI/data helpers and static migration invariants.
-`npm run test:membership-sql` additionally runs the four pending SQL files
+`npm run test:membership-sql` additionally runs the five pending SQL files
 against an isolated PGlite database with a minimal stub of the older schema.
 It checks the Plus copy, legacy backfill, Free favorite limit, Founder cap
 including account deletion, and renewal behavior. PGlite is **not** a copy of
 Supabase production and cannot prove real multi-connection concurrency, all
-Storage RLS behavior, or compatibility with the actual live dataset.
+Storage RLS behavior, or compatibility with the actual live dataset. The admin
+member table displays the effective subscription plan (not the potentially
+stale profile cache) and offers manual annual renewal only when the
+server-side rules permit it. No automatic payment is collected.
 
 Before deployment, reconcile the two older migrations that were executed
-manually but are absent from `schema_migrations`, then validate 017b–020 in a
+manually but are absent from `schema_migrations`, then validate 017b–021 in a
 staging copy of the actual database. Apply them in order during a maintenance
 window, verify RLS and payment/approval flows as real roles, and only then
 enable the new membership surface. No migration in this branch has been

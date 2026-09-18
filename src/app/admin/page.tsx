@@ -29,6 +29,7 @@ import {
   type TusUploadHandle,
 } from "@/lib/resourceFile";
 import { applySelfRoleChange } from "@/lib/memberRole";
+import { canRenewMember, effectiveMemberPlan, type AdminSubscription } from "@/lib/adminMembership";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ interface AdminPlan {
   id: string;
   name: string;
   lifecycle_status: "active" | "legacy" | "retired";
+  price_amount_thb: number | null;
 }
 
 type UploadStatus =
@@ -144,6 +146,10 @@ export default function AdminConsolePage() {
   const [requests, setRequests] = useState<AdminRequest[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<AdminUpgradeRequest[]>([]);
   const [plans, setPlans] = useState<AdminPlan[]>([]);
+  const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
+  const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
+  const [founderSeatsUsed, setFounderSeatsUsed] = useState<number | null>(null);
+  const [renewingId, setRenewingId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -179,13 +185,32 @@ export default function AdminConsolePage() {
     };
   }, [coverPreviewUrl]);
 
+  // PostgREST caps a single response (often at 1,000 rows). Never infer Free
+  // from a truncated subscription result in the admin member table.
+  const loadCurrentSubscriptions = async () => {
+    const rows: AdminSubscription[] = [];
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase.from("subscriptions")
+        .select("id, user_id, plan_id, status, source, billing_interval, current_period_end, founder_status, founder_price_lock")
+        .in("status", ["active", "past_due"])
+        .order("user_id", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) return { data: null, error };
+      rows.push(...((data as AdminSubscription[]) ?? []));
+      if ((data?.length ?? 0) < pageSize) return { data: rows, error: null };
+    }
+  };
+
   const reloadAdminData = async () => {
-    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }, { data: planRows, error: planError }, { data: auditRows, error: auditError }] = await Promise.all([
+    const [{ data: resourceRows }, { data: memberRows }, { data: requestRows }, { data: upgradeRows, error: upgradeError }, { data: planRows, error: planError }, { data: subscriptionRows, error: subscriptionError }, { data: founderCount, error: founderCountError }, { data: auditRows, error: auditError }] = await Promise.all([
       supabase.from("resources").select("id, title, meta, status, delivery_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status").order("votes", { ascending: false }),
       supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
-      supabase.from("plans").select("id, name, lifecycle_status").order("sort_order", { ascending: true }),
+      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb").order("sort_order", { ascending: true }),
+      loadCurrentSubscriptions(),
+      supabase.rpc("get_founder_seat_count"),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
     ]);
@@ -196,9 +221,19 @@ export default function AdminConsolePage() {
     setUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []);
     if (planError) console.error("Failed to load plans:", planError.message);
     setPlans((planRows as AdminPlan[]) ?? []);
+    if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
+    setSubscriptions(subscriptionError || planError ? null : ((subscriptionRows as AdminSubscription[]) ?? []));
+    setMembershipDataError(subscriptionError || planError ? "ไม่สามารถตรวจแพ็กที่มีผลจริงได้ กรุณาตรวจการเชื่อมต่อและ migration ก่อนแก้ไขแพ็กสมาชิก" : null);
+    if (founderCountError) console.error("Failed to load Founder seat count:", founderCountError.message);
+    setFounderSeatsUsed(founderCountError || typeof founderCount !== "number" ? null : founderCount);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
   };
+
+  const subscriptionsByUser = useMemo(
+    () => new Map((subscriptions ?? []).map((subscription) => [subscription.user_id, subscription])),
+    [subscriptions],
+  );
 
   useEffect(() => {
     (async () => {
@@ -748,6 +783,30 @@ export default function AdminConsolePage() {
     await reloadAdminData();
   };
 
+  const handleRenewSubscription = async (subscription: AdminSubscription) => {
+    if (renewingId || !canRenewMember(subscription)) return;
+    const plan = plans.find((item) => item.id === subscription.plan_id && item.lifecycle_status === "active");
+    const price = subscription.plan_id === "founder" ? 299 : plan?.price_amount_thb;
+    if (!plan || typeof price !== "number") {
+      window.alert("ไม่พบราคาแพ็กปัจจุบัน จึงยังต่ออายุไม่ได้");
+      return;
+    }
+    if (!window.confirm(`ต่ออายุ ${plan.name} ในราคา ${price.toLocaleString("th-TH")} บาท/ปี ให้สมาชิกคนนี้หรือไม่? ระบบจะบันทึกสิทธิ์ แต่ไม่ตัดเงินอัตโนมัติ`)) return;
+    setRenewingId(subscription.id);
+    try {
+      const { error } = await supabase.rpc("renew_subscription", { p_subscription_id: subscription.id });
+      if (error) {
+        window.alert(`ต่ออายุไม่สำเร็จ: ${error.message}`);
+        return;
+      }
+      await reloadAdminData();
+    } catch (error) {
+      window.alert(`ต่ออายุไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
+    } finally {
+      setRenewingId(null);
+    }
+  };
+
   // Only an owner can reach this at all — the role <select> in the members
   // table below is only rendered as editable for an owner viewer, and the
   // server independently enforces the same rule (is_owner() in the
@@ -1136,7 +1195,11 @@ export default function AdminConsolePage() {
           {view === "members" && (
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>สมาชิก</h1>
-              <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>รายชื่อผู้ใช้ที่สมัครจริง</p>
+              <p style={{ margin: "var(--sp-3) 0 var(--sp-3)", color: "var(--text-muted)" }}>รายชื่อผู้ใช้ที่สมัครจริง · แพ็กที่แสดงคำนวณจากสิทธิ์ที่ยังมีผล ไม่ใช่ค่าแคชในโปรไฟล์</p>
+              <p style={{ margin: "0 0 var(--sp-6)", color: "var(--text-muted)" }}>
+                ที่นั่ง Founder ที่เคยใช้: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
+              </p>
+              {membershipDataError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: "var(--sp-5)" }}>{membershipDataError}</p>}
               {members.length === 0 ? (
                 <EmptyState icon={Users} title="ยังไม่มีสมาชิก" description="" />
               ) : (
@@ -1144,7 +1207,7 @@ export default function AdminConsolePage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)", textAlign: "left" }}>
-                        {["ครู", "แพ็ก", "บทบาท"].map((h) => (
+                        {["ครู", "แพ็ก", "บทบาท", "การต่ออายุ"].map((h) => (
                           <th key={h} style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-13)", color: "var(--text-faint)" }}>
                             {h}
                           </th>
@@ -1152,8 +1215,14 @@ export default function AdminConsolePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {members.map((m) => (
-                        <tr key={m.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                      {members.map((m) => {
+                        const subscription = subscriptionsByUser.get(m.id) ?? null;
+                        const effectivePlan = subscriptions === null ? m.plan : effectiveMemberPlan(subscription);
+                        const renewablePlan = plans.find((plan) => plan.id === subscription?.plan_id && plan.lifecycle_status === "active");
+                        const canRenew = subscriptions !== null && canRenewMember(subscription) && !!renewablePlan &&
+                          (subscription?.plan_id === "founder" || typeof renewablePlan.price_amount_thb === "number");
+                        return (
+                          <tr key={m.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
                           <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
                             <div style={{ fontWeight: "var(--fw-medium)" }}>{m.full_name || "(ยังไม่ระบุชื่อ)"}</div>
                             <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{m.email}</div>
@@ -1162,17 +1231,23 @@ export default function AdminConsolePage() {
                             <select
                               className="kru-select"
                               style={{ minHeight: 36, width: "auto" }}
-                              value={m.plan}
+                              value={effectivePlan}
+                              disabled={subscriptions === null || renewingId !== null}
                               onChange={(e) => handleMemberPlanChange(m.id, e.target.value)}
                             >
                               {plans
-                                .filter((plan) => plan.lifecycle_status === "active" || plan.id === m.plan)
+                                .filter((plan) => plan.lifecycle_status === "active" || plan.id === effectivePlan)
                                 .map((plan) => (
                                   <option key={plan.id} value={plan.id}>
                                     {plan.name}{plan.lifecycle_status === "legacy" ? " — เดิม" : ""}
                                   </option>
                                 ))}
                             </select>
+                            {subscriptions === null && <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>แสดงค่าเดิม ยังไม่ยืนยันสิทธิ์</div>}
+                            {subscriptions !== null && effectivePlan === "free" && m.plan !== "free" &&
+                              <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>แพ็กเดิมหมดอายุหรือไม่มีสิทธิ์ที่มีผล</div>}
+                            {subscription?.current_period_end && Number.isFinite(Date.parse(subscription.current_period_end)) &&
+                              <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>สิ้นสุด {new Date(subscription.current_period_end).toLocaleDateString("th-TH")}</div>}
                           </td>
                           <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
                             {isOwner ? (
@@ -1190,8 +1265,16 @@ export default function AdminConsolePage() {
                               <Badge tone={m.role === "member" ? "neutral" : "success"}>{ROLE_LABEL[m.role]}</Badge>
                             )}
                           </td>
-                        </tr>
-                      ))}
+                          <td style={{ padding: "var(--sp-4) var(--sp-5)" }}>
+                            {canRenew && subscription ? (
+                              <Button size="sm" variant="ghost" disabled={renewingId !== null} onClick={() => void handleRenewSubscription(subscription)}>
+                                {renewingId === subscription.id ? "กำลังต่ออายุ…" : "ต่ออายุด้วยมือ"}
+                              </Button>
+                            ) : "—"}
+                          </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

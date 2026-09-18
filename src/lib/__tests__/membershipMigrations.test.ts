@@ -8,6 +8,7 @@ const catalogueSql = migration("20260901090000_017b_membership_catalog_and_capab
 const subscriptionsSql = migration("20260901090100_018_subscriptions_and_legacy_backfill.sql");
 const membershipSql = migration("20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql");
 const safetySql = migration("20260901090300_020_membership_safety_guards.sql");
+const seatUsageSql = migration("20260901090400_021_founder_seat_usage.sql");
 
 describe("Phase 1B membership migration invariants", () => {
   it("preserves the live Plus customer copy from 016d on an existing row", () => {
@@ -72,7 +73,7 @@ describe("Phase 1B membership migration invariants", () => {
   });
 
   it("does not delete profiles, subscriptions, events, or upgrade requests", () => {
-    const executableSql = `${catalogueSql}\n${subscriptionsSql}\n${membershipSql}\n${safetySql}`
+    const executableSql = `${catalogueSql}\n${subscriptionsSql}\n${membershipSql}\n${safetySql}\n${seatUsageSql}`
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("--"))
       .join("\n");
@@ -98,6 +99,14 @@ describe("Phase 1B membership migration invariants", () => {
     expect(safetySql).toContain("feature_id = 'favorites.enabled'");
     expect(safetySql).toContain("feature_id = 'favorites.limit'");
     expect(safetySql).toContain("count(*) from public.saved_resources where user_id = new.user_id");
+  });
+
+  it("exposes only a guarded aggregate of permanently used Founder seats", () => {
+    expect(seatUsageSql).toContain("if not public.is_admin() then");
+    expect(seatUsageSql).toContain("count(*)::integer");
+    expect(seatUsageSql).toContain("from public.founder_seat_ledger");
+    expect(seatUsageSql).toContain("revoke execute on function public.get_founder_seat_count() from public, anon");
+    expect(seatUsageSql).not.toMatch(/delete\s+from\s+public\.founder_seat_ledger/i);
   });
 
   it("does not renew cancelled, revoked, or perpetual legacy subscriptions", () => {

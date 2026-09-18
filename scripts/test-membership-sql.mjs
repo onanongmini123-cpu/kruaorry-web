@@ -12,6 +12,7 @@ const files = [
   "20260901090100_018_subscriptions_and_legacy_backfill.sql",
   "20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql",
   "20260901090300_020_membership_safety_guards.sql",
+  "20260901090400_021_founder_seat_usage.sql",
 ];
 const plusFeatures = [
   "คลังสื่อพร้อมสอนทั้งหมด",
@@ -177,6 +178,11 @@ try {
   const admin = randomUUID();
   await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [admin]);
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
+  const seatCount = await db.query("select public.get_founder_seat_count() as seats");
+  assert.equal(seatCount.rows[0].seats, 100, "admin sees permanent Founder seat usage");
+  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [nextFounder]);
+  await rejectsWith(() => db.query("select public.get_founder_seat_count()"), "Admin access required");
+  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
   await rejectsWith(
     () => db.query("select public.renew_subscription($1)", [firstFounder]),
     "Cancelled, revoked, or expired",
@@ -215,6 +221,8 @@ try {
   const ledger = await db.query("select count(*)::integer as seats, count(user_id)::integer as linked from public.founder_seat_ledger");
   assert.equal(ledger.rows[0].seats, 100, "deleting a Founder profile recycled a seat");
   assert.equal(ledger.rows[0].linked, 99, "erased profile UUID was retained in the ledger");
+  const afterDeletion = await db.query("select public.get_founder_seat_count() as seats");
+  assert.equal(afterDeletion.rows[0].seats, 100, "erasure must not free a Founder seat in the admin display");
   await rejectsWith(() => db.query(`
     insert into public.subscriptions (
       user_id, plan_id, status, source, billing_interval, price_amount_thb,

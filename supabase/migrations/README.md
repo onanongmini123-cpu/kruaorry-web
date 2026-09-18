@@ -66,6 +66,7 @@ and **not recorded** on the live project:
 - `20260901090100_018_subscriptions_and_legacy_backfill.sql`
 - `20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql`
 - `20260901090300_020_membership_safety_guards.sql`
+- `20260901090400_021_founder_seat_usage.sql`
 
 Before any migration push, reconcile the two manually executed but
 unrecorded migrations above against `schema_migrations`. Do not assume that
@@ -75,4 +76,5 @@ customer-facing copy from `016d` while adding only lifecycle/pricing metadata.
 Apply the Phase 1B files together during a maintenance window. `019` already
 contains the durable Founder cap, correct renewal lock order and price, and
 exact-file Storage policy; `020` adds Free favorites enforcement and reasserts
-the same request, renewal, and Storage rules as defense in depth.
+the same request, renewal, and Storage rules as defense in depth. `021` exposes
+only a guarded aggregate of permanently used Founder seats to admins.
