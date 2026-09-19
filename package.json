@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:membership-sql": "node scripts/test-membership-sql.mjs",
     "test:resource-file-sql": "node scripts/test-resource-file-signup-gate.mjs",
-    "test:public-resource-sql": "node scripts/test-public-resource-read-policy.mjs"
+    "test:public-resource-sql": "node scripts/test-public-resource-read-policy.mjs",
+    "test:resource-placeholder-sql": "node scripts/test-resource-placeholder-demotion.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

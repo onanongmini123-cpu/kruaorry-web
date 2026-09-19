@@ -40,7 +40,7 @@ The two are independent (disjoint objects — a `plans` row's `features`
 column vs. two trigger functions) and were applied/reconciled
 independently without colliding, despite `016d` sorting before `017`.
 
-As of that verification, these seven migrations on the feature branch
+As of that verification, these eight migrations on the feature branch
 were **not yet applied** or recorded on the live project:
 
 - `20260901090000_017b_membership_catalog_and_capabilities.sql`
@@ -50,6 +50,7 @@ were **not yet applied** or recorded on the live project:
 - `20260901090400_021_founder_seat_usage.sql`
 - `20260918090000_022_resource_file_signup_gate.sql`
 - `20260918090100_023_split_public_resource_read_policy.sql`
+- `20260919090000_024_demote_placeholder_seed_resources.sql`
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
