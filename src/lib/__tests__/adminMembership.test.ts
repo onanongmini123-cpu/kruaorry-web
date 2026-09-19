@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { canRenewMember, effectiveMemberPlan, memberPlanChangeConfirmation, type AdminSubscription } from "../adminMembership";
+import {
+  canOfferAdminPlan,
+  canRenewMember,
+  effectiveMemberPlan,
+  memberPlanChangeConfirmation,
+  type AdminPlan,
+  type AdminSubscription,
+} from "../adminMembership";
 
 const member = (overrides: Partial<AdminSubscription> = {}): AdminSubscription => ({
   id: "subscription-1",
@@ -15,6 +22,37 @@ const member = (overrides: Partial<AdminSubscription> = {}): AdminSubscription =
 });
 
 const now = Date.parse("2026-09-18T00:00:00.000Z");
+
+const plan = (overrides: Partial<AdminPlan> = {}): AdminPlan => ({
+  id: "teacher",
+  name: "Teacher",
+  lifecycle_status: "active",
+  price_amount_thb: 599,
+  is_upgradeable: true,
+  ...overrides,
+});
+
+describe("admin plan offers", () => {
+  it("offers active upgradeable plans and keeps Free available for downgrades", () => {
+    expect(canOfferAdminPlan(plan(), "free")).toBe(true);
+    expect(canOfferAdminPlan(plan({ id: "free", name: "Free", price_amount_thb: 0, is_upgradeable: false }), "teacher")).toBe(true);
+  });
+
+  it("keeps a current hidden plan visible without offering it to other members", () => {
+    const teacherPro = plan({ id: "teacher_pro", name: "Teacher Pro", price_amount_thb: 990, is_upgradeable: false });
+    expect(canOfferAdminPlan(teacherPro, "teacher_pro")).toBe(true);
+    expect(canOfferAdminPlan(teacherPro, "teacher")).toBe(false);
+  });
+
+  it("keeps a current legacy or retired plan visible only until the member switches away", () => {
+    const plus = plan({ id: "plus", name: "Plus", lifecycle_status: "legacy", price_amount_thb: 990, is_upgradeable: false });
+    const lifetime = plan({ id: "lifetime", name: "Lifetime", lifecycle_status: "retired", price_amount_thb: null, is_upgradeable: false });
+    expect(canOfferAdminPlan(plus, "plus")).toBe(true);
+    expect(canOfferAdminPlan(lifetime, "lifetime")).toBe(true);
+    expect(canOfferAdminPlan(plus, "teacher")).toBe(false);
+    expect(canOfferAdminPlan(lifetime, "teacher")).toBe(false);
+  });
+});
 
 describe("admin membership display", () => {
   it("shows Free after a period ends even if the cached profile still says Teacher", () => {

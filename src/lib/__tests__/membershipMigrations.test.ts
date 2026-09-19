@@ -24,6 +24,17 @@ describe("Phase 1B membership migration invariants", () => {
     expect(membershipSql).toContain("v_plan.lifecycle_status = 'legacy' and p_source <> 'upgrade_request'");
   });
 
+  it("blocks non-upgradeable assignments while preserving pending legacy approvals", () => {
+    const activate = membershipSql.slice(
+      membershipSql.indexOf("create function public.activate_membership_internal"),
+      membershipSql.indexOf("revoke execute on function public.activate_membership_internal"),
+    );
+    expect(activate).toContain("if v_plan.id <> 'free'");
+    expect(activate).toContain("and not v_plan.is_upgradeable");
+    expect(activate).toContain("and not (v_plan.lifecycle_status = 'legacy' and p_source = 'upgrade_request')");
+    expect(activate).toContain("Plan is not available for new memberships");
+  });
+
   it("backfills every known non-free profile before validating the plan foreign key", () => {
     const backfill = subscriptionsSql.indexOf("insert into public.subscriptions");
     const foreignKey = subscriptionsSql.indexOf("add constraint profiles_plan_fkey");
@@ -68,6 +79,7 @@ describe("Phase 1B membership migration invariants", () => {
     expect(renew).toContain("v_subscription.source = 'legacy'");
     expect(renew).toContain("else v_plan.price_amount_thb");
     expect(renew.indexOf("pg_advisory_xact_lock")).toBeLessThan(renew.indexOf("for update"));
+    expect(renew).not.toContain("is_upgradeable");
     expect(membershipSql).toContain("and status = 'pending'");
     expect(membershipSql).toContain("and resolved_at is null");
   });

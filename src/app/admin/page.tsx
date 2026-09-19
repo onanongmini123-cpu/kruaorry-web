@@ -30,7 +30,14 @@ import {
   type TusUploadHandle,
 } from "@/lib/resourceFile";
 import { applySelfRoleChange } from "@/lib/memberRole";
-import { canRenewMember, effectiveMemberPlan, memberPlanChangeConfirmation, type AdminSubscription } from "@/lib/adminMembership";
+import {
+  canOfferAdminPlan,
+  canRenewMember,
+  effectiveMemberPlan,
+  memberPlanChangeConfirmation,
+  type AdminPlan,
+  type AdminSubscription,
+} from "@/lib/adminMembership";
 
 export const dynamic = "force-dynamic";
 
@@ -78,13 +85,6 @@ interface AdminUpgradeRequest {
   status: "pending" | "approved" | "declined";
   created_at: string;
   profiles: { full_name: string | null; email: string } | null;
-}
-
-interface AdminPlan {
-  id: string;
-  name: string;
-  lifecycle_status: "active" | "legacy" | "retired";
-  price_amount_thb: number | null;
 }
 
 type UploadStatus =
@@ -210,7 +210,7 @@ export default function AdminConsolePage() {
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status").order("votes", { ascending: false }),
       supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
-      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb").order("sort_order", { ascending: true }),
+      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable").order("sort_order", { ascending: true }),
       loadCurrentSubscriptions(),
       supabase.rpc("get_founder_seat_count"),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
@@ -783,7 +783,7 @@ export default function AdminConsolePage() {
   const handleMemberPlanChange = async (id: string, currentPlan: string, nextPlan: string, subscription: AdminSubscription | null) => {
     if (subscriptions === null || changingPlanId !== null || currentPlan === nextPlan) return;
     const currentName = plans.find((plan) => plan.id === currentPlan)?.name ?? currentPlan;
-    const nextName = plans.find((plan) => plan.id === nextPlan && plan.lifecycle_status === "active")?.name;
+    const nextName = plans.find((plan) => plan.id === nextPlan && canOfferAdminPlan(plan, currentPlan))?.name;
     if (!nextName) return;
     if (!window.confirm(memberPlanChangeConfirmation(currentName, nextName, subscription))) return;
     setChangingPlanId(id);
@@ -1259,7 +1259,7 @@ export default function AdminConsolePage() {
                               }}
                             >
                               {plans
-                                .filter((plan) => plan.lifecycle_status === "active" || plan.id === effectivePlan)
+                                .filter((plan) => canOfferAdminPlan(plan, effectivePlan))
                                 .map((plan) => (
                                   <option key={plan.id} value={plan.id}>
                                     {plan.name}{plan.lifecycle_status === "legacy" ? " — เดิม" : ""}

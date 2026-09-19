@@ -10,6 +10,19 @@ export interface AdminSubscription {
   founder_price_lock: boolean;
 }
 
+export interface AdminPlan {
+  id: string;
+  name: string;
+  lifecycle_status: "active" | "legacy" | "retired";
+  price_amount_thb: number | null;
+  is_upgradeable: boolean;
+}
+
+export function canOfferAdminPlan(plan: AdminPlan, currentPlanId: string): boolean {
+  if (plan.id === currentPlanId) return true;
+  return plan.lifecycle_status === "active" && (plan.id === "free" || plan.is_upgradeable);
+}
+
 export function effectiveMemberPlan(subscription: AdminSubscription | null, now = Date.now()): string {
   if (!subscription || !["active", "past_due"].includes(subscription.status)) return "free";
   if (subscription.current_period_end) {

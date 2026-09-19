@@ -106,6 +106,111 @@ try {
       await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [interimAdmin]);
       await db.query("insert into public.profiles(id) values ($1)", [interimTeacher]);
       await db.query("select set_config('request.jwt.claim.sub', $1, false)", [interimAdmin]);
+      await rejectsWith(
+        () => db.query(
+          "select public.set_member_plan($1, 'teacher_pro', 'sql_regression_test')",
+          [interimTeacher],
+        ),
+        "Plan is not available for new memberships",
+      );
+      const blockedPro = await db.query(`
+        select p.plan, count(s.id)::integer as subscriptions
+        from public.profiles p
+        left join public.subscriptions s on s.user_id = p.id
+        where p.id = $1
+        group by p.plan
+      `, [interimTeacher]);
+      assert.deepEqual(
+        blockedPro.rows[0],
+        { plan: "free", subscriptions: 0 },
+        "Teacher Pro assignment changed the membership or profile cache",
+      );
+
+      const pendingProUser = randomUUID();
+      await db.query("insert into public.profiles(id) values ($1)", [pendingProUser]);
+      const pendingPro = await db.query(`
+        insert into public.upgrade_requests(user_id, plan_id)
+        values ($1, 'teacher_pro') returning id
+      `, [pendingProUser]);
+      await rejectsWith(
+        () => db.query("select public.approve_upgrade_request($1)", [pendingPro.rows[0].id]),
+        "Plan is not available for new memberships",
+      );
+      const rejectedProApproval = await db.query(`
+        select r.status, r.resolved_at, p.plan,
+          count(s.id)::integer as subscriptions
+        from public.upgrade_requests r
+        join public.profiles p on p.id = r.user_id
+        left join public.subscriptions s on s.user_id = r.user_id
+        where r.id = $1
+        group by r.status, r.resolved_at, p.plan
+      `, [pendingPro.rows[0].id]);
+      assert.deepEqual(
+        rejectedProApproval.rows[0],
+        { status: "pending", resolved_at: null, plan: "free", subscriptions: 0 },
+        "Rejected Teacher Pro approval did not roll back cleanly",
+      );
+
+      await db.query(
+        "select public.set_member_plan($1, 'teacher', 'sql_regression_test')",
+        [interimTeacher],
+      );
+      await db.query(
+        "select public.set_member_plan($1, 'free', 'sql_regression_test')",
+        [interimTeacher],
+      );
+      const downgradedToFree = await db.query(`
+        select p.plan, (
+          count(s.id) filter (where s.status in ('active', 'past_due'))
+        )::integer as active_subscriptions
+        from public.profiles p
+        left join public.subscriptions s on s.user_id = p.id
+        where p.id = $1
+        group by p.plan
+      `, [interimTeacher]);
+      assert.deepEqual(
+        downgradedToFree.rows[0],
+        { plan: "free", active_subscriptions: 0 },
+        "019 blocked an admin downgrade to Free",
+      );
+
+      const pendingPlusUser = randomUUID();
+      await db.query("insert into public.profiles(id) values ($1)", [pendingPlusUser]);
+      const pendingPlus = await db.query(`
+        insert into public.upgrade_requests(user_id, plan_id)
+        values ($1, 'plus') returning id
+      `, [pendingPlusUser]);
+      await db.query("select public.approve_upgrade_request($1)", [pendingPlus.rows[0].id]);
+      const approvedPlus = await db.query(`
+        select plan_id, source from public.subscriptions
+        where user_id = $1 and status = 'active'
+      `, [pendingPlusUser]);
+      assert.deepEqual(
+        approvedPlus.rows[0],
+        { plan_id: "plus", source: "upgrade_request" },
+        "019 rejected a preserved pending Plus request",
+      );
+
+      const interimProUser = randomUUID();
+      await db.query("insert into public.profiles(id) values ($1)", [interimProUser]);
+      const interimPro = await db.query(`
+        insert into public.subscriptions (
+          user_id, plan_id, status, source, billing_interval,
+          current_period_start, current_period_end, price_amount_thb
+        ) values ($1, 'teacher_pro', 'active', 'admin', 'year',
+          now() - interval '1 year', now() - interval '1 day', 500) returning id
+      `, [interimProUser]);
+      await db.query("select public.renew_subscription($1)", [interimPro.rows[0].id]);
+      const interimProState = await db.query(`
+        select s.price_amount_thb, p.plan from public.subscriptions s
+        join public.profiles p on p.id = s.user_id where s.id = $1
+      `, [interimPro.rows[0].id]);
+      assert.deepEqual(
+        interimProState.rows[0],
+        { price_amount_thb: 990, plan: "teacher_pro" },
+        "019 blocked renewal of an existing Teacher Pro membership",
+      );
+
       const interimSubscription = await db.query(`
         insert into public.subscriptions (
           user_id, plan_id, status, source, billing_interval,

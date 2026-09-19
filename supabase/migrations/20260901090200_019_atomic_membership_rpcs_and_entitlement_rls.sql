@@ -171,6 +171,13 @@ begin
     raise exception 'Plan is not available';
   end if;
 
+  if v_plan.id <> 'free'
+    and not v_plan.is_upgradeable
+    and not (v_plan.lifecycle_status = 'legacy' and p_source = 'upgrade_request')
+  then
+    raise exception 'Plan is not available for new memberships';
+  end if;
+
   if v_plan.lifecycle_status = 'legacy' and p_source <> 'upgrade_request' then
     raise exception 'Legacy plans cannot be assigned to new memberships';
   end if;
