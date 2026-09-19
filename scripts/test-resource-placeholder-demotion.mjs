@@ -41,7 +41,8 @@ try {
       ('00000000-0000-4000-8000-000000000004', 'ใบงานคณิตศาสตร์ ป.4 พร้อมสอน', 'google_template', 'https://docs.google.com/document/d/real-template/copy', 'published', '${publishedAt}', null),
       ('00000000-0000-4000-8000-000000000005', 'สื่อจริง', 'web_app', '/tools/timer', 'published', '${publishedAt}', null),
       ('00000000-0000-4000-8000-000000000006', 'ตัวจับเวลากิจกรรมในห้องเรียน', 'web_app', 'https://example.com/classroom-timer', 'published', '${publishedAt}', '11111111-1111-4111-8111-111111111111'),
-      ('00000000-0000-4000-8000-000000000007', 'แบบประเมินความพึงพอใจผู้ปกครอง', 'google_form', 'https://forms.gle/placeholder', 'archived', '${publishedAt}', null);
+      ('00000000-0000-4000-8000-000000000007', 'แบบประเมินความพึงพอใจผู้ปกครอง', 'google_form', 'https://forms.gle/placeholder', 'archived', '${publishedAt}', null),
+      ('f9438548-f8b2-4496-a18a-0acd6e69d879', 'สื่อทดสอบระบบ (มีรูปปก) 28 ส.ค. 2569', 'web_app', 'https://kruaorry-web.vercel.app/', 'published', '${publishedAt}', '22222222-2222-4222-8222-222222222222');
   `);
 
   await db.exec(migration);
@@ -52,14 +53,20 @@ try {
     demoted.map((row) => row.title),
     [
       "ตัวจับเวลากิจกรรมในห้องเรียน",
+      "สื่อทดสอบระบบ (มีรูปปก) 28 ส.ค. 2569",
       "แบบประเมินความพึงพอใจผู้ปกครอง",
       "ใบงานคณิตศาสตร์ ป.4 พร้อมสอน",
     ],
   );
   assert.ok(demoted.every((row) => row.published_at_cleared), "demoted seeds must lose their publication timestamp");
   assert.ok(
-    demoted.every((row) => row.cta_url.includes("placeholder") || row.cta_url.includes("example.com")),
-    "the admin must retain the old target so it can be diagnosed and replaced",
+    demoted.every(
+      (row) =>
+        row.cta_url.includes("placeholder") ||
+        row.cta_url.includes("example.com") ||
+        row.cta_url === "https://kruaorry-web.vercel.app/",
+    ),
+    "the admin must retain each old placeholder or smoke-test target so it can be diagnosed and replaced",
   );
 
   const validSeedCorrection = firstRun.find((row) => row.cta_url.includes("real-template"));
