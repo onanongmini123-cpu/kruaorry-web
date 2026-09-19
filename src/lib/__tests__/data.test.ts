@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSignedFileUrl } from "../data";
+import { fetchEntitlements, fetchPlans, fetchPublishedResources, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -125,5 +125,83 @@ describe("getSignedFileUrl", () => {
 
     const joined = errors.map((a) => a.join(" ")).join("\n");
     expect(joined).not.toMatch(/eyJ/);
+  });
+});
+
+describe("fetchEntitlements", () => {
+  it("converts RPC rows into a keyed capability snapshot", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: [
+          { plan_id: "teacher", feature_id: "download.premium", enabled: true, limit_value: null },
+          { plan_id: "teacher", feature_id: "favorites.limit", enabled: true, limit_value: 50 },
+        ],
+        error: null,
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchEntitlements(supabase)).resolves.toEqual({
+      planId: "teacher",
+      features: {
+        "download.premium": { enabled: true, limit: null },
+        "favorites.limit": { enabled: true, limit: 50 },
+      },
+    });
+  });
+
+  it("fails closed to free with no capabilities when the RPC fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "permission denied", code: "42501", details: "", hint: "" },
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+  });
+});
+
+describe("public catalog reads", () => {
+  it("uses only the safe catalog view and never requests private destination columns", async () => {
+    const rows = [
+      { id: "one", title: "แบบฝึกจริง", meta: "", description: "", category: "", delivery_mode: "file_download", cover_image_url: null, tags: [], is_free: true, file_name: "real.pdf", file_size: 100 },
+    ];
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: rows, error: null }) };
+    const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง" }]);
+    expect(client.from).toHaveBeenCalledWith("resource_catalog");
+    expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
+  });
+
+  it("ends a stalled plan request instead of leaving the home page loading forever", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnValue(new Promise(() => {})) };
+    const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    const result = fetchPlans(client);
+    await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
+    await expect(result).resolves.toEqual([]);
+  });
+});
+
+describe("setResourceSaved", () => {
+  it("returns a write error so the UI does not show a failed save as successful", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const insert = vi.fn().mockResolvedValue({ error: { message: "Saved resource limit reached", code: "P0001", details: "", hint: "" } });
+    const supabase = { from: vi.fn().mockReturnValue({ insert }) } as unknown as SupabaseClient;
+
+    await expect(setResourceSaved(supabase, "user-1", "resource-1", true)).resolves.toBe("Saved resource limit reached");
+    expect(insert).toHaveBeenCalledWith({ user_id: "user-1", resource_id: "resource-1" });
+  });
+
+  it("returns null after a successful save", async () => {
+    const supabase = {
+      from: vi.fn().mockReturnValue({ insert: vi.fn().mockResolvedValue({ error: null }) }),
+    } as unknown as SupabaseClient;
+
+    await expect(setResourceSaved(supabase, "user-1", "resource-1", true)).resolves.toBeNull();
   });
 });

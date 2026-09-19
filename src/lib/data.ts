@@ -4,6 +4,7 @@ import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
+import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -16,12 +17,9 @@ export interface Resource {
   description: string | null;
   category: string | null;
   affordance: ResourceAffordance;
-  ctaUrl: string | null;
   coverImageUrl: string | null;
   tags: string[];
   free: boolean;
-  filePath: string | null;
-  fileName: string | null;
   fileSize: number | null;
 }
 
@@ -31,6 +29,7 @@ export interface Plan {
   priceLabel: string;
   note: string | null;
   features: string[];
+  isPopular: boolean;
 }
 
 export interface Profile {
@@ -64,11 +63,16 @@ export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" 
 }
 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
-  const { data, error } = await supabase
-    .from("resources")
-    .select("id, title, meta, description, category, delivery_mode, cta_url, cover_image_url, tags, is_free, file_path, file_name, file_size")
-    .eq("status", "published")
-    .order("created_at", { ascending: false });
+  const outcome = await withTimeout(Promise.resolve(supabase
+    .from("resource_catalog")
+    .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, file_size")
+    .order("created_at", { ascending: false })), "published resource listing");
+
+  if (!outcome.ok) {
+    console.error(`fetchPublishedResources failed: ${outcome.reason}`);
+    return [];
+  }
+  const { data, error } = outcome.value;
 
   if (error) logError("fetchPublishedResources failed", error);
   if (error || !data) return [];
@@ -80,12 +84,9 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     description: r.description,
     category: r.category,
     affordance: r.delivery_mode as ResourceAffordance,
-    ctaUrl: r.cta_url,
     coverImageUrl: r.cover_image_url,
     tags: r.tags ?? [],
     free: r.is_free,
-    filePath: r.file_path,
-    fileName: r.file_name,
     fileSize: r.file_size,
   }));
 }
@@ -133,10 +134,18 @@ export async function getSignedFileUrl(supabase: SupabaseClient, filePath: strin
 }
 
 export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
-  const { data, error } = await supabase
+  const outcome = await withTimeout(Promise.resolve(supabase
     .from("plans")
-    .select("id, name, price_label, note, features")
-    .order("sort_order", { ascending: true });
+    .select("id, name, price_label, note, features, is_popular")
+    .eq("is_public", true)
+    .eq("lifecycle_status", "active")
+    .order("sort_order", { ascending: true })), "public plan listing");
+
+  if (!outcome.ok) {
+    console.error(`fetchPlans failed: ${outcome.reason}`);
+    return [];
+  }
+  const { data, error } = outcome.value;
 
   if (error) logError("fetchPlans failed", error);
   if (error || !data) return [];
@@ -147,7 +156,30 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     priceLabel: p.price_label,
     note: p.note,
     features: p.features ?? [],
+    isPopular: p.is_popular ?? false,
   }));
+}
+
+interface EntitlementRow {
+  plan_id: string;
+  feature_id: string;
+  enabled: boolean;
+  limit_value: number | null;
+}
+
+export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+  const { data, error } = await supabase.rpc("get_my_entitlements");
+  if (error) {
+    logError("fetchEntitlements failed", error);
+    return EMPTY_ENTITLEMENTS;
+  }
+
+  const rows = (data ?? []) as EntitlementRow[];
+  const planId = rows[0]?.plan_id ?? "free";
+  const features = Object.fromEntries(
+    rows.map((row) => [row.feature_id, { enabled: row.enabled, limit: row.limit_value }]),
+  );
+  return { planId, features };
 }
 
 export interface TeacherRequest {
@@ -184,14 +216,15 @@ export async function fetchSavedResourceIds(supabase: SupabaseClient, userId: st
   return data.map((r) => r.resource_id);
 }
 
-export async function setResourceSaved(supabase: SupabaseClient, userId: string, resourceId: string, saved: boolean): Promise<void> {
+export async function setResourceSaved(supabase: SupabaseClient, userId: string, resourceId: string, saved: boolean): Promise<string | null> {
   if (saved) {
     const { error } = await supabase.from("saved_resources").insert({ user_id: userId, resource_id: resourceId });
     if (error) logError("setResourceSaved (save) failed", error);
-    return;
+    return error?.message ?? null;
   }
   const { error } = await supabase.from("saved_resources").delete().eq("user_id", userId).eq("resource_id", resourceId);
   if (error) logError("setResourceSaved (unsave) failed", error);
+  return error?.message ?? null;
 }
 
 export interface UpgradeRequest {

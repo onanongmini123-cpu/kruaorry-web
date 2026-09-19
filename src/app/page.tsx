@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FolderOpen, FileSpreadsheet, Timer, CheckCircle2 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, PillarTile } from "@/components/ui";
-import { fetchPlans, type Plan } from "@/lib/data";
+import { fetchPlans, fetchPublishedResources, type Plan, type Resource } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
+import { publicCoverUrl } from "@/lib/resourceVisibility";
 
 const PILLARS = [
   { icon: FolderOpen, tone: "purple" as const, title: "คลังสื่อพร้อมสอน", desc: "ดาวน์โหลดแล้วใช้สอนได้เลย ไม่ต้องทำเอง" },
@@ -14,12 +16,46 @@ const PILLARS = [
   { icon: Timer, tone: "blue" as const, title: "เครื่องมือในห้องเรียน", desc: "จับเวลา สุ่มชื่อ จับกลุ่ม เปิดใช้ได้ทันที" },
 ];
 
+const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
 export default function LandingPage() {
+  const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [freeSamples, setFreeSamples] = useState<Resource[]>([]);
+  const [samplesLoaded, setSamplesLoaded] = useState(!isSupabaseConfigured);
+  const [plansLoaded, setPlansLoaded] = useState(!isSupabaseConfigured);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
     const supabase = createClient();
-    fetchPlans(supabase).then(setPlans);
+    fetchPlans(supabase)
+      .then((rows) => {
+        if (!active) return;
+        setPlans(rows);
+        setPlansLoaded(true);
+      })
+      .catch(() => {
+        if (active) setPlansLoaded(true);
+      });
+    return () => { active = false; };
+  }, [loadAttempt]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    fetchPublishedResources(createClient())
+      .then((rows) => {
+        if (active) setFreeSamples(rows.filter((row) => row.free && publicCoverUrl(row.coverImageUrl)).slice(0, 3));
+      })
+      .catch(() => {
+        // Keep the public page usable when the catalog service is unavailable.
+      })
+      .finally(() => {
+        if (active) setSamplesLoaded(true);
+      });
+    return () => { active = false; };
   }, []);
 
   return (
@@ -54,8 +90,8 @@ export default function LandingPage() {
               เข้าสู่ระบบ
             </Button>
           </Link>
-          <Link href="/login">
-            <Button size="sm">เริ่มใช้ฟรี</Button>
+          <Link href="/login?mode=signup">
+            <Button size="sm">สมัครฟรี</Button>
           </Link>
         </div>
       </header>
@@ -80,12 +116,12 @@ export default function LandingPage() {
                 สื่อพร้อมสอนภาษาไทย เทมเพลต Google พร้อมใช้ และเครื่องมือในห้องเรียน ใช้งานง่าย ดาวน์โหลดแล้วสอนได้เลย
               </p>
               <div style={{ marginTop: "var(--sp-8)", display: "flex", gap: "var(--sp-4)", justifyContent: "center", flexWrap: "wrap" }}>
-                <Link href="/login">
-                  <Button size="lg">เริ่มใช้ฟรี</Button>
+                <Link href="/resources">
+                  <Button size="lg">{freeSamples.length > 0 ? "ดูตัวอย่างสื่อฟรี" : "สำรวจคลังสื่อ"}</Button>
                 </Link>
-                <Link href="/app">
+                <Link href="/login?mode=signup">
                   <Button size="lg" variant="secondary">
-                    เข้าสู่แอปสำหรับครู
+                    สมัครสมาชิกฟรี
                   </Button>
                 </Link>
               </div>
@@ -96,9 +132,44 @@ export default function LandingPage() {
         <section style={{ maxWidth: "var(--container-max)", margin: "0 auto", padding: "var(--sp-12) var(--sp-5)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
             {PILLARS.map((p) => (
-              <PillarTile key={p.title} icon={p.icon} tone={p.tone} title={p.title} description={p.desc} />
+              <PillarTile key={p.title} icon={p.icon} tone={p.tone} title={p.title} description={p.desc} onClick={() => router.push("/resources")} />
             ))}
           </div>
+        </section>
+
+        <section style={{ maxWidth: "var(--container-max)", margin: "0 auto", padding: "0 var(--sp-5) var(--sp-13)" }}>
+          <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: "var(--sp-5)", flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ fontSize: "var(--fs-30)" }}>ลองดูก่อนสมัคร</h2>
+              <p style={{ color: "var(--text-muted)", marginTop: "var(--sp-3)" }}>ตัวอย่างจากสื่อที่เผยแพร่จริง ดูรายละเอียดได้โดยไม่ต้องมีบัญชี</p>
+            </div>
+            <Link href="/resources" style={{ color: "var(--brand)", fontWeight: "var(--fw-semibold)" }}>ดูคลังสื่อทั้งหมด →</Link>
+          </div>
+          {freeSamples.length > 0 ? (
+            <div style={{ marginTop: "var(--sp-7)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
+              {freeSamples.map((sample) => (
+                <Link key={sample.id} href={`/resources/${sample.id}`} className="kru-card" style={{ display: "block", overflow: "hidden", textDecoration: "none", color: "inherit" }}>
+                  <div style={{ height: 150, background: "var(--wash-hero)", display: "grid", placeItems: "center", overflow: "hidden" }}>
+                    {sample.coverImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={sample.coverImageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : <FolderOpen aria-hidden="true" size={36} />}
+                  </div>
+                  <div style={{ padding: "var(--sp-5)" }}>
+                    <span style={{ color: "var(--status-success-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>ตัวอย่างฟรี</span>
+                    <h3 style={{ fontSize: "var(--fs-18)", marginTop: "var(--sp-3)" }}>{sample.title}</h3>
+                    <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)", marginTop: "var(--sp-3)" }}>{sample.meta}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : samplesLoaded ? (
+            <div role="status" className="kru-card" style={{ marginTop: "var(--sp-7)", padding: "var(--sp-7)", textAlign: "center", color: "var(--text-muted)" }}>
+              ยังแสดงตัวอย่างฟรีไม่ได้ในขณะนี้ ดูรายการสื่อทั้งหมดหรือกลับมาตรวจใหม่ภายหลัง
+            </div>
+          ) : (
+            <p role="status" style={{ marginTop: "var(--sp-7)", color: "var(--text-muted)" }}>กำลังโหลดตัวอย่างสื่อ...</p>
+          )}
         </section>
 
         <section style={{ maxWidth: "var(--container-max)", margin: "0 auto", padding: "0 var(--sp-5) var(--sp-13)" }}>
@@ -106,10 +177,19 @@ export default function LandingPage() {
           <p style={{ marginTop: "var(--sp-3)", textAlign: "center", color: "var(--text-muted)" }}>
             เลือกแพ็กที่เหมาะกับคุณ สมัครสมาชิกฟรีแล้วอัปเกรดได้ทุกเมื่อ
           </p>
+          {plansLoaded && plans.length === 0 && (
+            <div role="status" className="kru-card" style={{ marginTop: "var(--sp-8)", padding: "var(--sp-7)", textAlign: "center" }}>
+              <p style={{ marginBottom: "var(--sp-4)" }}>ขณะนี้ยังแสดงแพ็กเกจไม่ได้ โปรดลองใหม่อีกครั้งในภายหลัง</p>
+              <Button variant="secondary" onClick={() => { setPlansLoaded(false); setLoadAttempt((attempt) => attempt + 1); }}>
+                ลองโหลดอีกครั้ง
+              </Button>
+            </div>
+          )}
           <div style={{ marginTop: "var(--sp-8)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
             {plans.map((plan) => (
               <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
+                {plan.isPopular && <div style={{ alignSelf: "flex-start", borderRadius: "var(--r-pill)", padding: "4px 10px", background: "var(--status-success-bg)", color: "var(--status-success-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>ยอดนิยม</div>}
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)" }}>{plan.priceLabel}</div>
                 <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{plan.note}</p>
                 <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 6 }}>

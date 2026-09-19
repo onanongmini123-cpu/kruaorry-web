@@ -14,7 +14,7 @@ import { GET } from "../route";
 
 interface FakeSupabaseOptions {
   getUserImpl?: () => Promise<{ data: { user: { id: string } | null } }>;
-  resourceImpl?: () => Promise<{ data: { file_path: string | null; file_name: string | null } | null; error: { message: string } | null }>;
+  resourceImpl?: () => Promise<{ data: { delivery_mode: string; cta_url: string | null; file_path: string | null; file_name: string | null } | null; error: { message: string } | null }>;
   signedUrlImpl?: () => Promise<{ data: { signedUrl: string } | null; error: { message: string } | null }>;
 }
 
@@ -23,12 +23,8 @@ function fakeSupabase(opts: FakeSupabaseOptions) {
     auth: {
       getUser: opts.getUserImpl ?? (async () => ({ data: { user: { id: "user-1" } } })),
     },
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          single: opts.resourceImpl ?? (async () => ({ data: { file_path: "r1/file.pdf", file_name: "file.pdf" }, error: null })),
-        }),
-      }),
+    rpc: () => ({
+      maybeSingle: opts.resourceImpl ?? (async () => ({ data: { delivery_mode: "file_download", cta_url: null, file_path: "r1/file.pdf", file_name: "file.pdf" }, error: null })),
     }),
     storage: {
       from: () => ({
@@ -65,7 +61,17 @@ describe("GET /api/resources/[id]/download", () => {
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toMatch(/เข้าสู่ระบบ/);
+    expect(body).toContain('href="/login?next=%2Fdownload%2Fr1"');
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("encodes the resource id in the login return link without rendering HTML from it", async () => {
+    mockedCreateClient.mockResolvedValue(fakeSupabase({ getUserImpl: async () => ({ data: { user: null } }) }) as never);
+    const response = await GET(new Request("http://localhost/api/resources/bad/download"), makeParams('bad"><script>alert(1)</script>'));
+    const body = await response.text();
+    expect(response.status).toBe(401);
+    expect(body).not.toContain('<script>alert(1)</script>');
+    expect(body).toContain("%253Cscript%253E");
   });
 
   it("returns a Thai 404 error page when the resource lookup returns an error (e.g. RLS filtered it out)", async () => {
@@ -77,7 +83,7 @@ describe("GET /api/resources/[id]/download", () => {
   });
 
   it("returns a Thai 404 error page when the resource has no file_path", async () => {
-    mockedCreateClient.mockResolvedValue(fakeSupabase({ resourceImpl: async () => ({ data: { file_path: null, file_name: null }, error: null }) }) as never);
+    mockedCreateClient.mockResolvedValue(fakeSupabase({ resourceImpl: async () => ({ data: { delivery_mode: "file_download", cta_url: null, file_path: null, file_name: null }, error: null }) }) as never);
     const response = await GET(new Request("http://localhost/api/resources/r1/download"), makeParams("r1"));
     expect(response.status).toBe(404);
   });

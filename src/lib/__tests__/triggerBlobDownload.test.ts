@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { triggerBlobDownload, shouldCloseTabAfterDownload, thaiDownloadErrorMessage, REVOKE_MARGIN_MS, type BlobDownloadDeps, type FetchResponseLike, type AnchorLike } from "../triggerBlobDownload";
+import { triggerBlobDownload, shouldCloseTabAfterDownload, thaiDownloadErrorMessage, safeDownloadName, REVOKE_MARGIN_MS, DOWNLOAD_NETWORK_TIMEOUT_MS, type BlobDownloadDeps, type FetchResponseLike, type AnchorLike } from "../triggerBlobDownload";
 
 function fakeDeps(overrides: Partial<BlobDownloadDeps> = {}) {
   const calls: string[] = [];
   const anchor: AnchorLike = { href: "", download: "", click: vi.fn(() => calls.push("click")) };
-  const response: FetchResponseLike = { ok: true, status: 200, blob: async () => new Blob(["file bytes"]) };
+  const response: FetchResponseLike = { ok: true, status: 200, blob: async () => new Blob(["file bytes"], { type: "application/pdf" }) };
 
   const deps: BlobDownloadDeps = {
     fetchImpl: vi.fn(async () => {
@@ -34,7 +34,7 @@ describe("triggerBlobDownload", () => {
     const result = await triggerBlobDownload("/api/resources/r1/download", "worksheet.pdf", deps);
 
     expect(result).toEqual({ ok: true });
-    expect(deps.fetchImpl).toHaveBeenCalledWith("/api/resources/r1/download", { referrerPolicy: "no-referrer" });
+    expect(deps.fetchImpl).toHaveBeenCalledWith("/api/resources/r1/download", { referrerPolicy: "no-referrer", signal: expect.any(AbortSignal) });
     expect(anchor.href).toBe("blob:fake-object-url");
     expect(anchor.download).toBe("worksheet.pdf");
     // The click must happen only once the file is fully buffered, and the
@@ -47,10 +47,39 @@ describe("triggerBlobDownload", () => {
     expect(deps.wait).toHaveBeenCalledWith(REVOKE_MARGIN_MS);
   });
 
-  it("does not set the anchor's download attribute when no file name is available", async () => {
+  it("sets the download attribute even when no file name is available", async () => {
     const { deps, anchor } = fakeDeps();
-    await triggerBlobDownload("/api/resources/r1/download", null, deps);
-    expect(anchor.download).toBe("");
+    anchor.download = "unset";
+    const result = await triggerBlobDownload("/api/resources/r1/download", null, deps);
+    expect(result).toEqual({ ok: true });
+    expect(anchor.download).toBe("KruAorry-resource.pdf");
+  });
+
+  it("does not trust a URL-provided filename with a misleading extension", async () => {
+    const { deps, anchor } = fakeDeps();
+    await triggerBlobDownload("/api/resources/r1/download", "worksheet.exe", deps);
+    expect(anchor.download).toBe("KruAorry-resource.pdf");
+    expect(safeDownloadName("worksheet.PDF", "application/pdf")).toBe("worksheet.PDF");
+    expect(safeDownloadName("lesson.pdf", "application/octet-stream")).toBe("KruAorry-resource.bin");
+  });
+
+  it("bounds a stalled network request and aborts it", async () => {
+    vi.useFakeTimers();
+    try {
+      let requestSignal: AbortSignal | undefined;
+      const { deps } = fakeDeps({
+        fetchImpl: vi.fn(async (_url, init) => {
+          requestSignal = init.signal;
+          return new Promise<FetchResponseLike>(() => {});
+        }),
+      });
+      const pending = triggerBlobDownload("/api/resources/r1/download", null, deps);
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_NETWORK_TIMEOUT_MS);
+      expect(await pending).toMatchObject({ ok: false, error: expect.stringMatching(/timed out/) });
+      expect(requestSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fails without touching the DOM when fetch() itself throws (e.g. network error)", async () => {

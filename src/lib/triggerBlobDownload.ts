@@ -37,7 +37,7 @@ export interface AnchorLike {
 }
 
 export interface BlobDownloadDeps {
-  fetchImpl: (url: string, init: { referrerPolicy: ReferrerPolicy }) => Promise<FetchResponseLike>;
+  fetchImpl: (url: string, init: { referrerPolicy: ReferrerPolicy; signal: AbortSignal }) => Promise<FetchResponseLike>;
   createObjectUrl: (blob: Blob) => string;
   revokeObjectUrl: (url: string) => void;
   createAnchor: () => AnchorLike;
@@ -59,28 +59,63 @@ export interface BlobDownloadResult {
 }
 
 export const REVOKE_MARGIN_MS = 200;
+export const DOWNLOAD_NETWORK_TIMEOUT_MS = 120_000;
+
+const EXTENSION_BY_MIME: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/zip": "zip",
+  "application/x-zip-compressed": "zip",
+};
+
+export function safeDownloadName(suggestedName: string | null, mimeType: string): string {
+  const extension = EXTENSION_BY_MIME[mimeType.toLowerCase().split(";", 1)[0]] ?? "bin";
+  // `name` is a URL query parameter, so it is only a suggestion. Refuse a
+  // misleading extension or path rather than letting a crafted signup link
+  // rename the downloaded file to something more dangerous than its MIME.
+  if (
+    suggestedName && suggestedName.length <= 180 &&
+    !/[\\/\u0000-\u001f\u007f]/.test(suggestedName) &&
+    suggestedName.toLowerCase().endsWith(`.${extension}`)
+  ) return suggestedName;
+  return `KruAorry-resource.${extension}`;
+}
 
 function describeError(thrown: unknown): string {
   return thrown instanceof Error ? thrown.message : String(thrown);
 }
 
 export async function triggerBlobDownload(url: string, fileName: string | null, deps: BlobDownloadDeps): Promise<BlobDownloadResult> {
+  const controller = new AbortController();
+  let deadlineId: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineId = setTimeout(() => {
+      controller.abort();
+      reject(new Error("download timed out"));
+    }, DOWNLOAD_NETWORK_TIMEOUT_MS);
+  });
   let response: FetchResponseLike;
   try {
-    response = await deps.fetchImpl(url, { referrerPolicy: "no-referrer" });
+    response = await Promise.race([deps.fetchImpl(url, { referrerPolicy: "no-referrer", signal: controller.signal }), deadline]);
   } catch (thrown) {
+    clearTimeout(deadlineId);
     return { ok: false, error: describeError(thrown) };
   }
 
   if (!response.ok) {
+    clearTimeout(deadlineId);
     return { ok: false, error: `response not ok`, status: response.status };
   }
 
   let blob: Blob;
   try {
-    blob = await response.blob();
+    blob = await Promise.race([response.blob(), deadline]);
   } catch (thrown) {
     return { ok: false, error: describeError(thrown) };
+  } finally {
+    clearTimeout(deadlineId);
   }
 
   // From here on, a failure at any step (creating the object URL, the
@@ -98,7 +133,10 @@ export async function triggerBlobDownload(url: string, fileName: string | null, 
     objectUrl = deps.createObjectUrl(blob);
     anchor = deps.createAnchor();
     anchor.href = objectUrl;
-    if (fileName) anchor.download = fileName;
+    // Always set the attribute so a filename-less sample saves instead of
+    // navigating to blob:. The MIME-checked fallback cannot be relabeled
+    // with an arbitrary extension supplied through the URL.
+    anchor.download = safeDownloadName(fileName, blob.type);
     deps.appendToBody(anchor);
     anchor.click();
     await deps.wait(REVOKE_MARGIN_MS);

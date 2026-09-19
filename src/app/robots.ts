@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/app", "/admin", "/reset-password"],
+        disallow: ["/app", "/admin", "/auth", "/download", "/api", "/reset-password"],
       },
     ],
     sitemap: "https://kruaorry-web.vercel.app/sitemap.xml",

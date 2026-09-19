@@ -33,7 +33,10 @@ export async function proxy(request: NextRequest) {
 
   if (protectedPath && !user) {
     const url = request.nextUrl.clone();
+    const requestedPath = `${url.pathname}${url.search}`;
     url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("next", requestedPath);
     return NextResponse.redirect(url);
   }
 

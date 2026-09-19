@@ -1,0 +1,2 @@
+# Local Supabase CLI project. Link the production ref explicitly before any remote command.
+project_id = "kruaorry-web"

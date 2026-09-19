@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { triggerBlobDownload, shouldCloseTabAfterDownload, thaiDownloadErrorMessage } from "@/lib/triggerBlobDownload";
 import { AUTO_CLOSE_PARAM } from "@/lib/downloadWindow";
+import { downloadLoginHref } from "@/lib/downloadReturnPath";
 
 // This page only exists so the tab window.open() targets can close itself
 // deterministically once the file is fully downloaded — see
@@ -17,6 +18,7 @@ export default function DownloadPage() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"working" | "done" | "error">("working");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   // Whether this tab should try to close itself once the download finishes
   // — set from the AUTO_CLOSE_PARAM marker downloadWindow.ts adds only to
   // the popup URL (never the same-tab fallback URL), not from
@@ -26,6 +28,8 @@ export default function DownloadPage() {
   // successful popup open, not just the fallback path. Reading it as the
   // close signal made the auto-close path unreachable.
   const openedAsPopup = searchParams.get(AUTO_CLOSE_PARAM) === "1";
+  const fileName = searchParams.get("name");
+  const loginHref = downloadLoginHref(params.id, fileName, openedAsPopup);
 
   useEffect(() => {
     // Reverse-tabnabbing mitigation, independent of the auto-close signal
@@ -37,8 +41,6 @@ export default function DownloadPage() {
     }
 
     let cancelled = false;
-    const fileName = searchParams.get("name");
-
     triggerBlobDownload(`/api/resources/${params.id}/download`, fileName, {
       fetchImpl: (url, init) => fetch(url, init),
       createObjectUrl: (blob) => URL.createObjectURL(blob),
@@ -52,6 +54,7 @@ export default function DownloadPage() {
         if (cancelled) return;
         if (!result.ok) {
           setStatus("error");
+          setErrorStatus(result.status ?? null);
           setErrorMessage(thaiDownloadErrorMessage(result.status));
           return;
         }
@@ -69,14 +72,14 @@ export default function DownloadPage() {
         if (cancelled) return;
         console.error("[download] unexpected failure", thrown);
         setStatus("error");
+        setErrorStatus(null);
         setErrorMessage(thaiDownloadErrorMessage(undefined));
       });
 
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id]);
+  }, [params.id, fileName, openedAsPopup]);
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "var(--sp-6)", textAlign: "center" }}>
@@ -85,10 +88,22 @@ export default function DownloadPage() {
         {status === "error" && (
           <>
             <p style={{ color: "var(--status-danger-fg)" }}>{errorMessage}</p>
-            <div style={{ marginTop: "var(--sp-4)", display: "flex", gap: "var(--sp-3)", justifyContent: "center" }}>
-              <button type="button" onClick={() => window.close()} style={{ border: "1px solid var(--border-subtle)", background: "transparent", borderRadius: "var(--r-md)", padding: "8px 16px", cursor: "pointer" }}>
-                ปิดแท็บนี้
-              </button>
+            <div style={{ marginTop: "var(--sp-4)", display: "flex", gap: "var(--sp-3)", justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+              {errorStatus === 401 && (
+                <a href={loginHref} style={{ color: "var(--brand)", alignSelf: "center" }}>
+                  เข้าสู่ระบบเพื่อดาวน์โหลด
+                </a>
+              )}
+              {errorStatus !== 401 && (
+                <button type="button" onClick={() => window.location.reload()} style={{ border: "1px solid var(--border-subtle)", background: "transparent", borderRadius: "var(--r-md)", padding: "8px 16px", cursor: "pointer" }}>
+                  ลองอีกครั้ง
+                </button>
+              )}
+              {openedAsPopup && (
+                <button type="button" onClick={() => window.close()} style={{ border: "1px solid var(--border-subtle)", background: "transparent", borderRadius: "var(--r-md)", padding: "8px 16px", cursor: "pointer" }}>
+                  ปิดแท็บนี้
+                </button>
+              )}
               <a href="/app" style={{ color: "var(--brand)", alignSelf: "center" }}>
                 กลับไปที่แอป
               </a>
@@ -101,7 +116,7 @@ export default function DownloadPage() {
           // — the popup path closes itself automatically and only falls
           // through to render this if the browser refuses window.close().
           <>
-            <p>ดาวน์โหลดเสร็จแล้ว</p>
+            <p>ส่งไฟล์ให้เบราว์เซอร์ดาวน์โหลดแล้ว</p>
             <a href="/app" style={{ color: "var(--brand)" }}>
               กลับไปที่แอป
             </a>
