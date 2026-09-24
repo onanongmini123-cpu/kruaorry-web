@@ -13,6 +13,7 @@ const files = [
   "20260901090200_019_atomic_membership_rpcs_and_entitlement_rls.sql",
   "20260901090300_020_membership_safety_guards.sql",
   "20260901090400_021_founder_seat_usage.sql",
+  "20260924170000_025_active_founder_capacity.sql",
 ];
 const plusFeatures = [
   "คลังสื่อพร้อมสอนทั้งหมด",
@@ -278,21 +279,36 @@ try {
     if (n === 0) firstFounder = inserted.rows[0].id;
     if (n === 1) secondFounder = inserted.rows[0].id;
   }
+  // The expired historical row above no longer consumes active capacity, so
+  // the 100th active Founder may now be admitted even though old grants remain
+  // durable in the ledger.
   const nextFounder = randomUUID();
   await db.query("insert into public.profiles(id) values ($1)", [nextFounder]);
+  await db.query(`
+    insert into public.subscriptions (
+      user_id, plan_id, status, source, billing_interval, price_amount_thb,
+      current_period_end, founder_started_at, founder_status, founder_price_lock
+    ) values ($1, 'founder', 'active', 'admin', 'year', 299,
+      now() + interval '1 year', now(), 'active', true)
+  `, [nextFounder]);
+
+  const overCapacityFounder = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [overCapacityFounder]);
   await rejectsWith(() => db.query(`
     insert into public.subscriptions (
       user_id, plan_id, status, source, billing_interval, price_amount_thb,
       current_period_end, founder_started_at, founder_status, founder_price_lock
     ) values ($1, 'founder', 'active', 'admin', 'year', 299,
       now() + interval '1 year', now(), 'active', true)
-  `, [nextFounder]), "Founder 100 is full");
+  `, [overCapacityFounder]), "Founder 100 is full");
 
   const admin = randomUUID();
   await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [admin]);
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
   const seatCount = await db.query("select public.get_founder_seat_count() as seats");
-  assert.equal(seatCount.rows[0].seats, 100, "admin sees permanent Founder seat usage");
+  assert.equal(seatCount.rows[0].seats, 100, "admin sees active Founder seat usage");
+  const publicCapacity = await db.query("select * from public.get_founder_capacity()");
+  assert.deepEqual(publicCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [nextFounder]);
   await rejectsWith(() => db.query("select public.get_founder_seat_count()"), "Admin access required");
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
@@ -332,17 +348,24 @@ try {
 
   await db.query("delete from public.profiles where id = $1", [deletedFounderUser]);
   const ledger = await db.query("select count(*)::integer as seats, count(user_id)::integer as linked from public.founder_seat_ledger");
-  assert.equal(ledger.rows[0].seats, 100, "deleting a Founder profile recycled a seat");
+  assert.equal(ledger.rows[0].seats, 100, "historical Founder grants were unexpectedly deleted");
   assert.equal(ledger.rows[0].linked, 99, "erased profile UUID was retained in the ledger");
   const afterDeletion = await db.query("select public.get_founder_seat_count() as seats");
-  assert.equal(afterDeletion.rows[0].seats, 100, "erasure must not free a Founder seat in the admin display");
-  await rejectsWith(() => db.query(`
+  assert.equal(afterDeletion.rows[0].seats, 99, "an inactive/deleted Founder still consumed active capacity");
+
+  const replacementFounder = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [replacementFounder]);
+  await db.query(`
     insert into public.subscriptions (
       user_id, plan_id, status, source, billing_interval, price_amount_thb,
       current_period_end, founder_started_at, founder_status, founder_price_lock
     ) values ($1, 'founder', 'active', 'admin', 'year', 299,
       now() + interval '1 year', now(), 'active', true)
-  `, [nextFounder]), "Founder 100 is full");
+  `, [replacementFounder]);
+  const finalCapacity = await db.query("select * from public.get_founder_capacity()");
+  assert.deepEqual(finalCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
+  const finalLedger = await db.query("select count(*)::integer as seats from public.founder_seat_ledger");
+  assert.equal(finalLedger.rows[0].seats, 101, "historical grants should remain append-only after a replacement seat");
 
   process.stdout.write("SQL execution and membership behaviors passed in isolated PGlite.\n");
 } finally {

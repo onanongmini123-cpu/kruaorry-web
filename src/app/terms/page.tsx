@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Mascot } from "@/components/Mascot";
-import { PAYMENT_LINE_ID } from "@/lib/config";
+import { LINE_OA_URL } from "@/lib/config";
 
 export default function TermsPage() {
   return (
@@ -32,7 +32,7 @@ export default function TermsPage() {
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>3. การชำระเงินและการอัปเกรดแพ็กเกจ</h2>
           <p>
-            การอัปเกรดแพ็กเกจดำเนินการผ่านการติดต่อทีมงานโดยตรง (LINE: {PAYMENT_LINE_ID}) เพื่อโอนเงินหรือชำระเงินนอกระบบ
+            การอัปเกรดแพ็กเกจดำเนินการผ่านการติดต่อทีมงานโดยตรงทาง <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> เพื่อโอนเงินหรือชำระเงินนอกระบบ
             ทีมงานจะอัปเกรดแพ็กเกจให้หลังจากยืนยันการชำระเงินแล้ว หากมีปัญหาเกี่ยวกับการชำระเงิน กรุณาติดต่อทีมงานผ่านช่องทางเดียวกัน
           </p>
         </section>
@@ -52,7 +52,7 @@ export default function TermsPage() {
 
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>6. ติดต่อเรา</h2>
-          <p>หากมีข้อสงสัยเกี่ยวกับเงื่อนไขการใช้งาน ติดต่อทีมงานผ่าน LINE: {PAYMENT_LINE_ID}</p>
+          <p>หากมีข้อสงสัยเกี่ยวกับเงื่อนไขการใช้งาน ติดต่อทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a></p>
         </section>
       </div>
     </div>

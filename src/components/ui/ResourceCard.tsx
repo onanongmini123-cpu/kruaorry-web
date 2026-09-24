@@ -26,6 +26,7 @@ interface ResourceCardProps {
   affordance: ResourceAffordance;
   tags: string[];
   icon: LucideIcon;
+  coverImageUrl?: string | null;
   tint?: "purple" | "pink" | "blue";
   locked?: boolean;
   free?: boolean;
@@ -35,48 +36,65 @@ interface ResourceCardProps {
   onClick?: () => void;
 }
 
-export function ResourceCard({ title, meta, affordance, tags, icon: Icon, tint = "purple", locked, free, saved, onAction, onSave, onClick }: ResourceCardProps) {
+export function ResourceCard({ title, meta, affordance, tags, icon: Icon, coverImageUrl, tint = "purple", locked, free, saved, onAction, onSave, onClick }: ResourceCardProps) {
   const t = TINTS[tint];
   return (
     <div className="kru-card" style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <button
-        type="button"
-        onClick={onClick}
-        style={{ border: "none", padding: 0, background: t.bg, height: 150, position: "relative", cursor: "pointer", display: "grid", placeItems: "center", color: t.fg }}
-      >
-        <Icon size={32} strokeWidth={1.5} />
-        {locked && (
-          <span style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.6)", display: "grid", placeItems: "center" }}>
-            <span style={{ width: 40, height: 40, borderRadius: "var(--r-pill)", background: "var(--status-member-bg)", color: "var(--status-member-fg)", display: "grid", placeItems: "center" }}>
-              <Lock size={18} />
+      <div style={{ position: "relative", height: 150, background: t.bg }}>
+        <button
+          type="button"
+          aria-label={`ดูรายละเอียด ${title}`}
+          onClick={onClick}
+          style={{ border: "none", padding: 0, background: "transparent", width: "100%", height: "100%", position: "relative", cursor: "pointer", display: "grid", placeItems: "center", color: t.fg, overflow: "hidden" }}
+        >
+          {coverImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={coverImageUrl}
+              alt={`ภาพปก ${title}`}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <Icon size={32} strokeWidth={1.5} aria-hidden="true" />
+          )}
+          {locked && (
+            <span style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.6)", display: "grid", placeItems: "center" }}>
+              <span style={{ width: 40, height: 40, borderRadius: "var(--r-pill)", background: "var(--status-member-bg)", color: "var(--status-member-fg)", display: "grid", placeItems: "center" }}>
+                <Lock size={18} aria-hidden="true" />
+              </span>
             </span>
-          </span>
-        )}
+          )}
+        </button>
         {onSave && (
-          <span
-            role="button"
-            aria-label="บันทึกไว้ใช้ทีหลัง"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSave();
-            }}
+          <button
+            type="button"
+            aria-label={saved ? `นำ ${title} ออกจากรายการที่บันทึก` : `บันทึก ${title} ไว้ใช้ทีหลัง`}
+            aria-pressed={Boolean(saved)}
+            onClick={onSave}
             style={{
               position: "absolute",
               top: 10,
               right: 10,
+              zIndex: 2,
               width: 32,
               height: 32,
               borderRadius: "var(--r-pill)",
+              border: "1px solid rgba(255,255,255,0.78)",
               background: "rgba(255,255,255,0.9)",
               display: "grid",
               placeItems: "center",
               color: saved ? "var(--brand)" : "var(--text-muted)",
+              cursor: "pointer",
+              boxShadow: "var(--shadow-sm)",
             }}
           >
-            <Bookmark size={16} fill={saved ? "currentColor" : "none"} />
-          </span>
+            <Bookmark size={16} fill={saved ? "currentColor" : "none"} aria-hidden="true" />
+          </button>
         )}
-      </button>
+      </div>
       <div style={{ padding: "var(--sp-5)", display: "flex", flexDirection: "column", gap: "var(--sp-3)", flex: 1 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {free ? <Badge tone="success">ฟรี</Badge> : <Badge tone="member" icon={Lock}>สำหรับสมาชิก</Badge>}

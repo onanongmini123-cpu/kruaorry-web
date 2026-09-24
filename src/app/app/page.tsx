@@ -2,14 +2,16 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText, MessageCircle } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Bookmark, ShieldCheck, MessageSquareText, MessageCircle, Sparkles } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
+import { MemberContactMenu } from "@/components/MemberContactMenu";
 import { Button, Input, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { PAYMENT_LINE_ID } from "@/lib/config";
+import { LINE_OA_URL } from "@/lib/config";
 import {
   fetchPublishedResources,
   fetchPlans,
+  fetchFounderCapacity,
   fetchEntitlements,
   fetchProfile,
   fetchRequests,
@@ -17,7 +19,6 @@ import {
   fetchSavedResourceIds,
   setResourceSaved,
   fetchUpgradeRequests,
-  submitUpgradeRequest,
   resourceIcon,
   resourceTint,
   type Resource,
@@ -27,6 +28,8 @@ import {
   type UpgradeRequest,
 } from "@/lib/data";
 import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
+import type { FounderCapacity } from "@/lib/founderCapacity";
+import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 import { resourceIdFromSearch } from "@/lib/resourceDeepLink";
 
@@ -68,7 +71,7 @@ export default function TeacherAppPage() {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [upgradeRequests, setUpgradeRequests] = useState<UpgradeRequest[]>([]);
-  const [submittingUpgradePlanId, setSubmittingUpgradePlanId] = useState<string | null>(null);
+  const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -81,7 +84,7 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
-      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, upgradeData] = await Promise.all([
+      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, upgradeData, founderCapacityData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
@@ -89,7 +92,13 @@ export default function TeacherAppPage() {
         fetchRequests(supabase),
         fetchSavedResourceIds(supabase, user.id),
         fetchUpgradeRequests(supabase, user.id),
+        fetchFounderCapacity(supabase),
       ]);
+      if (!profileData || !canAccessMemberExperience(profileData.role)) {
+        await supabase.auth.signOut();
+        router.replace("/login");
+        return;
+      }
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
@@ -97,6 +106,7 @@ export default function TeacherAppPage() {
       setRequests(requestData);
       setSaved(savedIds);
       setUpgradeRequests(upgradeData);
+      setFounderCapacity(founderCapacityData);
       const requestedResourceId = resourceIdFromSearch(window.location.search, resourceData);
       if (requestedResourceId) {
         setDetailId(requestedResourceId);
@@ -106,17 +116,21 @@ export default function TeacherAppPage() {
     })();
   }, [supabase, router]);
 
-  const handleRequestUpgrade = async (planId: string) => {
-    if (!userId) return;
-    setSubmittingUpgradePlanId(planId);
-    const errorMessage = await submitUpgradeRequest(supabase, userId, planId);
-    setSubmittingUpgradePlanId(null);
-    if (errorMessage) {
-      window.alert(`ส่งคำขอไม่สำเร็จ: ${errorMessage}`);
-      return;
-    }
-    setUpgradeRequests(await fetchUpgradeRequests(supabase, userId));
-  };
+  useEffect(() => {
+    let active = true;
+    const refreshFounderCapacity = () => {
+      void fetchFounderCapacity(supabase).then((capacity) => {
+        if (active) setFounderCapacity(capacity);
+      });
+    };
+    const timer = window.setInterval(refreshFounderCapacity, 60_000);
+    window.addEventListener("focus", refreshFounderCapacity);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshFounderCapacity);
+    };
+  }, [supabase]);
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,17 +280,33 @@ export default function TeacherAppPage() {
 
           <main style={{ padding: "var(--sp-6) var(--sp-5)", flex: 1 }} className="kru-app-content">
             {view === "home" && (
-              <div>
-                <div style={{ background: "var(--wash-hero)", borderRadius: "var(--r-panel)", padding: "var(--sp-8)", marginBottom: "var(--sp-8)", display: "flex", alignItems: "center", gap: "var(--sp-6)", flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 240 }}>
-                    <h1 style={{ fontSize: "var(--fs-30)" }}>สวัสดีค่ะ{profile?.fullName ? ` ${profile.fullName}` : ""}</h1>
-                    <p style={{ margin: "var(--sp-3) 0 0", fontSize: "var(--fs-16)", color: "var(--text-body)" }}>สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง</p>
+              <div className="kru-member-home">
+                <section className="kru-member-hero">
+                  <div className="kru-member-hero__copy">
+                    <div className="kru-member-hero__eyebrow"><Sparkles size={15} aria-hidden="true" /> พื้นที่พร้อมสอนของคุณ</div>
+                    <h1>สวัสดีค่ะ{profile?.fullName ? ` ${profile.fullName}` : ""}</h1>
+                    <p>เลือกสื่อที่เหมาะกับคาบเรียน แล้วเปิดใช้ได้ทันที ลดเวลาทำงานซ้ำ เพื่อให้ครูมีเวลาอยู่กับเด็กมากขึ้น</p>
+                    <div className="kru-member-hero__actions">
+                      <Button size="lg" icon={FolderOpen} onClick={() => setView("library")}>
+                        เข้าคลังสื่อ
+                      </Button>
+                      <button type="button" className="kru-member-hero__link" onClick={() => setView("requests")}>
+                        เสนอไอเดียสื่อ <ArrowRight size={17} aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                  <Button size="lg" icon={FolderOpen} onClick={() => setView("library")}>
-                    เข้าคลังสื่อ
-                  </Button>
+                  <div className="kru-member-hero__mascot" aria-hidden="true">
+                    <div className="kru-member-hero__glow" />
+                    <Mascot size={92} />
+                  </div>
+                </section>
+                <div className="kru-member-section-heading">
+                  <div>
+                    <span>อัปเดตล่าสุด</span>
+                    <h2>สื่อล่าสุดในคลัง</h2>
+                  </div>
+                  <button type="button" onClick={() => setView("library")}>ดูทั้งหมด <ArrowRight size={16} aria-hidden="true" /></button>
                 </div>
-                <h2 style={{ fontSize: "var(--fs-24)", marginBottom: "var(--sp-5)" }}>สื่อล่าสุดในคลัง</h2>
                 {resources.length === 0 ? (
                   <EmptyState icon={FolderOpen} title="ยังไม่มีสื่อเผยแพร่" description="แอดมินยังไม่ได้เผยแพร่สื่อ กลับมาดูใหม่อีกครั้ง" />
                 ) : (
@@ -289,6 +319,7 @@ export default function TeacherAppPage() {
                         affordance={r.affordance}
                         tags={r.tags}
                         icon={resourceIcon(r.affordance)}
+                        coverImageUrl={r.coverImageUrl}
                         tint={resourceTint(r.affordance)}
                         free={r.free}
                         locked={!canAccess(r)}
@@ -325,6 +356,7 @@ export default function TeacherAppPage() {
                             affordance={r.affordance}
                             tags={r.tags}
                             icon={resourceIcon(r.affordance)}
+                            coverImageUrl={r.coverImageUrl}
                             tint={resourceTint(r.affordance)}
                             free={r.free}
                             locked={!canAccess(r)}
@@ -421,12 +453,28 @@ export default function TeacherAppPage() {
                   {plans.map((plan) => {
                     const isCurrent = entitlements.planId === plan.id;
                     const pendingRequest = upgradeRequests.find((r) => r.planId === plan.id && r.status === "pending");
+                    const founderIsFull = plan.id === "founder" && founderCapacity?.isFull === true;
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
                         {plan.isPopular && <Badge tone="success">ยอดนิยม</Badge>}
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
                         <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
+                        {plan.id === "founder" && (
+                          <div role="status" className="kru-founder-capacity">
+                            {founderCapacity ? (
+                              <>
+                                <strong>สมัครแล้ว {founderCapacity.used} คนจาก {founderCapacity.capacity}</strong>
+                                <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
+                                <span aria-hidden="true" className="kru-founder-capacity__track">
+                                  <span style={{ width: `${Math.min(100, (founderCapacity.used / founderCapacity.capacity) * 100)}%` }} />
+                                </span>
+                              </>
+                            ) : (
+                              <span>กำลังตรวจสอบจำนวนสิทธิ์ Founder</span>
+                            )}
+                          </div>
+                        )}
                         <div style={{ marginTop: "var(--sp-6)" }}>
                           {isCurrent ? (
                             <Badge tone="success">แพ็กปัจจุบันของคุณ</Badge>
@@ -434,13 +482,18 @@ export default function TeacherAppPage() {
                             <div>
                               <Badge tone="warning">รอแอดมินอนุมัติ</Badge>
                               <p style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginTop: 8 }}>
-                                โอนเงินหรือติดต่อชำระผ่าน LINE: <strong>{PAYMENT_LINE_ID}</strong> แล้วรอแอดมินอัปเกรดให้
+                                ติดต่อชำระผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> แล้วรอแอดมินอัปเกรดให้
                               </p>
                             </div>
+                          ) : founderIsFull ? (
+                            <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
+                              Founder 100 เต็มแล้ว
+                            </button>
                           ) : (
-                            <Button block icon={MessageCircle} loading={submittingUpgradePlanId === plan.id} onClick={() => handleRequestUpgrade(plan.id)}>
+                            <a className="kru-btn kru-btn--primary kru-btn--block" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                              <MessageCircle size={18} aria-hidden="true" />
                               สนใจอัปเกรด
-                            </Button>
+                            </a>
                           )}
                         </div>
                       </div>
@@ -448,7 +501,7 @@ export default function TeacherAppPage() {
                   })}
                 </div>
                 <p style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
-                  วิธีอัปเกรด: กด &ldquo;สนใจอัปเกรด&rdquo; แล้วโอนเงินหรือติดต่อชำระผ่าน LINE <strong>{PAYMENT_LINE_ID}</strong> ทีมงานจะอัปเกรดแพ็กให้หลังยืนยันการชำระเงิน
+                  วิธีอัปเกรด: กด &ldquo;สนใจอัปเกรด&rdquo; เพื่อคุยกับทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> โดยตรง ทีมงานจะอัปเกรดแพ็กให้หลังยืนยันการชำระเงิน
                 </p>
               </div>
             )}
@@ -473,19 +526,51 @@ export default function TeacherAppPage() {
         })}
       </nav>
 
+      <MemberContactMenu />
+
       <style>{`
         .kru-app-shell { display: flex; min-height: 100vh; }
         .kru-app-sidebar { display: none; }
         .kru-app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
         .kru-app-header { background: var(--white); border-bottom: 1px solid var(--border-subtle); height: 64px; padding: 0 var(--sp-5); display: flex; align-items: center; gap: var(--sp-4); position: sticky; top: 0; z-index: 10; }
         .kru-app-header-account { display: none; }
-        .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; height: 64px; background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
+        .kru-app-content { padding-bottom: calc(152px + env(safe-area-inset-bottom)) !important; overflow-x: hidden; }
+        .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; min-height: 64px; padding-bottom: env(safe-area-inset-bottom); background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
         .kru-lib-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-6); }
         .kru-lib-filters { display: flex; flex-direction: column; gap: var(--sp-6); }
         .kru-detail-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-7); }
+        .kru-member-home { display: grid; gap: var(--sp-7); }
+        .kru-member-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--r-panel); padding: var(--sp-7); min-height: 300px; display: grid; align-items: center; background: radial-gradient(circle at 90% 20%, rgba(255,255,255,.95) 0 10%, transparent 42%), linear-gradient(135deg, var(--purple-100), var(--pink-50) 52%, var(--blue-100)); border: 1px solid rgba(195,176,252,.55); box-shadow: var(--shadow-lg); }
+        .kru-member-hero::after { content: ""; position: absolute; width: 220px; height: 220px; right: -72px; bottom: -110px; border-radius: 50%; background: rgba(242,105,154,.12); z-index: -1; }
+        .kru-member-hero__copy { max-width: 640px; position: relative; z-index: 2; }
+        .kru-member-hero__eyebrow { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: var(--r-pill); background: rgba(255,255,255,.72); color: var(--purple-700); font-size: var(--fs-13); font-weight: var(--fw-semibold); }
+        .kru-member-hero h1 { margin-top: var(--sp-5); font-size: clamp(2rem, 7vw, 3.2rem); max-width: 560px; }
+        .kru-member-hero p { margin-top: var(--sp-4); font-size: var(--fs-16); line-height: var(--lh-loose); max-width: 590px; color: var(--text-body); }
+        .kru-member-hero__actions { margin-top: var(--sp-6); display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+        .kru-member-hero__link { min-height: var(--tap-min); display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--purple-700); font-size: var(--fs-15); font-weight: var(--fw-semibold); cursor: pointer; }
+        .kru-member-hero__mascot { display: none; }
+        .kru-member-section-heading { display: flex; align-items: end; justify-content: space-between; gap: var(--sp-4); }
+        .kru-member-section-heading span { color: var(--pink-700); font-size: var(--fs-13); font-weight: var(--fw-semibold); }
+        .kru-member-section-heading h2 { margin-top: 4px; font-size: var(--fs-24); }
+        .kru-member-section-heading button { border: 0; background: transparent; color: var(--purple-700); display: inline-flex; align-items: center; gap: 5px; min-height: var(--tap-min); font-weight: var(--fw-semibold); cursor: pointer; }
+        .kru-founder-capacity { margin-top: var(--sp-4); padding: var(--sp-4); border-radius: var(--r-md); background: var(--purple-50); display: grid; gap: 4px; color: var(--text-body); font-size: var(--fs-13); }
+        .kru-founder-capacity strong { color: var(--text-strong); }
+        .kru-founder-capacity__track { height: 7px; margin-top: 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--purple-100); }
+        .kru-founder-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-500), var(--pink-500)); }
+        .kru-app-content a.kru-btn:hover { color: var(--text-on-brand); text-decoration: none; }
+        .kru-contact-fab { position: fixed; right: max(var(--sp-5), env(safe-area-inset-right)); bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 40; display: grid; justify-items: end; gap: var(--sp-3); }
+        .kru-contact-fab__trigger { min-height: 48px; padding: 0 var(--sp-5); display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: var(--r-pill); color: var(--white); background: linear-gradient(135deg, var(--purple-600), var(--pink-500)); box-shadow: var(--shadow-xl); font-weight: var(--fw-semibold); cursor: pointer; }
+        .kru-contact-fab__menu { width: min(310px, calc(100vw - 32px)); padding: var(--sp-5); display: grid; gap: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: rgba(255,255,255,.97); box-shadow: var(--shadow-xl); backdrop-filter: blur(14px); }
+        .kru-contact-fab__menu p { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-13); }
+        .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
+        .kru-contact-fab__link:hover { background: var(--purple-100); color: var(--purple-800); text-decoration: none; }
         @media (min-width: 900px) {
           .kru-lib-grid { grid-template-columns: 256px 1fr; align-items: start; }
           .kru-lib-filters { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--r-card); padding: var(--sp-6); position: sticky; top: var(--sp-6); }
+          .kru-member-hero { grid-template-columns: minmax(0, 1fr) 220px; padding: var(--sp-9); }
+          .kru-member-hero__mascot { min-height: 210px; display: grid; place-items: center; position: relative; }
+          .kru-member-hero__glow { position: absolute; width: 180px; height: 180px; border-radius: 50%; background: rgba(255,255,255,.72); box-shadow: 0 0 0 20px rgba(255,255,255,.2); }
+          .kru-member-hero__mascot > :last-child { position: relative; filter: drop-shadow(0 18px 20px rgba(92,65,178,.18)); }
         }
         @media (min-width: 1024px) {
           .kru-app-sidebar { display: flex; flex-direction: column; width: 272px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100vh; }
@@ -495,6 +580,7 @@ export default function TeacherAppPage() {
           .kru-app-mobile-tabs { display: none; }
           .kru-detail-grid { grid-template-columns: 1fr 340px; gap: var(--sp-9); }
           .kru-detail-side { position: sticky; top: var(--sp-6); }
+          .kru-contact-fab { bottom: var(--sp-7); right: var(--sp-7); }
         }
       `}</style>
     </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, fetchPlans, fetchPublishedResources, getSignedFileUrl, setResourceSaved } from "../data";
+import { fetchEntitlements, fetchFounderCapacity, fetchPlans, fetchPublishedResources, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -159,6 +159,33 @@ describe("fetchEntitlements", () => {
     } as unknown as SupabaseClient;
 
     await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+  });
+});
+
+describe("fetchFounderCapacity", () => {
+  it("maps the aggregate RPC without exposing member data", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: [{ used: 24, capacity: 100, remaining: 76, is_full: false }],
+        error: null,
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchFounderCapacity(supabase)).resolves.toEqual({
+      used: 24,
+      capacity: 100,
+      remaining: 76,
+      isFull: false,
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith("get_founder_capacity");
+  });
+
+  it("fails closed when the aggregate is malformed", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({ data: [{ user_id: "must-not-leak" }], error: null }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchFounderCapacity(supabase)).resolves.toBeNull();
   });
 });
 

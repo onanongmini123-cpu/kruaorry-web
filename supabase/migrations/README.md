@@ -40,8 +40,8 @@ The two are independent (disjoint objects — a `plans` row's `features`
 column vs. two trigger functions) and were applied/reconciled
 independently without colliding, despite `016d` sorting before `017`.
 
-As of that verification, these eight migrations on the feature branch
-were **not yet applied** or recorded on the live project:
+The live ledger was rechecked with `supabase migration list` on 2026-09-24.
+The following migrations are now applied and recorded on the live project:
 
 - `20260901090000_017b_membership_catalog_and_capabilities.sql`
 - `20260901090100_018_subscriptions_and_legacy_backfill.sql`
@@ -52,6 +52,13 @@ were **not yet applied** or recorded on the live project:
 - `20260918090100_023_split_public_resource_read_policy.sql`
 - `20260919090000_024_demote_placeholder_seed_resources.sql`
 
+`20260924170000_025_active_founder_capacity.sql` is the next additive
+migration. It changes Founder availability from the historical grant ledger to
+the current active-subscription aggregate, exposes that aggregate without
+member identifiers, and keeps the 100-seat limit transactionally enforced.
+It must be applied together with the frontend that consumes
+`get_founder_capacity()`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
@@ -61,7 +68,9 @@ Coordinate the database change and matching frontend release in a maintenance
 window: existing production code reads target columns that `023` revokes,
 while new code needs views and RPCs created only by these migrations.
 `019` already
-contains the durable Founder cap, correct renewal lock order and price, and
+contains the durable Founder grant history, correct renewal lock order and price, and
 exact-file Storage policy; `020` adds Free favorites enforcement and reasserts
 the same request, renewal, and Storage rules as defense in depth. `021` exposes
-only a guarded aggregate of permanently used Founder seats to admins.
+only a guarded aggregate of historical Founder grants to admins; `025`
+supersedes that display/counting behavior with the active Founder source of
+truth while retaining the ledger solely to prevent reclaiming a lost price lock.
