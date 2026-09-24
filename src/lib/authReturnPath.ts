@@ -1,9 +1,13 @@
+import { isResourceGrade } from "@/lib/resourceGrades";
+
 // A login link may carry a destination, but never an arbitrary URL. Keeping
 // this allowlist small prevents both open redirects and accidental navigation
 // to an admin/auth route after a public-resource signup.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const BASE = "https://return-path.invalid";
+const APP_VIEWS = new Set(["home", "library", "favorites", "plans", "requests"]);
+const APP_FILTER_PARAMS = ["resource", "view", "q", "category", "grade"] as const;
 
 function hasOnlyParams(params: URLSearchParams, allowed: readonly string[]): boolean {
   const keys = [...params.keys()];
@@ -20,9 +24,17 @@ export function safeAuthNext(raw: string | null | undefined): string {
     if (url.origin !== BASE || url.hash) return "/app";
 
     if (url.pathname === "/app") {
-      if (!hasOnlyParams(url.searchParams, ["resource"])) return "/app";
+      if (!hasOnlyParams(url.searchParams, APP_FILTER_PARAMS)) return "/app";
       const resource = url.searchParams.get("resource");
       if (resource !== null && !UUID.test(resource)) return "/app";
+      const view = url.searchParams.get("view");
+      if (view !== null && !APP_VIEWS.has(view)) return "/app";
+      const query = url.searchParams.get("q");
+      if (query !== null && (!query.trim() || query.length > 100 || CONTROL.test(query))) return "/app";
+      const category = url.searchParams.get("category");
+      if (category !== null && (!category.trim() || category.length > 100 || CONTROL.test(category))) return "/app";
+      const grade = url.searchParams.get("grade");
+      if (grade !== null && !isResourceGrade(grade)) return "/app";
       return url.pathname + url.search;
     }
 

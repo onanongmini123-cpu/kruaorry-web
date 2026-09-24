@@ -1,15 +1,24 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Search } from "lucide-react";
+import { ArrowRight, BookOpen, Lock, Search } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { loadPublicResources } from "./data";
+import { filterDiscoveredResources, normalizeDiscoveryFilters, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
+import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
+import { publicResourceAction, requiredPlansLabel } from "./catalog";
+import { loadPublicResources, loadPublicResourceViewer } from "./data";
+import { PublicResourceCover } from "./PublicResourceCover";
 
 export const metadata: Metadata = {
   title: "คลังสื่อการสอน | KruAorry",
   description: "ดูตัวอย่างสื่อการสอนที่เผยแพร่จริง เลือกสื่อฟรีหรือสื่อสำหรับสมาชิก แล้วสมัครเพื่อเริ่มใช้ในห้องเรียน",
 };
 
-type SearchParams = Promise<{ q?: string | string[]; category?: string | string[] }>;
+type SearchParams = Promise<{
+  q?: string | string[];
+  category?: string | string[];
+  grade?: string | string[];
+  access?: string | string[];
+}>;
 
 function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value ?? "").trim().slice(0, 100);
@@ -17,16 +26,17 @@ function first(value: string | string[] | undefined): string {
 
 export default async function ResourcesPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const query = first(params.q);
-  const category = first(params.category);
-  const result = await loadPublicResources();
-  const categories = [...new Set(result.resources.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
-  const visible = result.resources.filter((item) => {
-    const matchesCategory = !category || item.category === category;
-    const haystack = [item.title, item.meta, item.description, item.category, ...item.tags].join(" ").toLocaleLowerCase("th");
-    return matchesCategory && (!query || haystack.includes(query.toLocaleLowerCase("th")));
+  const filters = normalizeDiscoveryFilters({
+    query: first(params.q),
+    category: first(params.category),
+    grade: first(params.grade),
+    access: first(params.access) as ResourceAccessFilter,
   });
+  const [result, viewer] = await Promise.all([loadPublicResources(), loadPublicResourceViewer()]);
+  const categories = [...new Set(result.resources.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+  const visible = filterDiscoveredResources(result.resources, filters);
   const freeCount = result.resources.filter((item) => item.isFree).length;
+  const hasFilters = Boolean(filters.query || filters.category || filters.grade || filters.access !== "all");
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--surface-page)" }}>
@@ -50,19 +60,38 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
 
         <section style={{ maxWidth: "var(--container-max)", margin: "auto", padding: "var(--sp-8) var(--sp-5) var(--sp-13)" }}>
           {result.status === "ready" && result.resources.length > 0 && (
-            <form action="/resources" method="get" style={{ display: "flex", gap: "var(--sp-3)", flexWrap: "wrap", marginBottom: "var(--sp-7)", alignItems: "end" }}>
-              <label style={{ display: "grid", gap: 6, flex: "2 1 250px", fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>
+            <form action="/resources" method="get" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: "var(--sp-3)", marginBottom: "var(--sp-7)", alignItems: "end" }}>
+              <label style={{ display: "grid", gap: 6, minWidth: 0, fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>
                 ค้นหาสื่อ
-                <input name="q" type="search" defaultValue={query} placeholder="ชื่อสื่อ วิชา หรือคำสำคัญ" style={{ padding: "12px 14px", borderRadius: "var(--r-md)", border: "1px solid var(--border-default)", background: "white", width: "100%" }} />
+                <input className="kru-input" name="q" type="search" defaultValue={filters.query} placeholder="พิมพ์วิชา ระดับชั้น หรือเรื่องที่ต้องการ" />
               </label>
-              <label style={{ display: "grid", gap: 6, flex: "1 1 190px", fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>
+              <label style={{ display: "grid", gap: 6, minWidth: 0, fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>
                 หมวดหมู่
-                <select name="category" defaultValue={category} style={{ padding: "12px 14px", borderRadius: "var(--r-md)", border: "1px solid var(--border-default)", background: "white", width: "100%" }}>
+                <select className="kru-select" name="category" defaultValue={filters.category}>
                   <option value="">ทุกหมวดหมู่</option>
                   {categories.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               </label>
-              <button type="submit" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 20px", minHeight: 46, border: 0, borderRadius: "var(--r-md)", background: "var(--brand)", color: "white", fontWeight: "var(--fw-semibold)", cursor: "pointer" }}><Search size={18} />ค้นหา</button>
+              <label style={{ display: "grid", gap: 6, minWidth: 0, fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>
+                ระดับชั้น
+                <select className="kru-select" name="grade" defaultValue={filters.grade}>
+                  <option value="">ทุกระดับชั้น</option>
+                  {RESOURCE_GRADE_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.value === "all" ? "สื่อที่ใช้ได้ทุกระดับ" : item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: 6, minWidth: 0, fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>
+                สิทธิ์การใช้งาน
+                <select className="kru-select" name="access" defaultValue={filters.access}>
+                  <option value="all">ทั้งหมด</option>
+                  <option value="free">สื่อใช้ฟรี</option>
+                  <option value="member">สื่อสำหรับสมาชิก</option>
+                </select>
+              </label>
+              <button type="submit" className="kru-btn kru-btn--primary" style={{ minHeight: 52 }}><Search size={18} />ค้นหา</button>
             </form>
           )}
 
@@ -86,21 +115,51 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
             </div>
           ) : (
             <>
-              <p style={{ color: "var(--text-muted)", marginBottom: "var(--sp-5)" }}>พบ {visible.length} รายการ</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 260px), 1fr))", gap: "var(--gap-grid)" }}>
-                {visible.map((item) => (
-                  <article key={item.id} className="kru-card" style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.coverImageUrl} alt={`ภาพปก ${item.title}`} loading="lazy" referrerPolicy="no-referrer" style={{ width: "100%", aspectRatio: "16 / 10", objectFit: "cover", background: "var(--surface-sunken)" }} />
-                    <div style={{ padding: "var(--sp-5)", display: "flex", flex: 1, flexDirection: "column", gap: "var(--sp-3)" }}>
-                      <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>{item.isFree ? "ใช้ได้ฟรี" : "สำหรับสมาชิก"}</span>
-                      <h2 style={{ fontSize: "var(--fs-20)", lineHeight: "var(--lh-snug)" }}>{item.title}</h2>
-                      {item.meta && <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{item.meta}</p>}
-                      {item.description && <p style={{ color: "var(--text-body)", fontSize: "var(--fs-15)", lineHeight: "var(--lh-normal)" }}>{item.description}</p>}
-                      <Link href={`/resources/${item.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-link)", fontWeight: "var(--fw-semibold)", marginTop: "auto", paddingTop: "var(--sp-3)" }}>ดูรายละเอียดสื่อ <ArrowRight size={17} /></Link>
-                    </div>
-                  </article>
-                ))}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--sp-4)", flexWrap: "wrap", marginBottom: "var(--sp-5)" }}>
+                <p style={{ color: "var(--text-muted)" }}>พบ {visible.length} รายการ</p>
+                {hasFilters && <Link href="/resources" style={{ fontWeight: "var(--fw-semibold)" }}>ล้างตัวกรอง</Link>}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 260px), 1fr))", gap: "var(--gap-grid)", alignItems: "stretch" }}>
+                {visible.map((item) => {
+                  const action = publicResourceAction(item, viewer);
+                  const planLabel = requiredPlansLabel(item);
+                  return (
+                    <article key={item.id} className="kru-card" style={{ overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
+                      <Link href={`/resources/${item.id}`} aria-label={`ดูรายละเอียด ${item.title}`} style={{ display: "block", color: "inherit" }}>
+                        <div style={{ position: "relative" }}>
+                          <PublicResourceCover title={item.title} url={item.coverImageUrl} deliveryMode={item.deliveryMode} style={{ aspectRatio: "16 / 10" }} />
+                          {action.locked && (
+                            <span role="img" aria-label={`ล็อก ต้องใช้ ${planLabel}`} style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(255,255,255,.55)" }}>
+                              <span style={{ width: 42, height: 42, display: "grid", placeItems: "center", borderRadius: "var(--r-pill)", color: "var(--status-member-fg)", background: "var(--status-member-bg)", boxShadow: "var(--shadow-sm)" }}><Lock size={19} aria-hidden="true" /></span>
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                      <div style={{ padding: "var(--sp-5)", display: "flex", flex: 1, flexDirection: "column", gap: "var(--sp-3)" }}>
+                        <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>{item.isFree ? "ใช้ได้ฟรี" : `สำหรับ ${planLabel}`}</span>
+                        <h2 style={{ minHeight: "2.8em", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, fontSize: "var(--fs-20)", lineHeight: "var(--lh-snug)" }}><Link href={`/resources/${item.id}`} style={{ color: "inherit" }}>{item.title}</Link></h2>
+                        <p style={{ minHeight: "1.5em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{item.meta || "สื่อพร้อมใช้ในชั้นเรียน"}</p>
+                        <p style={{ minHeight: "4.5em", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, color: "var(--text-body)", fontSize: "var(--fs-15)", lineHeight: "var(--lh-normal)" }}>{item.description || "ดูรายละเอียดของสื่อและสิทธิ์การใช้งานก่อนเปิดใช้"}</p>
+                        <div style={{ minHeight: 28, display: "flex", alignItems: "flex-start", gap: 6, flexWrap: "wrap" }}>
+                          {item.category && <span className="kru-tag">{item.category}</span>}
+                          {item.gradeLevels.slice(0, 2).map((grade) => <span className="kru-tag" key={grade}>{resourceGradeLabel(grade)}</span>)}
+                        </div>
+                        <div style={{ display: "grid", gap: "var(--sp-3)", marginTop: "auto", paddingTop: "var(--sp-2)" }}>
+                          <Link href={`/resources/${item.id}`} style={{ minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, color: "var(--text-link)", fontWeight: "var(--fw-semibold)" }}>ดูเพิ่มเติม <ArrowRight size={17} aria-hidden="true" /></Link>
+                          <a
+                            href={action.href}
+                            className="kru-btn kru-btn--soft kru-btn--block"
+                            target={action.opensNewTab ? "_blank" : undefined}
+                            rel={action.opensNewTab ? "noopener noreferrer" : undefined}
+                            referrerPolicy={action.opensNewTab ? "no-referrer" : undefined}
+                          >
+                            {action.locked && <Lock size={17} aria-hidden="true" />}{action.label}
+                          </a>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </>
           )}

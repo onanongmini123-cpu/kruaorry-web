@@ -41,4 +41,34 @@ describe("ResourceCard media", () => {
     expect(source).toContain("onError={() => setFailedCoverUrl(coverImageUrl ?? null)}");
     expect(source).toContain("failedCoverUrl !== coverImageUrl");
   });
+
+  it("shows a clamped description, detail action, grade, package, and stable locked CTA", () => {
+    const html = renderToStaticMarkup(React.createElement(ResourceCard, {
+      ...baseProps,
+      description: "คำอธิบายฉบับเต็มที่เปิดอ่านต่อได้จากหน้ารายละเอียด",
+      gradeLevels: ["p2"],
+      requiredPlanNames: ["Founder 100", "Teacher"],
+      locked: true,
+      onClick: vi.fn(),
+      onAction: vi.fn(),
+    }));
+
+    expect(html).toContain("คำอธิบายฉบับเต็ม");
+    expect(html).toContain("ดูเพิ่มเติม");
+    expect(html).toContain("ป.2");
+    expect(html).toContain("สำหรับ Founder 100 / Teacher");
+    expect(html).toContain("อัปเกรดเพื่อปลดล็อก");
+    expect(html).toMatch(/-webkit-line-clamp:\s*3/);
+  });
+
+  it("keeps an accessible bookmark name while an optimistic save is pending", () => {
+    const html = renderToStaticMarkup(React.createElement(ResourceCard, {
+      ...baseProps,
+      onSave: vi.fn(),
+      savePending: true,
+    }));
+    expect(html).toContain('aria-label="บันทึก โรงงานคำไทย ไว้ใช้ทีหลัง"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("disabled");
+  });
 });

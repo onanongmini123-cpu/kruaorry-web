@@ -9,15 +9,18 @@ interface SearchFieldProps {
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
+  ariaLabel?: string;
 }
 
-export function SearchField({ value, onChange, placeholder, className = "", style }: SearchFieldProps) {
+export function SearchField({ value, onChange, placeholder, className = "", style, ariaLabel }: SearchFieldProps) {
   return (
     <div className={`kru-field__control kru-field--has-icon ${className}`} style={{ position: "relative", ...style }}>
       <span className="kru-field__icon">
         <Search size={18} strokeWidth={1.75} />
       </span>
       <input
+        type="search"
+        aria-label={ariaLabel}
         className="kru-input"
         style={{ minHeight: 48, paddingRight: value ? 40 : undefined }}
         value={value}

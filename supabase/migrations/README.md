@@ -51,20 +51,21 @@ The following migrations are now applied and recorded on the live project:
 - `20260918090000_022_resource_file_signup_gate.sql`
 - `20260918090100_023_split_public_resource_read_policy.sql`
 - `20260919090000_024_demote_placeholder_seed_resources.sql`
+- `20260924170000_025_active_founder_capacity.sql`
 
-`20260924170000_025_active_founder_capacity.sql` is the next additive
-migration. It changes Founder availability from the historical grant ledger to
-the current entitled-subscription aggregate (`active` plus unexpired
-`past_due`), exposes that aggregate without member identifiers, and keeps the
-100-seat limit transactionally enforced.
-It must be applied together with the frontend that consumes
-`get_founder_capacity()`.
+`20260925090000_026_resource_discovery_metadata.sql` is the next additive
+migration. It adds controlled multi-value grade metadata without guessing or
+backfilling grades from free-form copy, appends only safe discovery fields to
+`resource_catalog`, and keeps private destinations out of that view. It also
+splits the existing favorites RLS policy into explicit own-row operations,
+adds a large-list index, and provides an idempotent own-user save/remove RPC.
+It does not recreate `saved_resources` or rewrite existing favorites.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
-from `016d` while adding only lifecycle/pricing metadata. Migrations 019–024
+from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock
 order and exact-file Storage policy; `020` adds Free favorites enforcement and
 reasserts the same request, renewal, and Storage rules as defense in depth;

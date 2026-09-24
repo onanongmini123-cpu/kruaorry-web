@@ -20,8 +20,25 @@ export interface Resource {
   affordance: ResourceAffordance;
   coverImageUrl: string | null;
   tags: string[];
+  gradeLevels: string[];
+  requiredPlanNames: string[];
   free: boolean;
   fileSize: number | null;
+}
+
+interface ResourceCatalogRow {
+  id: string;
+  title: string;
+  meta: string | null;
+  description: string | null;
+  category: string | null;
+  delivery_mode: string;
+  cover_image_url: string | null;
+  tags: string[] | null;
+  grade_levels: string[] | null;
+  required_plan_names: string[] | null;
+  is_free: boolean;
+  file_size: number | null;
 }
 
 export interface Plan {
@@ -64,21 +81,28 @@ export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" 
 }
 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
-  const outcome = await withTimeout(Promise.resolve(supabase
-    .from("resource_catalog")
-    .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, file_size")
-    .order("created_at", { ascending: false })), "published resource listing");
+  const pageSize = 500;
+  const rows: ResourceCatalogRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const outcome = await withTimeout(Promise.resolve(supabase
+      .from("resource_catalog")
+      .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, grade_levels, required_plan_names, is_free, file_size")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1)), "published resource listing");
 
-  if (!outcome.ok) {
-    console.error(`fetchPublishedResources failed: ${outcome.reason}`);
-    return [];
+    if (!outcome.ok) {
+      console.error(`fetchPublishedResources failed: ${outcome.reason}`);
+      return [];
+    }
+    const { data, error } = outcome.value;
+    if (error) logError("fetchPublishedResources failed", error);
+    if (error || !data) return [];
+    rows.push(...data as ResourceCatalogRow[]);
+    if (data.length < pageSize) break;
   }
-  const { data, error } = outcome.value;
 
-  if (error) logError("fetchPublishedResources failed", error);
-  if (error || !data) return [];
-
-  return data.map((r) => ({
+  return rows.map((r) => ({
     id: r.id,
     title: r.title,
     meta: r.meta ?? "",
@@ -87,6 +111,8 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     affordance: r.delivery_mode as ResourceAffordance,
     coverImageUrl: r.cover_image_url,
     tags: r.tags ?? [],
+    gradeLevels: r.grade_levels ?? [],
+    requiredPlanNames: r.required_plan_names ?? [],
     free: r.is_free,
     fileSize: r.file_size,
   }));
@@ -226,20 +252,40 @@ export async function submitRequest(supabase: SupabaseClient, userId: string, ti
 }
 
 export async function fetchSavedResourceIds(supabase: SupabaseClient, userId: string): Promise<string[]> {
-  const { data, error } = await supabase.from("saved_resources").select("resource_id").eq("user_id", userId);
-  if (error) logError("fetchSavedResourceIds failed", error);
-  if (error || !data) return [];
-  return data.map((r) => r.resource_id);
+  const pageSize = 500;
+  const ids: string[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const outcome = await withTimeout(Promise.resolve(supabase
+      .from("saved_resources")
+      .select("resource_id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .order("resource_id", { ascending: true })
+      .range(from, from + pageSize - 1)), "saved resource listing");
+    if (!outcome.ok) {
+      console.error(`fetchSavedResourceIds failed: ${outcome.reason}`);
+      return [];
+    }
+    const { data, error } = outcome.value;
+    if (error) logError("fetchSavedResourceIds failed", error);
+    if (error || !data) return [];
+    ids.push(...data.map((row) => row.resource_id));
+    if (data.length < pageSize) break;
+  }
+  return ids;
 }
 
-export async function setResourceSaved(supabase: SupabaseClient, userId: string, resourceId: string, saved: boolean): Promise<string | null> {
-  if (saved) {
-    const { error } = await supabase.from("saved_resources").insert({ user_id: userId, resource_id: resourceId });
-    if (error) logError("setResourceSaved (save) failed", error);
-    return error?.message ?? null;
+export async function setResourceSaved(supabase: SupabaseClient, resourceId: string, saved: boolean): Promise<string | null> {
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("set_my_resource_saved", {
+    p_resource_id: resourceId,
+    p_saved: saved,
+  })), "save resource");
+  if (!outcome.ok) {
+    console.error(`setResourceSaved failed: ${outcome.reason}`);
+    return outcome.reason;
   }
-  const { error } = await supabase.from("saved_resources").delete().eq("user_id", userId).eq("resource_id", resourceId);
-  if (error) logError("setResourceSaved (unsave) failed", error);
+  const { error } = outcome.value;
+  if (error) logError(`setResourceSaved (${saved ? "save" : "unsave"}) failed`, error);
   return error?.message ?? null;
 }
 

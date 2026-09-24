@@ -40,6 +40,7 @@ import {
 } from "@/lib/adminMembership";
 import { normalizeFounderCapacity } from "@/lib/founderCapacity";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
+import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,7 @@ const EMPTY_FORM = {
   meta: "",
   description: "",
   category: "",
+  grade_levels: [] as ResourceGrade[],
   delivery_mode: "web_app" as DeliveryMode,
   cta_url: "",
   cover_image_url: "",
@@ -335,7 +337,7 @@ export default function AdminConsolePage() {
     }
     const [{ data, error }, { target: resolved, error: targetError }] = await Promise.all([
       supabase.from("resources")
-        .select("title, meta, description, category, delivery_mode, cover_image_url, is_free, file_size, file_mime_type")
+        .select("title, meta, description, category, grade_levels, delivery_mode, cover_image_url, is_free, file_size, file_mime_type")
         .eq("id", id).single(),
       loadResourceTarget(supabase, id),
     ]);
@@ -353,6 +355,7 @@ export default function AdminConsolePage() {
       meta: data.meta ?? "",
       description: data.description ?? "",
       category: data.category ?? "",
+      grade_levels: data.grade_levels ?? [],
       delivery_mode: data.delivery_mode,
       cta_url: resolved.cta_url ?? "",
       cover_image_url: data.cover_image_url ?? "",
@@ -413,6 +416,28 @@ export default function AdminConsolePage() {
     if (!form.file_path) return;
     if (!window.confirm("ลบไฟล์นี้ใช่หรือไม่? การลบจะมีผลเมื่อกดบันทึก")) return;
     setFileRemoved(true);
+  };
+
+  const handleGradeLevelChange = (grade: ResourceGrade, checked: boolean) => {
+    setForm((current) => {
+      if (!checked) {
+        return { ...current, grade_levels: current.grade_levels.filter((value) => value !== grade) };
+      }
+      if (grade === "all") {
+        return { ...current, grade_levels: ["all"] };
+      }
+
+      const selected = new Set<ResourceGrade>([
+        ...current.grade_levels.filter((value) => value !== "all"),
+        grade,
+      ]);
+      return {
+        ...current,
+        grade_levels: RESOURCE_GRADE_OPTIONS
+          .map((option) => option.value)
+          .filter((value) => selected.has(value)),
+      };
+    });
   };
 
   // Uploads a cover image with the same retry/cancel discipline as the
@@ -622,6 +647,7 @@ export default function AdminConsolePage() {
         meta: form.meta.trim() || null,
         description: form.description.trim() || null,
         category: form.category.trim() || null,
+        grade_levels: form.grade_levels,
         delivery_mode: form.delivery_mode,
         cta_url: form.cta_url.trim() || null,
         cover_image_url: coverUrl,
@@ -1038,6 +1064,46 @@ export default function AdminConsolePage() {
                       ]}
                     />
                   </div>
+                  <fieldset className="kru-field" style={{ margin: 0, padding: 0, border: "none", minWidth: 0 }}>
+                    <legend className="kru-field__label">ระดับชั้น</legend>
+                    <p id="resource-grade-help" style={{ margin: "0 0 var(--sp-3)", color: "var(--text-muted)", fontSize: "var(--fs-13)" }}>
+                      เลือกได้หลายระดับ หรือเลือก “ทุกระดับ” เพียงรายการเดียว
+                    </p>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                        gap: "var(--sp-3)",
+                      }}
+                    >
+                      {RESOURCE_GRADE_OPTIONS.map((option) => (
+                        <label
+                          key={option.value}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            minHeight: 40,
+                            padding: "8px 10px",
+                            border: "1px solid var(--border-subtle)",
+                            borderRadius: "var(--r-md)",
+                            background: form.grade_levels.includes(option.value) ? "var(--surface-sunken)" : "var(--surface-card)",
+                            cursor: "pointer",
+                            fontSize: "var(--fs-14)",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            value={option.value}
+                            checked={form.grade_levels.includes(option.value)}
+                            aria-describedby="resource-grade-help"
+                            onChange={(event) => handleGradeLevelChange(option.value, event.target.checked)}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
                   <Input label="ลิงก์ (URL ปลายทาง)" value={form.cta_url} onChange={(e) => setForm({ ...form, cta_url: e.target.value })} placeholder="https://..." />
 
                   <div className="kru-field">
