@@ -80,19 +80,10 @@
   font-size: clamp(30px, 4vw, 48px);
 }
 
-.hero p:not(.eyebrow) {
+.hero p {
   max-width: 760px;
   color: var(--text-body);
   font-size: var(--fs-16);
-}
-
-.eyebrow {
-  margin-bottom: 8px;
-  color: var(--purple-700);
-  font-size: var(--fs-14);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .localCallout {
