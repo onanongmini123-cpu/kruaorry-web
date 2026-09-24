@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { signupHref, toPublicResource } from "../catalog";
+import { PUBLIC_RESOURCE_SELECT, publicResourceAction, requiredPlansLabel, signupHref, toPublicResource } from "../catalog";
 import { safeAuthNext } from "@/lib/authReturnPath";
+import { EMPTY_ENTITLEMENTS } from "@/lib/entitlement";
 
 const id = "11111111-2222-4333-8444-555555555555";
 const base = {
@@ -15,6 +16,8 @@ const base = {
   file_path: `${id}/worksheet.pdf`,
   cover_image_url: "https://images.example.org/worksheet.png",
   tags: ["ป.4", "ใบงาน"],
+  grade_levels: ["p4"],
+  required_plan_names: [],
   is_free: true,
   file_name: "worksheet.pdf",
 };
@@ -38,11 +41,98 @@ describe("public resource showcase", () => {
   it("never puts private destinations into the public page model", () => {
     const item = toPublicResource({ ...base, delivery_mode: "google_template", cta_url: "https://private.example/?token=SECRET", file_path: "private/path" });
     expect(JSON.stringify(item)).not.toMatch(/SECRET|private\/path|worksheet[.]pdf/);
+    expect(PUBLIC_RESOURCE_SELECT).toContain("grade_levels");
+    expect(PUBLIC_RESOURCE_SELECT).toContain("required_plan_names");
+    expect(PUBLIC_RESOURCE_SELECT).not.toMatch(/cta_url|file_path|file_name/);
   });
 
-  it("fails closed for drafts, missing cover and invalid ids", () => {
+  it("keeps safe metadata and structured grades while allowing a missing cover fallback", () => {
+    const item = toPublicResource({
+      ...base,
+      is_free: false,
+      cover_image_url: null,
+      required_plan_names: ["Founder 100", "Teacher", "Teacher"],
+    });
+
+    expect(item).toMatchObject({
+      coverImageUrl: null,
+      gradeLevels: ["p4"],
+      requiredPlanNames: ["Founder 100", "Teacher"],
+    });
+    expect(requiredPlansLabel(item!)).toBe("Founder 100 หรือ Teacher");
+  });
+
+  it("fails closed for drafts and invalid ids", () => {
     expect(toPublicResource({ ...base, status: "draft" })).toBeNull();
-    expect(toPublicResource({ ...base, cover_image_url: null })).toBeNull();
     expect(toPublicResource({ ...base, id: "../admin" })).toBeNull();
+  });
+
+  it("uses safe session-aware actions for guests, free members, paid members, and admins", () => {
+    const free = toPublicResource(base)!;
+    const premium = toPublicResource({
+      ...base,
+      is_free: false,
+      required_plan_names: ["Founder 100", "Teacher"],
+    })!;
+    const guest = publicResourceAction(premium, {
+      authenticated: false,
+      role: null,
+      entitlements: EMPTY_ENTITLEMENTS,
+    });
+    expect(guest).toMatchObject({ label: "สมัครสมาชิกเพื่อใช้งาน", locked: true, canUse: false });
+    expect(guest.href).not.toMatch(/file_path|token|worksheet[.]pdf/);
+
+    const guestFree = publicResourceAction(free, {
+      authenticated: false,
+      role: null,
+      entitlements: EMPTY_ENTITLEMENTS,
+    });
+    expect(guestFree).toMatchObject({ label: "สมัครสมาชิกเพื่อใช้งาน", locked: false, canUse: false });
+    expect(guestFree.href).toContain(encodeURIComponent(`/download/${id}`));
+
+    const freeMember = publicResourceAction(premium, {
+      authenticated: true,
+      role: "member",
+      entitlements: EMPTY_ENTITLEMENTS,
+    });
+    expect(freeMember).toEqual({
+      href: `/app?resource=${id}`,
+      label: "อัปเกรดเพื่อปลดล็อก",
+      canUse: false,
+      locked: true,
+      opensNewTab: false,
+    });
+
+    expect(publicResourceAction(free, {
+      authenticated: true,
+      role: "member",
+      entitlements: EMPTY_ENTITLEMENTS,
+    })).toMatchObject({ href: `/download/${id}`, canUse: true, locked: false });
+
+    const paidMember = publicResourceAction(premium, {
+      authenticated: true,
+      role: "member",
+      entitlements: { planId: "teacher", features: { "download.premium": { enabled: true, limit: null } } },
+    });
+    expect(paidMember).toMatchObject({ href: `/download/${id}`, canUse: true, locked: false });
+
+    const admin = publicResourceAction(premium, {
+      authenticated: true,
+      role: "admin",
+      entitlements: EMPTY_ENTITLEMENTS,
+    });
+    expect(admin).toMatchObject({ href: `/download/${id}`, canUse: true, locked: false });
+
+    const premiumWebApp = toPublicResource({
+      ...base,
+      delivery_mode: "web_app",
+      is_free: false,
+      required_plan_names: ["Teacher"],
+    })!;
+    expect(publicResourceAction(premiumWebApp, {
+      authenticated: true,
+      role: "member",
+      entitlements: { planId: "teacher", features: { "download.premium": { enabled: true, limit: null } } },
+    })).toMatchObject({ href: `/api/resources/${id}/open`, canUse: true, locked: false });
   });
 });

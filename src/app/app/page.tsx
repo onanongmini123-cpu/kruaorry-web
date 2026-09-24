@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Bookmark, ShieldCheck, MessageSquareText, MessageCircle, Sparkles } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { MemberContactMenu } from "@/components/MemberContactMenu";
-import { Button, Input, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
+import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
+import { Button, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { LINE_OA_URL } from "@/lib/config";
 import {
@@ -32,17 +33,21 @@ import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from 
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
-import { resourceIdFromSearch } from "@/lib/resourceDeepLink";
+import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
+import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
+import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
+import { persistFavoriteOptimistically } from "@/lib/favoriteState";
 
 export const dynamic = "force-dynamic";
 
-type View = "home" | "library" | "detail" | "plans" | "requests";
+type View = AppView | "detail";
 
 const NAV_GROUPS: SideNavGroup[] = [
   {
     items: [
       { key: "home", label: "หน้าแรก", icon: House },
       { key: "library", label: "คลังสื่อ", icon: FolderOpen },
+      { key: "favorites", label: "สื่อโปรด", icon: Bookmark },
       { key: "requests", label: "เสนอไอเดีย", icon: MessageSquareText },
       { key: "plans", label: "แพ็กเกจ", icon: IdCard },
     ],
@@ -62,10 +67,13 @@ export default function TeacherAppPage() {
   const [entitlements, setEntitlements] = useState<EntitlementSnapshot>(EMPTY_ENTITLEMENTS);
   const [view, setView] = useState<View>("home");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailReturnView, setDetailReturnView] = useState<"library" | "favorites">("library");
   const [query, setQuery] = useState("");
-  const [categories, setCategories] = useState<string[]>([]);
+  const [category, setCategory] = useState("");
+  const [grade, setGrade] = useState("");
   const [saved, setSaved] = useState<string[]>([]);
-  const savingResourceIds = useRef<Set<string>>(new Set());
+  const [savingIds, setSavingIds] = useState<string[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [requests, setRequests] = useState<TeacherRequest[]>([]);
   const [newRequestTitle, setNewRequestTitle] = useState("");
@@ -114,10 +122,16 @@ export default function TeacherAppPage() {
       setSaved(savedIds);
       setUpgradeRequests(upgradeData);
       setFounderCapacity(founderCapacityData);
+      const discoveryState = appDiscoveryStateFromSearch(window.location.search);
+      setQuery(discoveryState.query);
+      setCategory(discoveryState.category);
+      setGrade(discoveryState.grade);
       const requestedResourceId = resourceIdFromSearch(window.location.search, resourceData);
       if (requestedResourceId) {
         setDetailId(requestedResourceId);
         setView("detail");
+      } else {
+        setView(discoveryState.view);
       }
       setLoading(false);
     })();
@@ -138,6 +152,21 @@ export default function TeacherAppPage() {
       window.removeEventListener("focus", refreshFounderCapacity);
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let active = true;
+    const refreshSaved = () => {
+      void fetchSavedResourceIds(supabase, userId).then((ids) => {
+        if (active) setSaved(ids);
+      });
+    };
+    window.addEventListener("focus", refreshSaved);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshSaved);
+    };
+  }, [supabase, userId]);
 
   const handleRequestUpgrade = async (planId: string) => {
     if (!userId || submittingUpgradePlanId) return;
@@ -176,26 +205,27 @@ export default function TeacherAppPage() {
   }, [resources]);
 
   const toggleSaved = async (id: string) => {
-    if (!userId || savingResourceIds.current.has(id)) return;
-    savingResourceIds.current.add(id);
-    const nowSaved = !saved.includes(id);
-    try {
-      const error = await setResourceSaved(supabase, userId, id, nowSaved);
-      if (error) {
-        window.alert(nowSaved
-          ? "บันทึกรายการไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือจำนวนรายการที่แพ็กของคุณบันทึกได้"
-          : "นำรายการที่บันทึกไว้ออกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-        return;
-      }
-      setSaved((prev) => (nowSaved ? [...prev, id] : prev.filter((s) => s !== id)));
-    } catch {
-      window.alert("เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-    } finally {
-      savingResourceIds.current.delete(id);
+    if (!userId || savingIds.includes(id)) return;
+    setSavingIds((current) => [...current, id]);
+    setSaveError(null);
+    const wasSaved = saved.includes(id);
+    const nowSaved = !wasSaved;
+    const error = await persistFavoriteOptimistically(
+      id,
+      nowSaved,
+      setSaved,
+      () => setResourceSaved(supabase, id, nowSaved),
+    );
+    if (error) {
+      setSaveError(nowSaved
+        ? "บันทึกรายการไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือจำนวนรายการที่แพ็กของคุณบันทึกได้"
+        : "นำรายการที่บันทึกไว้ออกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     }
+    setSavingIds((current) => current.filter((savedId) => savedId !== id));
   };
 
   const openDetail = (r: Resource) => {
+    setDetailReturnView(view === "favorites" ? "favorites" : "library");
     setDetailId(r.id);
     setView("detail");
   };
@@ -246,11 +276,18 @@ export default function TeacherAppPage() {
 
   const detail = resources.find((r) => r.id === detailId) || null;
 
-  const filtered = resources.filter((r) => {
-    const matchesSearch = !query.trim() || r.title.toLowerCase().includes(query.toLowerCase());
-    const matchesCategory = categories.length === 0 || (r.category ? categories.includes(r.category) : false);
-    return matchesSearch && matchesCategory;
-  });
+  const filtered = filterDiscoveredResources(
+    resources.map((resource) => ({ ...resource, isFree: resource.free })),
+    { query, category, grade },
+  );
+  const favoriteResources = filtered.filter((resource) => saved.includes(resource.id));
+  const hasActiveFilters = Boolean(query.trim() || category || grade);
+
+  const clearFilters = () => {
+    setQuery("");
+    setCategory("");
+    setGrade("");
+  };
 
   if (loading) {
     return (
@@ -273,6 +310,32 @@ export default function TeacherAppPage() {
   }
 
   const initials = (profile?.fullName || profile?.email || "ค").slice(0, 2);
+  const renderResourceGrid = (items: Resource[]) => (
+    <div className="kru-resource-grid">
+      {items.map((resource) => (
+        <ResourceCard
+          key={resource.id}
+          title={resource.title}
+          meta={resource.meta}
+          description={resource.description}
+          affordance={resource.affordance}
+          tags={resource.tags}
+          gradeLevels={resource.gradeLevels}
+          requiredPlanNames={resource.requiredPlanNames}
+          icon={resourceIcon(resource.affordance)}
+          coverImageUrl={resource.coverImageUrl}
+          tint={resourceTint(resource.affordance)}
+          free={resource.free}
+          locked={!canAccess(resource)}
+          saved={saved.includes(resource.id)}
+          savePending={savingIds.includes(resource.id)}
+          onSave={() => toggleSaved(resource.id)}
+          onClick={() => openDetail(resource)}
+          onAction={() => openResource(resource)}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -283,7 +346,7 @@ export default function TeacherAppPage() {
             <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-20)", color: "var(--text-strong)" }}>KruAorry</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <SideNav groups={NAV_GROUPS} value={view === "detail" ? "library" : view} onChange={(k) => setView(k as View)} />
+            <SideNav groups={NAV_GROUPS} value={view === "detail" ? detailReturnView : view} onChange={(k) => setView(k as View)} />
           </div>
           {(profile?.role === "admin" || profile?.role === "owner") && (
             <Button size="sm" block variant="soft" icon={ShieldCheck} onClick={() => router.push("/admin")} style={{ marginTop: "var(--sp-4)" }}>
@@ -297,7 +360,16 @@ export default function TeacherAppPage() {
 
         <div className="kru-app-main">
           <header className="kru-app-header">
-            <SearchField value={query} onChange={setQuery} placeholder="ค้นหาสื่อที่ครูต้องใช้" style={{ flex: 1, maxWidth: 560 }} />
+            <SearchField
+              value={query}
+              onChange={(value) => {
+                setQuery(value);
+                if (view !== "library" && view !== "favorites") setView("library");
+              }}
+              placeholder="ค้นหาสื่อที่ครูต้องใช้"
+              ariaLabel="ค้นหาสื่อ"
+              style={{ flex: 1, maxWidth: 560 }}
+            />
             <div style={{ flex: 1 }} />
             {(profile?.role === "admin" || profile?.role === "owner") && (
               <Button
@@ -324,6 +396,12 @@ export default function TeacherAppPage() {
           </header>
 
           <main style={{ padding: "var(--sp-6) var(--sp-5)", flex: 1 }} className="kru-app-content">
+            {saveError && (
+              <div role="alert" className="kru-save-alert">
+                <span>{saveError}</span>
+                <button type="button" onClick={() => setSaveError(null)} aria-label="ปิดข้อความแจ้งเตือน">×</button>
+              </div>
+            )}
             {view === "home" && (
               <div className="kru-member-home">
                 <section className="kru-member-hero">
@@ -354,28 +432,7 @@ export default function TeacherAppPage() {
                 </div>
                 {resources.length === 0 ? (
                   <EmptyState icon={FolderOpen} title="ยังไม่มีสื่อเผยแพร่" description="แอดมินยังไม่ได้เผยแพร่สื่อ กลับมาดูใหม่อีกครั้ง" />
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
-                    {resources.slice(0, 3).map((r) => (
-                      <ResourceCard
-                        key={r.id}
-                        title={r.title}
-                        meta={r.meta}
-                        affordance={r.affordance}
-                        tags={r.tags}
-                        icon={resourceIcon(r.affordance)}
-                        coverImageUrl={r.coverImageUrl}
-                        tint={resourceTint(r.affordance)}
-                        free={r.free}
-                        locked={!canAccess(r)}
-                        saved={saved.includes(r.id)}
-                        onSave={() => toggleSaved(r.id)}
-                        onClick={() => openDetail(r)}
-                        onAction={() => openResource(r)}
-                      />
-                    ))}
-                  </div>
-                )}
+                ) : renderResourceGrid(resources.slice(0, 3))}
               </div>
             )}
 
@@ -383,58 +440,77 @@ export default function TeacherAppPage() {
               <div>
                 <h1 style={{ fontSize: "var(--fs-30)" }}>คลังสื่อ</h1>
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-16)", color: "var(--text-muted)" }}>ดูตัวอย่างได้ทุกชิ้นก่อนใช้ ดาวน์โหลดแล้วสอนได้เลย</p>
-                <div className="kru-lib-grid">
-                  <aside className="kru-lib-filters">
-                    <FilterChips label="หมวดหมู่" options={categoryOptions} value={categories} onChange={setCategories} />
-                  </aside>
-                  <div>
-                    <div style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", marginBottom: "var(--sp-5)" }}>พบ {filtered.length} รายการ</div>
-                    {filtered.length === 0 ? (
-                      <EmptyState icon={FolderOpen} title="ยังไม่มีไฟล์ตามตัวกรองนี้" description="ลองเปลี่ยนตัวกรอง" />
-                    ) : (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
-                        {filtered.map((r) => (
-                          <ResourceCard
-                            key={r.id}
-                            title={r.title}
-                            meta={r.meta}
-                            affordance={r.affordance}
-                            tags={r.tags}
-                            icon={resourceIcon(r.affordance)}
-                            coverImageUrl={r.coverImageUrl}
-                            tint={resourceTint(r.affordance)}
-                            free={r.free}
-                            locked={!canAccess(r)}
-                            saved={saved.includes(r.id)}
-                            onSave={() => toggleSaved(r.id)}
-                            onClick={() => openDetail(r)}
-                            onAction={() => openResource(r)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <div className="kru-discovery-controls" role="search" aria-label="ค้นหาและกรองคลังสื่อ">
+                  <label className="kru-filter-field">
+                    <span>คำค้น</span>
+                    <SearchField value={query} onChange={setQuery} placeholder="ค้นหาชื่อ เรื่อง หรือคำอธิบาย" />
+                  </label>
+                  <label className="kru-filter-field">
+                    <span>หมวดหมู่</span>
+                    <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                      <option value="">ทุกหมวดหมู่</option>
+                      {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="kru-filter-field">
+                    <span>ระดับชั้น</span>
+                    <select value={grade} onChange={(event) => setGrade(event.target.value)}>
+                      <option value="">ทุกระดับชั้น</option>
+                      {RESOURCE_GRADE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" className="kru-btn kru-btn--ghost" onClick={clearFilters} disabled={!hasActiveFilters}>ล้างตัวกรอง</button>
                 </div>
+                <div role="status" style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", margin: "var(--sp-5) 0" }}>พบ {filtered.length} รายการ</div>
+                {filtered.length === 0 ? (
+                  <EmptyState icon={FolderOpen} title="ยังไม่มีไฟล์ตามตัวกรองนี้" description="ลองเปลี่ยนหรือล้างตัวกรอง" />
+                ) : renderResourceGrid(filtered)}
+              </div>
+            )}
+
+            {view === "favorites" && (
+              <div>
+                <div className="kru-member-section-heading">
+                  <div>
+                    <span>กลับมาดูได้ทุกเมื่อ</span>
+                    <h1 style={{ fontSize: "var(--fs-30)" }}>สื่อโปรดของฉัน</h1>
+                  </div>
+                  {hasActiveFilters && <button type="button" onClick={clearFilters}>ล้างตัวกรอง</button>}
+                </div>
+                <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>บันทึกในบัญชีและใช้งานต่อได้จากทุกอุปกรณ์</p>
+                {saved.length === 0 ? (
+                  <EmptyState
+                    icon={Bookmark}
+                    title="ยังไม่มีสื่อโปรด"
+                    description="ยังไม่มีสื่อโปรด กดไอคอนบุ๊กมาร์กที่สื่อที่สนใจเพื่อเก็บไว้ดูภายหลัง"
+                  />
+                ) : favoriteResources.length === 0 ? (
+                  <EmptyState icon={Bookmark} title="ไม่พบสื่อโปรดตามตัวกรอง" description="ลองล้างคำค้นหรือตัวกรองเพื่อดูสื่อโปรดทั้งหมด" />
+                ) : renderResourceGrid(favoriteResources)}
               </div>
             )}
 
             {view === "detail" && detail && (
               <div>
-                <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => setView("library")} style={{ marginBottom: "var(--sp-5)" }}>
-                  คลังสื่อ
+                <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => setView(detailReturnView)} style={{ marginBottom: "var(--sp-5)" }}>
+                  {detailReturnView === "favorites" ? "สื่อโปรด" : "คลังสื่อ"}
                 </Button>
                 <div className="kru-detail-grid">
                   <div>
                     <h1 style={{ fontSize: "var(--fs-36)" }}>{detail.title}</h1>
                     <div style={{ margin: "var(--sp-5) 0 var(--sp-6)", color: "var(--text-muted)" }}>{detail.meta}</div>
-                    <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--r-panel)", background: "var(--surface-card)", height: 320, display: "grid", placeItems: "center", color: "var(--text-faint)", overflow: "hidden" }}>
-                      {detail.coverImageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={detail.coverImageUrl} alt={detail.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        React.createElement(resourceIcon(detail.affordance), { size: 48, strokeWidth: 1.5 })
-                      )}
-                    </div>
+                    {detail.gradeLevels.length > 0 && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "calc(-1 * var(--sp-3)) 0 var(--sp-5)" }}>
+                        {detail.gradeLevels.map((item) => <Badge key={item} tone="info">{resourceGradeLabel(item)}</Badge>)}
+                      </div>
+                    )}
+                    <PublicResourceCover
+                      title={detail.title}
+                      url={detail.coverImageUrl}
+                      deliveryMode={detail.affordance}
+                      eager
+                      style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--r-panel)", height: 320 }}
+                    />
                     <div style={{ display: "grid", gap: "var(--sp-6)", marginTop: "var(--sp-8)", maxWidth: 640 }}>
                       <div>
                         <h3 style={{ fontSize: "var(--fs-20)" }}>สื่อนี้คืออะไร</h3>
@@ -447,10 +523,15 @@ export default function TeacherAppPage() {
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
                         {canAccess(detail) ? "พร้อมใช้สอนได้เลย" : "สื่อนี้สำหรับสมาชิก"}
                       </div>
+                      {!canAccess(detail) && detail.requiredPlanNames.length > 0 && (
+                        <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
+                          ปลดล็อกได้ด้วยแพ็ก {detail.requiredPlanNames.join(" หรือ ")}
+                        </p>
+                      )}
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} onClick={() => openResource(detail)}>
-                        {canAccess(detail) ? "เปิดใช้งาน" : "ดูแพ็กที่ปลดล็อก"}
+                        {canAccess(detail) ? "เปิดใช้งาน" : "อัปเกรดเพื่อปลดล็อก"}
                       </Button>
-                      <Button block variant="ghost" icon={Bookmark} onClick={() => toggleSaved(detail.id)} style={{ marginTop: "var(--sp-4)" }}>
+                      <Button block variant="ghost" icon={Bookmark} loading={savingIds.includes(detail.id)} aria-label={saved.includes(detail.id) ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"} onClick={() => toggleSaved(detail.id)} style={{ marginTop: "var(--sp-4)" }}>
                         {saved.includes(detail.id) ? "บันทึกไว้แล้ว" : "บันทึกไว้ใช้ทีหลัง"}
                       </Button>
                     </div>
@@ -572,7 +653,7 @@ export default function TeacherAppPage() {
 
       <nav className="kru-app-mobile-tabs">
         {NAV_GROUPS[0].items.map((tab) => {
-          const active = view === tab.key || (tab.key === "library" && view === "detail");
+          const active = view === tab.key || (view === "detail" && tab.key === detailReturnView);
           return (
             <button
               key={tab.key}
@@ -598,8 +679,12 @@ export default function TeacherAppPage() {
         .kru-admin-return-mobile { flex: 0 0 auto; }
         .kru-app-content { padding-bottom: calc(152px + env(safe-area-inset-bottom)) !important; overflow-x: hidden; }
         .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; min-height: 64px; padding-bottom: env(safe-area-inset-bottom); background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
-        .kru-lib-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-6); }
-        .kru-lib-filters { display: flex; flex-direction: column; gap: var(--sp-6); }
+        .kru-resource-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); align-items: stretch; gap: var(--gap-grid); }
+        .kru-discovery-controls { padding: var(--sp-5); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: end; border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-card); }
+        .kru-filter-field { min-width: 0; display: grid; gap: 7px; color: var(--text-body); font-size: var(--fs-13); font-weight: var(--fw-semibold); }
+        .kru-filter-field select { width: 100%; min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--white); color: var(--text-strong); font: inherit; font-weight: var(--fw-regular); }
+        .kru-save-alert { margin-bottom: var(--sp-5); padding: var(--sp-4) var(--sp-5); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg); font-size: var(--fs-14); }
+        .kru-save-alert button { min-width: 36px; min-height: 36px; border: 0; border-radius: var(--r-pill); background: transparent; color: inherit; font-size: var(--fs-24); cursor: pointer; }
         .kru-detail-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-7); }
         .kru-member-home { display: grid; gap: var(--sp-7); }
         .kru-member-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--r-panel); padding: var(--sp-7); min-height: 300px; display: grid; align-items: center; background: radial-gradient(circle at 90% 20%, rgba(255,255,255,.95) 0 10%, transparent 42%), linear-gradient(135deg, var(--purple-100), var(--pink-50) 52%, var(--blue-100)); border: 1px solid rgba(195,176,252,.55); box-shadow: var(--shadow-lg); }
@@ -627,8 +712,7 @@ export default function TeacherAppPage() {
         .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
         .kru-contact-fab__link:hover { background: var(--purple-100); color: var(--purple-800); text-decoration: none; }
         @media (min-width: 900px) {
-          .kru-lib-grid { grid-template-columns: 256px 1fr; align-items: start; }
-          .kru-lib-filters { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--r-card); padding: var(--sp-6); position: sticky; top: var(--sp-6); }
+          .kru-discovery-controls { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
           .kru-member-hero { grid-template-columns: minmax(0, 1fr) 220px; padding: var(--sp-9); }
           .kru-member-hero__mascot { min-height: 210px; display: grid; place-items: center; position: relative; }
           .kru-member-hero__glow { position: absolute; width: 180px; height: 180px; border-radius: 50%; background: rgba(255,255,255,.72); box-shadow: 0 0 0 20px rgba(255,255,255,.2); }

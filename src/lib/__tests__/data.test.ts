@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, fetchFounderCapacity, fetchPlans, fetchPublishedResources, getSignedFileUrl, setResourceSaved } from "../data";
+import { fetchEntitlements, fetchFounderCapacity, fetchPlans, fetchPublishedResources, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -194,12 +194,13 @@ describe("public catalog reads", () => {
     const rows = [
       { id: "one", title: "แบบฝึกจริง", meta: "", description: "", category: "", delivery_mode: "file_download", cover_image_url: null, tags: [], is_free: true, file_name: "real.pdf", file_size: 100 },
     ];
-    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: rows, error: null }) };
+    const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: rows, error: null }) };
     const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
 
     await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง" }]);
     expect(client.from).toHaveBeenCalledWith("resource_catalog");
     expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
+    expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*required_plan_names/));
   });
 
   it("ends a stalled plan request instead of leaving the home page loading forever", async () => {
@@ -217,18 +218,73 @@ describe("public catalog reads", () => {
 describe("setResourceSaved", () => {
   it("returns a write error so the UI does not show a failed save as successful", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const insert = vi.fn().mockResolvedValue({ error: { message: "Saved resource limit reached", code: "P0001", details: "", hint: "" } });
-    const supabase = { from: vi.fn().mockReturnValue({ insert }) } as unknown as SupabaseClient;
+    const rpc = vi.fn().mockResolvedValue({ error: { message: "Saved resource limit reached", code: "P0001", details: "", hint: "" } });
+    const supabase = { rpc } as unknown as SupabaseClient;
 
-    await expect(setResourceSaved(supabase, "user-1", "resource-1", true)).resolves.toBe("Saved resource limit reached");
-    expect(insert).toHaveBeenCalledWith({ user_id: "user-1", resource_id: "resource-1" });
+    await expect(setResourceSaved(supabase, "resource-1", true)).resolves.toBe("Saved resource limit reached");
+    expect(rpc).toHaveBeenCalledWith("set_my_resource_saved", { p_resource_id: "resource-1", p_saved: true });
   });
 
   it("returns null after a successful save", async () => {
     const supabase = {
-      from: vi.fn().mockReturnValue({ insert: vi.fn().mockResolvedValue({ error: null }) }),
+      rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
     } as unknown as SupabaseClient;
 
-    await expect(setResourceSaved(supabase, "user-1", "resource-1", true)).resolves.toBeNull();
+    await expect(setResourceSaved(supabase, "resource-1", true)).resolves.toBeNull();
+  });
+
+  it("uses the same isolated RPC to remove a saved resource", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: false, error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await expect(setResourceSaved(supabase, "resource-1", false)).resolves.toBeNull();
+    expect(rpc).toHaveBeenCalledWith("set_my_resource_saved", { p_resource_id: "resource-1", p_saved: false });
+  });
+
+  it("times out so an optimistic bookmark can roll back instead of staying disabled", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = { rpc: vi.fn().mockReturnValue(new Promise(() => {})) } as unknown as SupabaseClient;
+
+    const result = setResourceSaved(supabase, "resource-1", true);
+    await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
+    await expect(result).resolves.toMatch(/timed out/);
+  });
+});
+
+describe("fetchSavedResourceIds", () => {
+  it("paginates a large favorites collection instead of relying on the API row cap", async () => {
+    const first = Array.from({ length: 500 }, (_, index) => ({ resource_id: `resource-${index}` }));
+    const range = vi.fn()
+      .mockResolvedValueOnce({ data: first, error: null })
+      .mockResolvedValueOnce({ data: [{ resource_id: "resource-500" }], error: null });
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      range,
+    };
+    const supabase = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    const ids = await fetchSavedResourceIds(supabase, "user-1");
+    expect(ids).toHaveLength(501);
+    expect(range).toHaveBeenNthCalledWith(1, 0, 499);
+    expect(range).toHaveBeenNthCalledWith(2, 500, 999);
+  });
+
+  it("times out a stalled favorites read so member loading can finish", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnValue(new Promise(() => {})),
+    };
+    const supabase = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    const result = fetchSavedResourceIds(supabase, "user-1");
+    await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
+    await expect(result).resolves.toEqual([]);
   });
 });
