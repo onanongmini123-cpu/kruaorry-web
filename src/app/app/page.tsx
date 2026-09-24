@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText, MessageCircle } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, Bookmark, ShieldCheck, MessageSquareText, MessageCircle, GraduationCap } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, SearchField, SideNav, ResourceCard, FilterChips, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -39,6 +39,7 @@ const NAV_GROUPS: SideNavGroup[] = [
     items: [
       { key: "home", label: "หน้าแรก", icon: House },
       { key: "library", label: "คลังสื่อ", icon: FolderOpen },
+      { key: "classroom", label: "Classroom", icon: GraduationCap },
       { key: "requests", label: "เสนอไอเดีย", icon: MessageSquareText },
       { key: "plans", label: "แพ็กเกจ", icon: IdCard },
     ],
@@ -210,6 +211,14 @@ export default function TeacherAppPage() {
     router.refresh();
   };
 
+  const handleNavChange = (key: string) => {
+    if (key === "classroom") {
+      router.push("/classroom");
+      return;
+    }
+    setView(key as View);
+  };
+
   const detail = resources.find((r) => r.id === detailId) || null;
 
   const filtered = resources.filter((r) => {
@@ -237,7 +246,7 @@ export default function TeacherAppPage() {
             <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-20)", color: "var(--text-strong)" }}>KruAorry</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <SideNav groups={NAV_GROUPS} value={view === "detail" ? "library" : view} onChange={(k) => setView(k as View)} />
+            <SideNav groups={NAV_GROUPS} value={view === "detail" ? "library" : view} onChange={handleNavChange} />
           </div>
           {(profile?.role === "admin" || profile?.role === "owner") && (
             <Button size="sm" block variant="soft" icon={ShieldCheck} onClick={() => router.push("/admin")} style={{ marginTop: "var(--sp-4)" }}>
@@ -272,9 +281,14 @@ export default function TeacherAppPage() {
                     <h1 style={{ fontSize: "var(--fs-30)" }}>สวัสดีค่ะ{profile?.fullName ? ` ${profile.fullName}` : ""}</h1>
                     <p style={{ margin: "var(--sp-3) 0 0", fontSize: "var(--fs-16)", color: "var(--text-body)" }}>สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง</p>
                   </div>
-                  <Button size="lg" icon={FolderOpen} onClick={() => setView("library")}>
-                    เข้าคลังสื่อ
-                  </Button>
+                  <div style={{ display: "flex", gap: "var(--sp-3)", flexWrap: "wrap" }}>
+                    <Button size="lg" icon={FolderOpen} onClick={() => setView("library")}>
+                      เข้าคลังสื่อ
+                    </Button>
+                    <Button size="lg" variant="soft" icon={GraduationCap} onClick={() => router.push("/classroom")}>
+                      สอน–เช็ก–ปรับ
+                    </Button>
+                  </div>
                 </div>
                 <h2 style={{ fontSize: "var(--fs-24)", marginBottom: "var(--sp-5)" }}>สื่อล่าสุดในคลัง</h2>
                 {resources.length === 0 ? (
@@ -463,7 +477,7 @@ export default function TeacherAppPage() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setView(tab.key as View)}
+              onClick={() => handleNavChange(tab.key)}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, border: "none", background: "transparent", color: active ? "var(--brand)" : "var(--text-muted)", fontSize: "var(--fs-12)", padding: "6px 4px", flex: 1 }}
             >
               <tab.icon size={22} strokeWidth={1.75} />
