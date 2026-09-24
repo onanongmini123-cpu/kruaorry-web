@@ -18,7 +18,7 @@ describe("isUsableResourceTarget", () => {
 
   it("rejects starter seed placeholders and missing targets", () => {
     expect(isUsableResourceTarget({ deliveryMode: "google_template", filePath: null, ctaUrl: "https://docs.google.com/document/d/placeholder/copy" })).toBe(false);
-    expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "https://example.com/classroom-timer" })).toBe(false);
+    expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "https://example.com/lesson-timer" })).toBe(false);
     expect(isUsableResourceTarget({ deliveryMode: "google_form", filePath: null, ctaUrl: "https://forms.gle/placeholder" })).toBe(false);
     expect(isUsableResourceTarget({ deliveryMode: "file_download", filePath: null, ctaUrl: null })).toBe(false);
   });
@@ -28,6 +28,6 @@ describe("isUsableResourceTarget", () => {
     expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "//example.com" })).toBe(false);
     expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "http://localhost:3000/tool" })).toBe(false);
     expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "http://127.0.0.1:3000/tool" })).toBe(false);
-    expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "/classroom/timer" })).toBe(true);
+    expect(isUsableResourceTarget({ deliveryMode: "web_app", filePath: null, ctaUrl: "/tools/timer" })).toBe(true);
   });
 });
