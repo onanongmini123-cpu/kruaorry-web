@@ -286,7 +286,7 @@ export default function TeacherAppPage() {
                       เข้าคลังสื่อ
                     </Button>
                     <Button size="lg" variant="soft" icon={GraduationCap} onClick={() => router.push("/classroom")}>
-                      สอน–เช็ก–ปรับ
+                      เปิด Classroom
                     </Button>
                   </div>
                 </div>

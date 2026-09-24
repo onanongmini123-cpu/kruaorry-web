@@ -227,7 +227,6 @@ export default function ClassroomPage() {
       <main className={styles.main}>
         <section className={`${styles.hero} ${styles.noPrint}`}>
           <div>
-            <p className={styles.eyebrow}>สอน–เช็ก–ปรับ</p>
             <h1>สร้าง Exit Ticket แล้วเห็นทันทีว่าข้อไหนควรทบทวน</h1>
             <p>
               รองรับกรอบหลักสูตรและเป้าหมายการเรียนรู้ของ สพฐ. โดยครูเลือกหลักสูตรที่สถานศึกษาใช้จริง
