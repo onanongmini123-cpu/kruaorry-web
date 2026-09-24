@@ -19,6 +19,7 @@ const base = {
   grade_levels: ["p4"],
   required_plan_names: [],
   is_free: true,
+  is_new: true,
   file_name: "worksheet.pdf",
 };
 
@@ -27,6 +28,7 @@ describe("public resource showcase", () => {
     const item = toPublicResource(base);
     expect(item?.title).toBe(base.title);
     expect(item?.isFree).toBe(true);
+    expect(item?.isNew).toBe(true);
     expect(signupHref(item!)).toBe(`/login?next=${encodeURIComponent(`/download/${id}`)}&mode=signup`);
     expect(safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"))).toBe(`/download/${id}`);
   });
@@ -43,6 +45,7 @@ describe("public resource showcase", () => {
     expect(JSON.stringify(item)).not.toMatch(/SECRET|private\/path|worksheet[.]pdf/);
     expect(PUBLIC_RESOURCE_SELECT).toContain("grade_levels");
     expect(PUBLIC_RESOURCE_SELECT).toContain("required_plan_names");
+    expect(PUBLIC_RESOURCE_SELECT).toContain("is_new");
     expect(PUBLIC_RESOURCE_SELECT).not.toMatch(/cta_url|file_path|file_name/);
   });
 
@@ -58,6 +61,7 @@ describe("public resource showcase", () => {
       coverImageUrl: null,
       gradeLevels: ["p4"],
       requiredPlanNames: ["Founder 100", "Teacher"],
+      isNew: true,
     });
     expect(requiredPlansLabel(item!)).toBe("Founder 100 หรือ Teacher");
   });
@@ -65,6 +69,12 @@ describe("public resource showcase", () => {
   it("fails closed for drafts and invalid ids", () => {
     expect(toPublicResource({ ...base, status: "draft" })).toBeNull();
     expect(toPublicResource({ ...base, id: "../admin" })).toBeNull();
+  });
+
+  it("maps only an explicit database-derived new flag", () => {
+    expect(toPublicResource({ ...base, is_new: false })?.isNew).toBe(false);
+    expect(toPublicResource({ ...base, is_new: null })?.isNew).toBe(false);
+    expect(toPublicResource({ ...base, is_new: "true" })?.isNew).toBe(false);
   });
 
   it("uses safe session-aware actions for guests, free members, paid members, and admins", () => {

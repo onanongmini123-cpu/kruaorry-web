@@ -14,3 +14,4 @@ export { PillarTile } from "./PillarTile";
 export { FilterChips } from "./FilterChips";
 export { ResourceCard } from "./ResourceCard";
 export type { ResourceAffordance } from "./ResourceCard";
+export { ExpandableResourceDescription } from "./ExpandableResourceDescription";

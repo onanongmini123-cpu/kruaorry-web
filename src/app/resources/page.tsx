@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Lock, Search } from "lucide-react";
+import { BookOpen, Lock, Search } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
+import { Badge, ExpandableResourceDescription } from "@/components/ui";
 import { filterDiscoveredResources, normalizeDiscoveryFilters, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
 import { publicResourceAction, requiredPlansLabel } from "./catalog";
@@ -136,16 +137,22 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                         </div>
                       </Link>
                       <div style={{ padding: "var(--sp-5)", display: "flex", flex: 1, flexDirection: "column", gap: "var(--sp-3)" }}>
-                        <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>{item.isFree ? "ใช้ได้ฟรี" : `สำหรับ ${planLabel}`}</span>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minHeight: 28 }}>
+                          {item.isNew && <Badge tone="brand">ใหม่</Badge>}
+                          <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>{item.isFree ? "ใช้ได้ฟรี" : `สำหรับ ${planLabel}`}</span>
+                        </div>
                         <h2 style={{ minHeight: "2.8em", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, fontSize: "var(--fs-20)", lineHeight: "var(--lh-snug)" }}><Link href={`/resources/${item.id}`} style={{ color: "inherit" }}>{item.title}</Link></h2>
                         <p style={{ minHeight: "1.5em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{item.meta || "สื่อพร้อมใช้ในชั้นเรียน"}</p>
-                        <p style={{ minHeight: "4.5em", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, color: "var(--text-body)", fontSize: "var(--fs-15)", lineHeight: "var(--lh-normal)" }}>{item.description || "ดูรายละเอียดของสื่อและสิทธิ์การใช้งานก่อนเปิดใช้"}</p>
+                        <ExpandableResourceDescription
+                          title={item.title}
+                          description={item.description}
+                          fallback="ดูรายละเอียดของสื่อและสิทธิ์การใช้งานก่อนเปิดใช้"
+                        />
                         <div style={{ minHeight: 28, display: "flex", alignItems: "flex-start", gap: 6, flexWrap: "wrap" }}>
                           {item.category && <span className="kru-tag">{item.category}</span>}
                           {item.gradeLevels.slice(0, 2).map((grade) => <span className="kru-tag" key={grade}>{resourceGradeLabel(grade)}</span>)}
                         </div>
                         <div style={{ display: "grid", gap: "var(--sp-3)", marginTop: "auto", paddingTop: "var(--sp-2)" }}>
-                          <Link href={`/resources/${item.id}`} style={{ minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, color: "var(--text-link)", fontWeight: "var(--fw-semibold)" }}>ดูเพิ่มเติม <ArrowRight size={17} aria-hidden="true" /></Link>
                           <a
                             href={action.href}
                             className="kru-btn kru-btn--soft kru-btn--block"

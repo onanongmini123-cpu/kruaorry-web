@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Bookmark, Lock, type LucideIcon } from "lucide-react";
+import { Heart, Lock, type LucideIcon } from "lucide-react";
 import { Badge } from "./Badge";
 import { Tag } from "./Badge";
+import { ExpandableResourceDescription } from "./ExpandableResourceDescription";
 import { resourceGradeLabel } from "@/lib/resourceGrades";
 
 export type ResourceAffordance = "web_app" | "google_template" | "google_form" | "file_download";
@@ -34,6 +35,7 @@ interface ResourceCardProps {
   tint?: "purple" | "pink" | "blue";
   locked?: boolean;
   free?: boolean;
+  isNew?: boolean;
   saved?: boolean;
   savePending?: boolean;
   onAction?: () => void;
@@ -41,7 +43,7 @@ interface ResourceCardProps {
   onClick?: () => void;
 }
 
-export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, free, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
+export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, free, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
   const t = TINTS[tint];
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const showCover = Boolean(coverImageUrl) && failedCoverUrl !== coverImageUrl;
@@ -83,7 +85,7 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
         {onSave && (
           <button
             type="button"
-            aria-label={saved ? `นำ ${title} ออกจากรายการที่บันทึก` : `บันทึก ${title} ไว้ใช้ทีหลัง`}
+            aria-label={saved ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"}
             aria-pressed={Boolean(saved)}
             aria-busy={savePending || undefined}
             disabled={savePending}
@@ -93,8 +95,8 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
               top: 10,
               right: 10,
               zIndex: 2,
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
               borderRadius: "var(--r-pill)",
               border: "1px solid rgba(255,255,255,0.78)",
               background: "rgba(255,255,255,0.9)",
@@ -106,12 +108,13 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
               opacity: savePending ? 0.65 : 1,
             }}
           >
-            <Bookmark size={16} fill={saved ? "currentColor" : "none"} aria-hidden="true" />
+            <Heart size={20} fill={saved ? "currentColor" : "none"} aria-hidden="true" />
           </button>
         )}
       </div>
       <div style={{ padding: "var(--sp-5)", display: "flex", flexDirection: "column", gap: "var(--sp-3)", flex: 1 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {isNew && <Badge tone="brand">ใหม่</Badge>}
           {free ? <Badge tone="success">ฟรี</Badge> : <Badge tone="member" icon={Lock}>{accessLabel}</Badge>}
         </div>
         <button
@@ -122,7 +125,7 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
         >
           {title}
         </button>
-        <p className="kru-resource-card__description">{description?.trim() || "ดูรายละเอียดและตัวอย่างของสื่อนี้ก่อนเลือกใช้งาน"}</p>
+        <ExpandableResourceDescription title={title} description={description} />
         <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta}</div>
         {(gradeLevels.length > 0 || tags.length > 0) && (
           <div className="kru-resource-card__tags">
@@ -135,7 +138,6 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
           </div>
         )}
         <div className="kru-resource-card__actions">
-          <button type="button" onClick={onClick} className="kru-resource-card__more">ดูเพิ่มเติม</button>
           <button type="button" onClick={onAction} className="kru-btn kru-btn--soft kru-btn--sm">
             {locked ? "อัปเกรดเพื่อปลดล็อก" : AFFORDANCE_LABEL[affordance]}
           </button>
@@ -146,16 +148,6 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
           min-height: 2.8em;
           display: -webkit-box;
           -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-        .kru-resource-card__description {
-          min-height: 4.5em;
-          color: var(--text-body);
-          font-size: var(--fs-14);
-          line-height: var(--lh-normal);
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
@@ -171,17 +163,6 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
           padding-top: var(--sp-2);
           display: grid;
           gap: var(--sp-2);
-        }
-        .kru-resource-card__more {
-          min-height: 32px;
-          width: max-content;
-          padding: 0;
-          border: 0;
-          background: transparent;
-          color: var(--purple-700);
-          font-size: var(--fs-14);
-          font-weight: var(--fw-semibold);
-          cursor: pointer;
         }
       `}</style>
     </article>

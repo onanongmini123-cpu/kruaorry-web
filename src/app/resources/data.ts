@@ -46,7 +46,7 @@ export async function loadPublicResources(): Promise<LoadResult> {
     const rows = await collectResourcePages(async (from, to) => {
       const outcome = await withTimeout(
         Promise.resolve(client.from("resource_catalog").select(PUBLIC_RESOURCE_SELECT)
-          .order("published_at", { ascending: false }).order("id", { ascending: true }).range(from, to)),
+          .order("published_at", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).range(from, to)),
         "public resource listing",
       );
       return outcome.ok ? outcome.value : { data: null, error: outcome.reason };

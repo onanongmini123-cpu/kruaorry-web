@@ -5,24 +5,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Bookmark,
   CheckCircle2,
   FileSpreadsheet,
   FolderOpen,
-  Gamepad2,
-  Gift,
-  Lightbulb,
   Lock,
   MessageCircle,
   Search,
   Timer,
 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { Button, PillarTile } from "@/components/ui";
+import { Button, ExpandableResourceDescription, PillarTile } from "@/components/ui";
 import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, type Resource } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
-import { publicCoverUrl } from "@/lib/resourceVisibility";
 import { filterDiscoveredResources, resourceDiscoveryHref } from "@/lib/resourceDiscovery";
+import { publicCoverUrl } from "@/lib/resourceVisibility";
 import { LINE_OA_URL } from "@/lib/config";
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
@@ -33,23 +29,13 @@ const PILLARS = [
   { icon: Timer, tone: "blue" as const, title: "เครื่องมือในห้องเรียน", desc: "จับเวลา สุ่มชื่อ จับกลุ่ม เปิดใช้ได้ทันที", href: resourceDiscoveryHref("/resources", { query: "เครื่องมือ" }) },
 ];
 
-const memberDestination = (destination: string) => `/login?next=${encodeURIComponent(destination)}`;
-
-const QUICK_ACTIONS = [
-  { icon: FolderOpen, label: "หาสื่อการสอน", href: "/resources", tone: "var(--purple-50)", color: "var(--purple-700)" },
-  { icon: Gamepad2, label: "หาเกมหรือกิจกรรม", href: resourceDiscoveryHref("/resources", { query: "เกม" }), tone: "var(--pink-50)", color: "var(--pink-700)" },
-  { icon: Timer, label: "ใช้เครื่องมือในห้องเรียน", href: resourceDiscoveryHref("/resources", { query: "เครื่องมือ" }), tone: "var(--blue-50)", color: "var(--blue-700)" },
-  { icon: Bookmark, label: "ดูสื่อโปรด", href: memberDestination("/app?view=favorites"), tone: "var(--purple-50)", color: "var(--purple-700)" },
-  { icon: Lightbulb, label: "เสนอไอเดียให้ครูอรรี่", href: memberDestination("/app?view=requests"), tone: "var(--pink-50)", color: "var(--pink-700)" },
-  { icon: Gift, label: "ดูสื่อใช้ฟรี", href: resourceDiscoveryHref("/resources", { access: "free" }), tone: "var(--blue-50)", color: "var(--blue-700)" },
-] as const;
-
 type LandingResource = Resource & { isFree: boolean; gradeLevels: string[] };
 
 function toLandingResource(resource: Resource): LandingResource {
   const value = (resource as Resource & { gradeLevels?: unknown }).gradeLevels;
   return {
     ...resource,
+    coverImageUrl: publicCoverUrl(resource.coverImageUrl),
     isFree: resource.free,
     gradeLevels: Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [],
   };
@@ -70,17 +56,13 @@ export default function LandingPage() {
   const [hasSearched, setHasSearched] = useState(false);
 
   const discoverableResources = useMemo(() => resources.map(toLandingResource), [resources]);
-  const realCoverResources = useMemo(
-    () => discoverableResources.filter((resource) => publicCoverUrl(resource.coverImageUrl)),
+  const freeSamples = useMemo(
+    () => discoverableResources.filter((resource) => resource.free).slice(0, 3),
     [discoverableResources],
   );
-  const freeSamples = useMemo(
-    () => realCoverResources.filter((resource) => resource.free).slice(0, 3),
-    [realCoverResources],
-  );
   const discoveryMatches = useMemo(
-    () => filterDiscoveredResources(realCoverResources, { query: discoveryQuery }).slice(0, 4),
-    [discoveryQuery, realCoverResources],
+    () => filterDiscoveredResources(discoverableResources, { query: discoveryQuery }).slice(0, 4),
+    [discoveryQuery, discoverableResources],
   );
   const discoveryResultsHref = resourceDiscoveryHref("/resources", { query: discoveryQuery });
 
@@ -203,34 +185,34 @@ export default function LandingPage() {
                 <Button size="lg" type="submit">ให้ครูอรรี่ช่วยหา</Button>
               </form>
 
-              <nav className="kru-quick-actions" aria-label="ทางลัดค้นหาสื่อและบริการ">
-                {QUICK_ACTIONS.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <Link key={action.label} href={action.href} className="kru-quick-action">
-                      <span className="kru-quick-action__icon" style={{ background: action.tone, color: action.color }}>
-                        <Icon size={18} aria-hidden="true" />
-                      </span>
-                      <span>{action.label}</span>
-                      <ArrowRight size={16} aria-hidden="true" />
-                    </Link>
-                  );
-                })}
-              </nav>
-
               <div className="kru-discovery-hero__secondary">
                 <span>สื่อพร้อมสอนภาษาไทย เทมเพลต Google พร้อมใช้ และเครื่องมือในห้องเรียน</span>
                 <Link href="/login?mode=signup">สมัครสมาชิกฟรี <ArrowRight size={16} aria-hidden="true" /></Link>
               </div>
             </div>
 
-            {!hasSearched && realCoverResources.length > 0 && (
-              <div className="kru-cover-showcase" aria-hidden="true">
-                {realCoverResources.slice(0, 4).map((resource, index) => (
-                  <div className={`kru-cover-showcase__card kru-cover-showcase__card--${index + 1}`} key={resource.id}>
-                    <PublicResourceCover title={resource.title} url={resource.coverImageUrl} deliveryMode={resource.affordance} style={{ aspectRatio: "16 / 10" }} />
+            {!hasSearched && discoverableResources.length > 0 && (
+              <div className="kru-cover-showcase" role="list" aria-label="สื่อที่เผยแพร่ล่าสุด">
+                {discoverableResources.slice(0, 4).map((resource, index) => (
+                  <Link
+                    role="listitem"
+                    href={`/resources/${resource.id}`}
+                    aria-label={`ดูรายละเอียด ${resource.title}`}
+                    className={`kru-cover-showcase__card kru-cover-showcase__card--${index + 1}`}
+                    key={resource.id}
+                  >
+                    <div className="kru-cover-showcase__cover">
+                      <PublicResourceCover
+                        title={resource.title}
+                        url={resource.coverImageUrl}
+                        deliveryMode={resource.affordance}
+                        fallback="neutral"
+                        style={{ aspectRatio: "1 / 1" }}
+                      />
+                      {resource.isNew && <span className="kru-resource-new-badge">ใหม่</span>}
+                    </div>
                     <span>{resource.title}</span>
-                  </div>
+                  </Link>
                 ))}
                 <div className="kru-cover-showcase__glow kru-cover-showcase__glow--pink" />
                 <div className="kru-cover-showcase__glow kru-cover-showcase__glow--blue" />
@@ -263,15 +245,25 @@ export default function LandingPage() {
                 {discoveryMatches.map((resource) => (
                   <article key={resource.id} className="kru-card kru-discovery-result-card">
                     <Link href={`/resources/${resource.id}`} className="kru-discovery-result-card__cover" aria-label={`ดูรายละเอียด ${resource.title}`}>
-                      <PublicResourceCover title={resource.title} url={resource.coverImageUrl} deliveryMode={resource.affordance} style={{ aspectRatio: "16 / 10" }} />
+                      <PublicResourceCover
+                        title={resource.title}
+                        url={resource.coverImageUrl}
+                        deliveryMode={resource.affordance}
+                        fallback="neutral"
+                        style={{ aspectRatio: "1 / 1" }}
+                      />
+                      {resource.isNew && <span className="kru-resource-new-badge">ใหม่</span>}
                     </Link>
                     <div className="kru-discovery-result-card__body">
                       <span className={resource.free ? "kru-discovery-result-card__badge kru-discovery-result-card__badge--free" : "kru-discovery-result-card__badge"}>
                         {resource.free ? "ใช้ได้ฟรี" : <><Lock size={14} aria-hidden="true" /> สำหรับ {resource.requiredPlanNames.join(" หรือ ") || "แพ็กสมาชิก"}</>}
                       </span>
-                      <h3>{resource.title}</h3>
-                      <p>{resource.description || resource.meta || "ดูรายละเอียดและสิทธิ์การใช้งานของสื่อนี้"}</p>
-                      <Link href={`/resources/${resource.id}`}>ดูเพิ่มเติม <ArrowRight size={16} aria-hidden="true" /></Link>
+                      <h3><Link href={`/resources/${resource.id}`}>{resource.title}</Link></h3>
+                      <ExpandableResourceDescription
+                        title={resource.title}
+                        description={resource.description || resource.meta}
+                        fallback="ดูรายละเอียดและสิทธิ์การใช้งานของสื่อนี้"
+                      />
                     </div>
                   </article>
                 ))}
@@ -297,16 +289,23 @@ export default function LandingPage() {
             <Link href="/resources" style={{ color: "var(--brand)", fontWeight: "var(--fw-semibold)" }}>ดูคลังสื่อทั้งหมด →</Link>
           </div>
           {freeSamples.length > 0 ? (
-            <div style={{ marginTop: "var(--sp-7)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
+            <div className="kru-sample-grid">
               {freeSamples.map((sample) => (
-                <Link key={sample.id} href={`/resources/${sample.id}`} className="kru-card" style={{ display: "block", overflow: "hidden", textDecoration: "none", color: "inherit" }}>
-                  <div style={{ height: 150, background: "var(--wash-hero)", display: "grid", placeItems: "center", overflow: "hidden" }}>
-                    <PublicResourceCover title={sample.title} url={sample.coverImageUrl} deliveryMode={sample.affordance} style={{ height: "100%" }} />
+                <Link key={sample.id} href={`/resources/${sample.id}`} className="kru-card kru-sample-card">
+                  <div className="kru-sample-card__cover">
+                    <PublicResourceCover
+                      title={sample.title}
+                      url={sample.coverImageUrl}
+                      deliveryMode={sample.affordance}
+                      fallback="neutral"
+                      style={{ aspectRatio: "1 / 1" }}
+                    />
+                    {sample.isNew && <span className="kru-resource-new-badge">ใหม่</span>}
                   </div>
-                  <div style={{ padding: "var(--sp-5)" }}>
+                  <div className="kru-sample-card__body">
                     <span style={{ color: "var(--status-success-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>ตัวอย่างฟรี</span>
-                    <h3 style={{ fontSize: "var(--fs-18)", marginTop: "var(--sp-3)" }}>{sample.title}</h3>
-                    <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)", marginTop: "var(--sp-3)" }}>{sample.meta}</p>
+                    <h3>{sample.title}</h3>
+                    <p>{sample.meta}</p>
                   </div>
                 </Link>
               ))}
@@ -493,53 +492,6 @@ export default function LandingPage() {
           color: var(--text-muted);
         }
 
-        .kru-quick-actions {
-          max-width: 760px;
-          margin-top: var(--sp-5);
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
-        }
-
-        .kru-quick-action {
-          min-width: 0;
-          min-height: 52px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 8px 12px;
-          border: 1px solid rgba(255,255,255,.8);
-          border-radius: var(--r-md);
-          background: rgba(255,255,255,.7);
-          color: var(--text-body);
-          font-size: var(--fs-14);
-          font-weight: var(--fw-semibold);
-          text-decoration: none;
-          transition: transform var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
-        }
-
-        .kru-quick-action:hover {
-          color: var(--text-strong);
-          text-decoration: none;
-          transform: translateY(-2px);
-          background: rgba(255,255,255,.96);
-          box-shadow: var(--shadow-sm);
-        }
-
-        .kru-quick-action > span:nth-child(2) {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .kru-quick-action__icon {
-          width: 34px;
-          height: 34px;
-          flex: 0 0 auto;
-          display: grid;
-          place-items: center;
-          border-radius: 11px;
-        }
-
         .kru-discovery-hero__secondary {
           max-width: 760px;
           margin-top: var(--sp-5);
@@ -553,8 +505,7 @@ export default function LandingPage() {
         }
 
         .kru-discovery-hero__secondary a,
-        .kru-discovery-results__heading > a,
-        .kru-discovery-result-card__body > a {
+        .kru-discovery-results__heading > a {
           display: inline-flex;
           align-items: center;
           gap: 6px;
@@ -564,29 +515,40 @@ export default function LandingPage() {
         .kru-cover-showcase {
           position: relative;
           min-width: 0;
-          min-height: 460px;
+          width: min(100%, 520px);
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: clamp(12px, 2vw, 20px);
           isolation: isolate;
         }
 
         .kru-cover-showcase__card {
-          position: absolute;
+          position: relative;
           z-index: 2;
-          width: min(72%, 300px);
+          min-width: 0;
+          width: 100%;
           overflow: hidden;
-          border: 7px solid rgba(255,255,255,.92);
-          border-radius: 24px;
+          border: 5px solid rgba(255,255,255,.92);
+          border-radius: 20px;
           background: var(--surface-card);
-          box-shadow: 0 24px 60px rgba(66, 43, 116, .2);
+          box-shadow: 0 18px 44px rgba(66, 43, 116, .17);
+          color: inherit;
+          text-decoration: none;
           animation: kru-cover-float 5.8s ease-in-out infinite;
         }
 
-        .kru-cover-showcase__card img {
-          width: 100%;
-          aspect-ratio: 16 / 10;
-          object-fit: cover;
+        .kru-cover-showcase__card:focus-visible {
+          outline: 3px solid var(--brand);
+          outline-offset: 4px;
         }
 
-        .kru-cover-showcase__card span {
+        .kru-cover-showcase__cover {
+          position: relative;
+          aspect-ratio: 1 / 1;
+          overflow: hidden;
+        }
+
+        .kru-cover-showcase__card > span {
           display: block;
           overflow: hidden;
           padding: 11px 13px;
@@ -597,10 +559,9 @@ export default function LandingPage() {
           white-space: nowrap;
         }
 
-        .kru-cover-showcase__card--1 { top: 5%; left: 2%; transform: rotate(-7deg); }
-        .kru-cover-showcase__card--2 { top: 18%; right: 0; transform: rotate(7deg); animation-delay: -.9s; }
-        .kru-cover-showcase__card--3 { bottom: 4%; left: 10%; transform: rotate(3deg); animation-delay: -1.8s; }
-        .kru-cover-showcase__card--4 { right: 7%; bottom: -2%; width: min(57%, 230px); transform: rotate(-5deg); animation-delay: -2.7s; }
+        .kru-cover-showcase__card--2 { margin-top: 28px; animation-delay: -.9s; }
+        .kru-cover-showcase__card--3 { animation-delay: -1.8s; }
+        .kru-cover-showcase__card--4 { margin-top: 28px; animation-delay: -2.7s; }
 
         .kru-cover-showcase__glow {
           position: absolute;
@@ -657,8 +618,9 @@ export default function LandingPage() {
         .kru-discovery-results__grid {
           margin-top: var(--sp-6);
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 280px));
           gap: var(--gap-grid);
+          justify-content: center;
           align-items: stretch;
         }
 
@@ -677,15 +639,11 @@ export default function LandingPage() {
         }
 
         .kru-discovery-result-card__cover {
+          position: relative;
           display: block;
+          aspect-ratio: 1 / 1;
           overflow: hidden;
           background: var(--wash-hero);
-        }
-
-        .kru-discovery-result-card__cover img {
-          width: 100%;
-          aspect-ratio: 16 / 10;
-          object-fit: cover;
         }
 
         .kru-discovery-result-card__body {
@@ -706,20 +664,13 @@ export default function LandingPage() {
           -webkit-line-clamp: 2;
         }
 
-        .kru-discovery-result-card__body p {
-          min-height: 4.5em;
-          display: -webkit-box;
-          overflow: hidden;
-          color: var(--text-muted);
-          font-size: var(--fs-14);
-          line-height: 1.5;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 3;
+        .kru-discovery-result-card__body h3 a {
+          color: inherit;
+          text-decoration: none;
         }
 
-        .kru-discovery-result-card__body > a {
-          margin-top: auto;
-          padding-top: var(--sp-2);
+        .kru-discovery-result-card__body h3 a:hover {
+          color: var(--purple-700);
         }
 
         .kru-discovery-result-card__badge {
@@ -740,6 +691,84 @@ export default function LandingPage() {
           color: var(--status-success-fg);
         }
 
+        .kru-resource-new-badge {
+          position: absolute;
+          top: 10px;
+          left: 10px;
+          z-index: 2;
+          padding: 5px 10px;
+          border: 1px solid rgba(255,255,255,.86);
+          border-radius: var(--r-pill);
+          background: var(--pink-600);
+          box-shadow: var(--shadow-xs);
+          color: white;
+          font-size: var(--fs-12);
+          font-weight: var(--fw-bold);
+          line-height: 1;
+        }
+
+        .kru-sample-grid {
+          margin-top: var(--sp-7);
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 280px));
+          gap: var(--gap-grid);
+          justify-content: center;
+          align-items: stretch;
+        }
+
+        .kru-sample-card {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          color: inherit;
+          text-decoration: none;
+          box-shadow: var(--shadow-xs);
+          transition: transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+        }
+
+        .kru-sample-card:hover {
+          color: inherit;
+          text-decoration: none;
+          transform: translateY(-3px);
+          box-shadow: var(--shadow-md);
+        }
+
+        .kru-sample-card__cover {
+          position: relative;
+          aspect-ratio: 1 / 1;
+          overflow: hidden;
+          background: var(--wash-hero);
+        }
+
+        .kru-sample-card__body {
+          flex: 1;
+          padding: var(--sp-5);
+        }
+
+        .kru-sample-card__body h3 {
+          min-height: 2.8em;
+          margin-top: var(--sp-3);
+          display: -webkit-box;
+          overflow: hidden;
+          font-size: var(--fs-18);
+          line-height: var(--lh-snug);
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+
+        .kru-sample-card__body p {
+          min-height: 4.5em;
+          margin-top: var(--sp-3);
+          display: -webkit-box;
+          overflow: hidden;
+          color: var(--text-muted);
+          font-size: var(--fs-14);
+          line-height: 1.5;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 3;
+        }
+
         @keyframes kru-cover-float {
           0%, 100% { translate: 0 0; }
           50% { translate: 0 -10px; }
@@ -751,7 +780,6 @@ export default function LandingPage() {
           }
 
           .kru-cover-showcase {
-            min-height: 390px;
             width: min(100%, 580px);
             margin: 0 auto;
           }
@@ -767,23 +795,13 @@ export default function LandingPage() {
             font-size: clamp(2.05rem, 11.4vw, 3rem);
           }
 
-          .kru-discovery-search,
-          .kru-quick-actions {
+          .kru-discovery-search {
             grid-template-columns: minmax(0, 1fr);
           }
 
-          .kru-cover-showcase {
-            min-height: 330px;
-          }
-
           .kru-cover-showcase__card {
-            width: min(73%, 250px);
-            border-width: 5px;
-            border-radius: 18px;
-          }
-
-          .kru-cover-showcase__card--4 {
-            display: none;
+            border-width: 4px;
+            border-radius: 16px;
           }
 
           .kru-discovery-results__heading {
@@ -796,8 +814,8 @@ export default function LandingPage() {
             animation: none;
           }
 
-          .kru-quick-action,
-          .kru-discovery-result-card {
+          .kru-discovery-result-card,
+          .kru-sample-card {
             transition: none;
           }
         }
