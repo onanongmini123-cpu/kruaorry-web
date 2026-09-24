@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderOpen, FileSpreadsheet, Timer, CheckCircle2 } from "lucide-react";
+import { FolderOpen, FileSpreadsheet, Timer, CheckCircle2, MessageCircle } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, PillarTile } from "@/components/ui";
-import { fetchPlans, fetchPublishedResources, type Plan, type Resource } from "@/lib/data";
+import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, type Resource } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
 import { publicCoverUrl } from "@/lib/resourceVisibility";
+import { LINE_OA_URL } from "@/lib/config";
+import type { FounderCapacity } from "@/lib/founderCapacity";
 
 const PILLARS = [
   { icon: FolderOpen, tone: "purple" as const, title: "คลังสื่อพร้อมสอน", desc: "ดาวน์โหลดแล้วใช้สอนได้เลย ไม่ต้องทำเอง" },
@@ -21,6 +23,7 @@ const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && pro
 export default function LandingPage() {
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
   const [freeSamples, setFreeSamples] = useState<Resource[]>([]);
   const [samplesLoaded, setSamplesLoaded] = useState(!isSupabaseConfigured);
   const [plansLoaded, setPlansLoaded] = useState(!isSupabaseConfigured);
@@ -30,10 +33,11 @@ export default function LandingPage() {
     if (!isSupabaseConfigured) return;
     let active = true;
     const supabase = createClient();
-    fetchPlans(supabase)
-      .then((rows) => {
+    Promise.all([fetchPlans(supabase), fetchFounderCapacity(supabase)])
+      .then(([rows, capacity]) => {
         if (!active) return;
         setPlans(rows);
+        setFounderCapacity(capacity);
         setPlansLoaded(true);
       })
       .catch(() => {
@@ -41,6 +45,24 @@ export default function LandingPage() {
       });
     return () => { active = false; };
   }, [loadAttempt]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    const supabase = createClient();
+    const refreshFounderCapacity = () => {
+      void fetchFounderCapacity(supabase).then((capacity) => {
+        if (active) setFounderCapacity(capacity);
+      });
+    };
+    const timer = window.setInterval(refreshFounderCapacity, 60_000);
+    window.addEventListener("focus", refreshFounderCapacity);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshFounderCapacity);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -192,6 +214,18 @@ export default function LandingPage() {
                 {plan.isPopular && <div style={{ alignSelf: "flex-start", borderRadius: "var(--r-pill)", padding: "4px 10px", background: "var(--status-success-bg)", color: "var(--status-success-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>ยอดนิยม</div>}
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)" }}>{plan.priceLabel}</div>
                 <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{plan.note}</p>
+                {plan.id === "founder" && (
+                  <div role="status" style={{ padding: "var(--sp-4)", borderRadius: "var(--r-md)", background: "var(--purple-50)", display: "grid", gap: 4, fontSize: "var(--fs-13)" }}>
+                    {founderCapacity ? (
+                      <>
+                        <strong style={{ color: "var(--text-strong)" }}>สมัครแล้ว {founderCapacity.used} คนจาก {founderCapacity.capacity}</strong>
+                        <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
+                      </>
+                    ) : (
+                      <span>กำลังตรวจสอบจำนวนสิทธิ์ Founder</span>
+                    )}
+                  </div>
+                )}
                 <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 6 }}>
                   {plan.features.map((f) => (
                     <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: "var(--fs-14)", listStyle: "none", marginLeft: -20 }}>
@@ -200,6 +234,21 @@ export default function LandingPage() {
                     </li>
                   ))}
                 </ul>
+                {plan.id !== "free" && (
+                  plan.id === "founder" && founderCapacity?.isFull ? (
+                    <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block" style={{ marginTop: "auto" }}>
+                      Founder 100 เต็มแล้ว
+                    </button>
+                  ) : plan.id === "founder" && founderCapacity === null ? (
+                    <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block" style={{ marginTop: "auto" }}>
+                      กำลังตรวจสอบสิทธิ์ Founder
+                    </button>
+                  ) : (
+                    <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="kru-btn kru-btn--primary kru-btn--block" style={{ marginTop: "auto", textDecoration: "none" }}>
+                      <MessageCircle size={18} aria-hidden="true" /> สนใจอัปเกรด
+                    </a>
+                  )
+                )}
               </div>
             ))}
           </div>

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
-import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History } from "lucide-react";
+import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -38,6 +38,8 @@ import {
   type AdminPlan,
   type AdminSubscription,
 } from "@/lib/adminMembership";
+import { normalizeFounderCapacity } from "@/lib/founderCapacity";
+import { canAccessAdminConsole } from "@/lib/routeAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -212,7 +214,7 @@ export default function AdminConsolePage() {
       supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
       supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable").order("sort_order", { ascending: true }),
       loadCurrentSubscriptions(),
-      supabase.rpc("get_founder_seat_count"),
+      supabase.rpc("get_founder_capacity"),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
     ]);
@@ -227,7 +229,7 @@ export default function AdminConsolePage() {
     setSubscriptions(subscriptionError || planError ? null : ((subscriptionRows as AdminSubscription[]) ?? []));
     setMembershipDataError(subscriptionError || planError ? "ไม่สามารถตรวจแพ็กที่มีผลจริงได้ กรุณาตรวจการเชื่อมต่อและ migration ก่อนแก้ไขแพ็กสมาชิก" : null);
     if (founderCountError) console.error("Failed to load Founder seat count:", founderCountError.message);
-    setFounderSeatsUsed(founderCountError || typeof founderCount !== "number" ? null : founderCount);
+    setFounderSeatsUsed(founderCountError ? null : normalizeFounderCapacity(founderCount)?.used ?? null);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
   };
@@ -247,7 +249,7 @@ export default function AdminConsolePage() {
         return;
       }
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile?.role !== "admin" && profile?.role !== "owner") {
+      if (!canAccessAdminConsole(profile?.role)) {
         router.push("/app");
         return;
       }
@@ -946,12 +948,20 @@ export default function AdminConsolePage() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <SideNav groups={navGroups} value={view} onChange={handleNavChange} />
           </div>
+          <Button size="sm" block variant="soft" icon={Eye} onClick={() => router.push("/app?memberPreview=1")} disabled={saving} style={{ marginBottom: "var(--sp-3)" }}>
+            ดูหน้าสมาชิก
+          </Button>
           <Button size="sm" block variant="ghost" icon={LogOut} onClick={handleSignOut} disabled={saving}>
             ออกจากระบบ
           </Button>
         </aside>
 
         <main className="kru-admin-main">
+          <div className="kru-admin-mobile-actions">
+            <Button size="sm" variant="soft" icon={Eye} onClick={() => router.push("/app?memberPreview=1")} disabled={saving}>
+              ดูหน้าสมาชิก
+            </Button>
+          </div>
           {view === "dash" && (
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>ภาพรวม</h1>
@@ -1215,7 +1225,7 @@ export default function AdminConsolePage() {
               <h1 style={{ fontSize: "var(--fs-30)" }}>สมาชิก</h1>
               <p style={{ margin: "var(--sp-3) 0 var(--sp-3)", color: "var(--text-muted)" }}>รายชื่อผู้ใช้ที่สมัครจริง · แพ็กที่แสดงคำนวณจากสิทธิ์ที่ยังมีผล ไม่ใช่ค่าแคชในโปรไฟล์</p>
               <p style={{ margin: "0 0 var(--sp-6)", color: "var(--text-muted)" }}>
-                ที่นั่ง Founder ที่เคยใช้: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
+                สมาชิก Founder ที่กำลังใช้งาน: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
               </p>
               {membershipDataError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: "var(--sp-5)" }}>{membershipDataError}</p>}
               {members.length === 0 ? (
@@ -1351,9 +1361,11 @@ export default function AdminConsolePage() {
         .kru-admin-shell { display: flex; min-height: 100vh; }
         .kru-admin-sidebar { display: none; flex-direction: column; width: 256px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100vh; }
         .kru-admin-main { flex: 1; min-width: 0; padding: var(--sp-5); }
+        .kru-admin-mobile-actions { display: flex; justify-content: flex-end; margin-bottom: var(--sp-5); }
         @media (min-width: 1024px) {
           .kru-admin-sidebar { display: flex; }
           .kru-admin-main { padding: var(--sp-8); }
+          .kru-admin-mobile-actions { display: none; }
         }
       `}</style>
     </div>

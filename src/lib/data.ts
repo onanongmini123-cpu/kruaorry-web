@@ -5,6 +5,7 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
+import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
 
 function logError(label: string, error: PostgrestError) {
   console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
@@ -158,6 +159,21 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     features: p.features ?? [],
     isPopular: p.is_popular ?? false,
   }));
+}
+
+export async function fetchFounderCapacity(supabase: SupabaseClient): Promise<FounderCapacity | null> {
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("get_founder_capacity")), "Founder capacity");
+  if (!outcome.ok) {
+    console.error(`fetchFounderCapacity failed: ${outcome.reason}`);
+    return null;
+  }
+
+  const { data, error } = outcome.value;
+  if (error) {
+    logError("fetchFounderCapacity failed", error);
+    return null;
+  }
+  return normalizeFounderCapacity(data);
 }
 
 interface EntitlementRow {

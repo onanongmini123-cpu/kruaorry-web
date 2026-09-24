@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Mascot } from "@/components/Mascot";
-import { PAYMENT_LINE_ID } from "@/lib/config";
+import { LINE_OA_URL } from "@/lib/config";
 
 export default function PrivacyPage() {
   return (
@@ -25,8 +25,7 @@ export default function PrivacyPage() {
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>การชำระเงิน</h2>
           <p>
-            KruAorry ไม่เก็บข้อมูลบัตรเครดิตหรือข้อมูลการเงินใดๆ ในระบบ การชำระเงินสำหรับอัปเกรดแพ็กเกจดำเนินการนอกระบบผ่านการติดต่อ LINE (
-            {PAYMENT_LINE_ID}) โดยตรงกับทีมงาน
+            KruAorry ไม่เก็บข้อมูลบัตรเครดิตหรือข้อมูลการเงินใดๆ ในระบบ การชำระเงินสำหรับอัปเกรดแพ็กเกจดำเนินการนอกระบบผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> โดยตรงกับทีมงาน
           </p>
         </section>
 
@@ -37,12 +36,12 @@ export default function PrivacyPage() {
 
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>สิทธิ์ของคุณ</h2>
-          <p>คุณสามารถขอแก้ไขหรือลบข้อมูลบัญชีของคุณได้โดยติดต่อทีมงานผ่าน LINE: {PAYMENT_LINE_ID}</p>
+          <p>คุณสามารถขอแก้ไขหรือลบข้อมูลบัญชีของคุณได้โดยติดต่อทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a></p>
         </section>
 
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>ติดต่อเรา</h2>
-          <p>หากมีข้อสงสัยเกี่ยวกับนโยบายความเป็นส่วนตัวนี้ ติดต่อทีมงานผ่าน LINE: {PAYMENT_LINE_ID}</p>
+          <p>หากมีข้อสงสัยเกี่ยวกับนโยบายความเป็นส่วนตัวนี้ ติดต่อทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a></p>
         </section>
       </div>
     </div>
