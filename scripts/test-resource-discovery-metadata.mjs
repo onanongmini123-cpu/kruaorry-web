@@ -3,8 +3,12 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 
 const db = new PGlite();
-const migration = readFileSync(
+const discoveryMigration = readFileSync(
   new URL("../supabase/migrations/20260925090000_026_resource_discovery_metadata.sql", import.meta.url),
+  "utf8",
+);
+const newBadgeMigration = readFileSync(
+  new URL("../supabase/migrations/20260925100000_027_resource_new_badge.sql", import.meta.url),
   "utf8",
 );
 
@@ -13,6 +17,8 @@ const userB = "22222222-2222-4222-8222-222222222222";
 const premiumId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const freeId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const draftId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const futureId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const nullPublishedAtId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 
 async function asAuthenticated(userId, run) {
   await db.query("select set_config('app.user_id', $1, false)", [userId]);
@@ -185,7 +191,8 @@ try {
     values ('${userB}', '${premiumId}');
   `);
 
-  await db.exec(migration);
+  await db.exec(discoveryMigration);
+  await db.exec(newBadgeMigration);
 
   const defaults = await db.query(
     "select id, grade_levels from public.resources where id = $1",
@@ -227,6 +234,7 @@ try {
   const columnNames = catalogColumns.rows.map(({ column_name }) => column_name);
   assert(columnNames.includes("grade_levels"));
   assert(columnNames.includes("required_plan_names"));
+  assert(columnNames.includes("is_new"));
   for (const forbidden of ["cta_url", "file_path", "file_name", "file_mime_type"]) {
     assert(!columnNames.includes(forbidden), `${forbidden} leaked into safe catalog`);
   }
@@ -246,7 +254,7 @@ try {
   let catalogRows;
   try {
     catalogRows = (await db.query(`
-      select title, grade_levels, required_plan_names
+      select title, grade_levels, required_plan_names, is_new
       from public.resource_catalog order by title
     `)).rows;
   } finally {
@@ -260,9 +268,82 @@ try {
   const free = catalogRows.find(({ title }) => title === "สื่อฟรี");
   assert.deepEqual(premium.grade_levels, ["p4", "p5"]);
   assert.deepEqual(premium.required_plan_names, ["Founder 100", "Teacher"]);
+  assert.equal(premium.is_new, true);
   assert.deepEqual(free.required_plan_names, []);
+  assert.equal(free.is_new, true);
   assert(!JSON.stringify(catalogRows).includes("TARGET-SECRET"));
   assert(!JSON.stringify(catalogRows).includes("private-free.pdf"));
+
+  // The badge window is derived by the view from the database clock. A
+  // metadata-only edit must preserve the original publication timestamp.
+  await db.query(
+    "update public.resources set published_at = current_timestamp - interval '6 days' where id = $1",
+    [premiumId],
+  );
+  const publishedBeforeMetadataEdit = await db.query(
+    "select published_at::text as published_at from public.resources where id = $1",
+    [premiumId],
+  );
+  await db.query(
+    "update public.resources set meta = 'updated metadata only' where id = $1",
+    [premiumId],
+  );
+  const afterMetadataEdit = await db.query(`
+    select r.published_at::text as published_at, c.is_new
+    from public.resources r
+    join public.resource_catalog c on c.id = r.id
+    where r.id = $1
+  `, [premiumId]);
+  assert.equal(
+    afterMetadataEdit.rows[0].published_at,
+    publishedBeforeMetadataEdit.rows[0].published_at,
+    "metadata edits must not restart the publication window",
+  );
+  assert.equal(afterMetadataEdit.rows[0].is_new, true, "a six-day-old resource remains new");
+
+  // Hold current_timestamp stable inside one transaction so the resource is
+  // exactly seven days old, not merely a few milliseconds past the boundary.
+  await db.exec("begin");
+  try {
+    await db.query(
+      "update public.resources set published_at = current_timestamp - interval '7 days' where id = $1",
+      [premiumId],
+    );
+    const exactBoundary = await db.query(
+      "select is_new from public.resource_catalog where id = $1",
+      [premiumId],
+    );
+    assert.equal(exactBoundary.rows[0].is_new, false, "exactly seven days old must not be new");
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.query(
+    "update public.resources set published_at = current_timestamp - interval '8 days' where id = $1",
+    [freeId],
+  );
+  const expired = await db.query(
+    "select is_new from public.resource_catalog where id = $1",
+    [freeId],
+  );
+  assert.equal(expired.rows[0].is_new, false, "an eight-day-old resource must not be new");
+
+  await db.query(`
+    insert into public.resources(
+      id, title, description, category, delivery_mode, cta_url,
+      status, published_at, tags, is_free
+    ) values
+      ($1, 'เผยแพร่ในอนาคต', 'future', 'อื่น ๆ', 'web_app', '/tools/future',
+       'published', current_timestamp + interval '1 day', '{}', true),
+      ($2, 'ไม่มีเวลาเผยแพร่', 'null timestamp', 'อื่น ๆ', 'web_app', '/tools/no-date',
+       'published', null, '{}', true)
+  `, [futureId, nullPublishedAtId]);
+  const nonCurrent = await db.query(`
+    select id, is_new from public.resource_catalog
+    where id in ($1, $2) order by id
+  `, [futureId, nullPublishedAtId]);
+  assert.equal(nonCurrent.rows.length, 2);
+  assert(nonCurrent.rows.every(({ is_new }) => is_new === false), "future/null publication times must not be new");
 
   await asAuthenticated(userA, async () => {
     const before = await db.query("select resource_id from public.saved_resources");
@@ -361,7 +442,7 @@ try {
   `);
   assert.deepEqual(privileges.rows[0], { anon_execute: false, authenticated_execute: true });
 
-  process.stdout.write("Migration 026 discovery metadata and favorites RLS passed in isolated PGlite.\n");
+  process.stdout.write("Migrations 026-027 discovery metadata, DB-clock new badge, and favorites RLS passed in isolated PGlite.\n");
 } finally {
   await db.close();
 }

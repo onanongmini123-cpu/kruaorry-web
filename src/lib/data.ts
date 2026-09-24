@@ -23,6 +23,7 @@ export interface Resource {
   gradeLevels: string[];
   requiredPlanNames: string[];
   free: boolean;
+  isNew: boolean;
   fileSize: number | null;
 }
 
@@ -38,6 +39,7 @@ interface ResourceCatalogRow {
   grade_levels: string[] | null;
   required_plan_names: string[] | null;
   is_free: boolean;
+  is_new: boolean;
   file_size: number | null;
 }
 
@@ -86,8 +88,8 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
   for (let from = 0; ; from += pageSize) {
     const outcome = await withTimeout(Promise.resolve(supabase
       .from("resource_catalog")
-      .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, grade_levels, required_plan_names, is_free, file_size")
-      .order("created_at", { ascending: false })
+      .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, grade_levels, required_plan_names, is_free, is_new, file_size")
+      .order("published_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1)), "published resource listing");
 
@@ -114,6 +116,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     gradeLevels: r.grade_levels ?? [],
     requiredPlanNames: r.required_plan_names ?? [],
     free: r.is_free,
+    isNew: r.is_new === true,
     fileSize: r.file_size,
   }));
 }

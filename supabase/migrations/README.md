@@ -52,14 +52,24 @@ The following migrations are now applied and recorded on the live project:
 - `20260918090100_023_split_public_resource_read_policy.sql`
 - `20260919090000_024_demote_placeholder_seed_resources.sql`
 - `20260924170000_025_active_founder_capacity.sql`
+- `20260925090000_026_resource_discovery_metadata.sql`
+- `20260925100000_027_resource_new_badge.sql`
 
-`20260925090000_026_resource_discovery_metadata.sql` is the next additive
-migration. It adds controlled multi-value grade metadata without guessing or
+Migration `026` adds controlled multi-value grade metadata without guessing or
 backfilling grades from free-form copy, appends only safe discovery fields to
 `resource_catalog`, and keeps private destinations out of that view. It also
 splits the existing favorites RLS policy into explicit own-row operations,
 adds a large-list index, and provides an idempotent own-user save/remove RPC.
 It does not recreate `saved_resources` or rewrite existing favorites.
+
+Migration `027` appends a database-clock-derived
+`is_new` field to the safe `resource_catalog` view. The seven-day window is
+anchored to the stored `published_at` timestamp, so ordinary metadata edits do
+not restart it; changing a resource away from published and publishing it again
+continues to use the existing admin publish workflow and establishes a new
+publication timestamp. No private destination is added to the view. It was
+applied and recorded on the live project on 2026-09-24; a follow-up CLI dry-run
+reported the remote database up to date.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.

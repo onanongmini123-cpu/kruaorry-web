@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 import { createClient } from "@/lib/supabase/server";
-import { loadPublicResourceViewer } from "../data";
+import { loadPublicResources, loadPublicResourceViewer } from "../data";
 
 const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const originalAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -87,5 +87,23 @@ describe("public resource viewer", () => {
       role: null,
       entitlements: { planId: "free", features: {} },
     });
+  });
+});
+
+describe("public resource listing", () => {
+  it("orders newest publication first while keeping undated legacy rows last", async () => {
+    const range = vi.fn(async () => ({ data: [], error: null }));
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      range,
+    };
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn(() => query),
+    } as never);
+
+    await expect(loadPublicResources()).resolves.toEqual({ status: "ready", resources: [] });
+    expect(query.order).toHaveBeenNthCalledWith(1, "published_at", { ascending: false, nullsFirst: false });
+    expect(query.order).toHaveBeenNthCalledWith(2, "id", { ascending: true });
   });
 });

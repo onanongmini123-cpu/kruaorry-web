@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Bookmark, ShieldCheck, MessageSquareText, MessageCircle, Sparkles } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Heart, ShieldCheck, MessageSquareText, MessageCircle, Sparkles } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { MemberContactMenu } from "@/components/MemberContactMenu";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
@@ -47,7 +47,7 @@ const NAV_GROUPS: SideNavGroup[] = [
     items: [
       { key: "home", label: "หน้าแรก", icon: House },
       { key: "library", label: "คลังสื่อ", icon: FolderOpen },
-      { key: "favorites", label: "สื่อโปรด", icon: Bookmark },
+      { key: "favorites", label: "สื่อโปรด", icon: Heart },
       { key: "requests", label: "เสนอไอเดีย", icon: MessageSquareText },
       { key: "plans", label: "แพ็กเกจ", icon: IdCard },
     ],
@@ -219,7 +219,7 @@ export default function TeacherAppPage() {
     if (error) {
       setSaveError(nowSaved
         ? "บันทึกรายการไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือจำนวนรายการที่แพ็กของคุณบันทึกได้"
-        : "นำรายการที่บันทึกไว้ออกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        : "นำออกจากสื่อโปรดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     }
     setSavingIds((current) => current.filter((savedId) => savedId !== id));
   };
@@ -326,6 +326,7 @@ export default function TeacherAppPage() {
           coverImageUrl={resource.coverImageUrl}
           tint={resourceTint(resource.affordance)}
           free={resource.free}
+          isNew={resource.isNew}
           locked={!canAccess(resource)}
           saved={saved.includes(resource.id)}
           savePending={savingIds.includes(resource.id)}
@@ -480,12 +481,12 @@ export default function TeacherAppPage() {
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>บันทึกในบัญชีและใช้งานต่อได้จากทุกอุปกรณ์</p>
                 {saved.length === 0 ? (
                   <EmptyState
-                    icon={Bookmark}
+                    icon={Heart}
                     title="ยังไม่มีสื่อโปรด"
-                    description="ยังไม่มีสื่อโปรด กดไอคอนบุ๊กมาร์กที่สื่อที่สนใจเพื่อเก็บไว้ดูภายหลัง"
+                    description="ยังไม่มีสื่อโปรด กดไอคอนหัวใจที่สื่อที่สนใจเพื่อเก็บไว้ดูภายหลัง"
                   />
                 ) : favoriteResources.length === 0 ? (
-                  <EmptyState icon={Bookmark} title="ไม่พบสื่อโปรดตามตัวกรอง" description="ลองล้างคำค้นหรือตัวกรองเพื่อดูสื่อโปรดทั้งหมด" />
+                  <EmptyState icon={Heart} title="ไม่พบสื่อโปรดตามตัวกรอง" description="ลองล้างคำค้นหรือตัวกรองเพื่อดูสื่อโปรดทั้งหมด" />
                 ) : renderResourceGrid(favoriteResources)}
               </div>
             )}
@@ -531,8 +532,19 @@ export default function TeacherAppPage() {
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} onClick={() => openResource(detail)}>
                         {canAccess(detail) ? "เปิดใช้งาน" : "อัปเกรดเพื่อปลดล็อก"}
                       </Button>
-                      <Button block variant="ghost" icon={Bookmark} loading={savingIds.includes(detail.id)} aria-label={saved.includes(detail.id) ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"} onClick={() => toggleSaved(detail.id)} style={{ marginTop: "var(--sp-4)" }}>
-                        {saved.includes(detail.id) ? "บันทึกไว้แล้ว" : "บันทึกไว้ใช้ทีหลัง"}
+                      <Button
+                        block
+                        variant="ghost"
+                        loading={savingIds.includes(detail.id)}
+                        aria-label={saved.includes(detail.id) ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"}
+                        aria-pressed={saved.includes(detail.id)}
+                        onClick={() => toggleSaved(detail.id)}
+                        style={{ marginTop: "var(--sp-4)" }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--gap-inline)" }}>
+                          <Heart size={18} strokeWidth={1.75} fill={saved.includes(detail.id) ? "currentColor" : "none"} aria-hidden="true" />
+                          <span>{saved.includes(detail.id) ? "บันทึกไว้แล้ว" : "บันทึกไว้ใช้ทีหลัง"}</span>
+                        </span>
                       </Button>
                     </div>
                   </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { ClipboardCheck, FileDown, FileSpreadsheet, Gamepad2 } from "lucide-react";
+import { ClipboardCheck, FileDown, FileSpreadsheet, Gamepad2, Image as ImageIcon } from "lucide-react";
 import type { PublicResource } from "./catalog";
 
 const ICONS = {
@@ -17,8 +17,10 @@ interface PublicResourceCoverProps {
   deliveryMode: PublicResource["deliveryMode"];
   style?: CSSProperties;
   eager?: boolean;
+  fallback?: "affordance" | "neutral";
 }
-export function PublicResourceCover({ title, url, deliveryMode, style, eager = false }: PublicResourceCoverProps) {
+
+export function PublicResourceCover({ title, url, deliveryMode, style, eager = false, fallback = "affordance" }: PublicResourceCoverProps) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const Icon = ICONS[deliveryMode];
   const showImage = Boolean(url) && failedUrl !== url;
@@ -48,7 +50,9 @@ export function PublicResourceCover({ title, url, deliveryMode, style, eager = f
         />
       ) : (
         <span role="img" aria-label={`ภาพประกอบ ${title}`}>
-          <Icon size={42} strokeWidth={1.5} aria-hidden="true" />
+          {fallback === "neutral"
+            ? <ImageIcon size={38} strokeWidth={1.5} aria-hidden="true" />
+            : <Icon size={42} strokeWidth={1.5} aria-hidden="true" />}
         </span>
       )}
     </div>

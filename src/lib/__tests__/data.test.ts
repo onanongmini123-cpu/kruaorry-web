@@ -192,15 +192,17 @@ describe("fetchFounderCapacity", () => {
 describe("public catalog reads", () => {
   it("uses only the safe catalog view and never requests private destination columns", async () => {
     const rows = [
-      { id: "one", title: "แบบฝึกจริง", meta: "", description: "", category: "", delivery_mode: "file_download", cover_image_url: null, tags: [], is_free: true, file_name: "real.pdf", file_size: 100 },
+      { id: "one", title: "แบบฝึกจริง", meta: "", description: "", category: "", delivery_mode: "file_download", cover_image_url: null, tags: [], grade_levels: [], required_plan_names: [], is_free: true, is_new: true, file_size: 100 },
     ];
     const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: rows, error: null }) };
     const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
 
-    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง" }]);
+    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง", isNew: true }]);
     expect(client.from).toHaveBeenCalledWith("resource_catalog");
     expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
-    expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*required_plan_names/));
+    expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*required_plan_names.*is_new/));
+    expect(query.order).toHaveBeenNthCalledWith(1, "published_at", { ascending: false, nullsFirst: false });
+    expect(query.order).toHaveBeenNthCalledWith(2, "id", { ascending: true });
   });
 
   it("ends a stalled plan request instead of leaving the home page loading forever", async () => {

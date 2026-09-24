@@ -13,6 +13,7 @@ export type PublicResource = {
   coverImageUrl: string | null;
   tags: string[];
   isFree: boolean;
+  isNew: boolean;
   requiredPlanNames: string[];
 };
 
@@ -59,6 +60,7 @@ export function toPublicResource(value: unknown): PublicResource | null {
     coverImageUrl: cover,
     tags: cleanStringArray(row.tags, 5),
     isFree: row.is_free === true,
+    isNew: row.is_new === true,
     requiredPlanNames,
   };
 }
@@ -72,7 +74,7 @@ function cleanStringArray(value: unknown, limit: number): string[] {
     .slice(0, limit);
 }
 
-export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, required_plan_names";
+export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, required_plan_names, is_new";
 
 export function signupHref(resource: PublicResource): string {
   const destination = resource.isFree && resource.deliveryMode === "file_download"
