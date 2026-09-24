@@ -50,8 +50,10 @@ function isClassroomState(value: unknown): value is ClassroomLocalState {
   if (!isRecord(value)) return false;
   if (value.schemaVersion !== CLASSROOM_SCHEMA_VERSION) return false;
   if (!Array.isArray(value.worksheets) || !Array.isArray(value.results)) return false;
+  const worksheets = value.worksheets;
+  const results = value.results;
 
-  const worksheetsAreValid = value.worksheets.every((worksheet) =>
+  const worksheetsAreValid = worksheets.every((worksheet) =>
     isRecord(worksheet) &&
     worksheet.schemaVersion === CLASSROOM_SCHEMA_VERSION &&
     isNonEmptyString(worksheet.id) &&
@@ -67,27 +69,34 @@ function isClassroomState(value: unknown): value is ClassroomLocalState {
   );
   if (!worksheetsAreValid) return false;
 
-  return value.results.every((result) => {
+  return results.every((result) => {
     if (!isRecord(result) ||
       result.schemaVersion !== CLASSROOM_SCHEMA_VERSION ||
       !isNonEmptyString(result.id) ||
       !isNonEmptyString(result.worksheetId) ||
       !isNonEmptyString(result.createdAt) ||
+      typeof result.respondentCount !== "number" ||
       !Number.isInteger(result.respondentCount) ||
-      Number(result.respondentCount) < 1 ||
+      result.respondentCount < 1 ||
       !isRecord(result.correctCounts)) {
       return false;
     }
+    const worksheetId = result.worksheetId;
+    const respondentCount = result.respondentCount;
+    const correctCounts = result.correctCounts;
 
-    const worksheet = value.worksheets.find((item) =>
-      isRecord(item) && item.id === result.worksheetId,
+    const worksheet = worksheets.find((item) =>
+      isRecord(item) && item.id === worksheetId,
     );
     if (!isRecord(worksheet) || !Array.isArray(worksheet.questions)) return false;
 
     return worksheet.questions.every((question) => {
       if (!isRecord(question) || !isNonEmptyString(question.id)) return false;
-      const count = result.correctCounts[question.id];
-      return Number.isInteger(count) && Number(count) >= 0 && Number(count) <= Number(result.respondentCount);
+      const count = correctCounts[question.id];
+      return typeof count === "number" &&
+        Number.isInteger(count) &&
+        count >= 0 &&
+        count <= respondentCount;
     });
   });
 }
