@@ -1,7 +1,9 @@
--- Founder 100 capacity is the number of approved memberships that are active
--- right now. Historical grants remain in founder_seat_ledger so a lapsed
--- member cannot reclaim the introductory price, but inactive/expired grants
--- no longer consume one of the 100 concurrent active places.
+-- Founder 100 capacity is the number of approved memberships that are current
+-- right now. The existing entitlement model treats an unexpired past_due row
+-- as current access, so it must occupy a place just like status=active.
+-- Historical grants remain in founder_seat_ledger so a lapsed member cannot
+-- reclaim the introductory price, but expired/cancelled/revoked grants no
+-- longer consume one of the 100 concurrent places.
 
 create function public.active_founder_seat_count()
 returns integer
@@ -13,9 +15,7 @@ as $$
   select count(distinct s.user_id)::integer
   from public.subscriptions s
   where s.plan_id = 'founder'
-    and s.status = 'active'
-    and s.founder_status = 'active'
-    and s.founder_price_lock = true
+    and s.status in ('active', 'past_due')
     and (s.current_period_end is null or s.current_period_end > now());
 $$;
 
@@ -78,44 +78,56 @@ declare
   v_founder_count integer;
 begin
   v_new_is_active := new.plan_id = 'founder'
-    and new.status = 'active'
-    and new.founder_status = 'active'
-    and new.founder_price_lock = true
+    and new.status in ('active', 'past_due')
     and (new.current_period_end is null or new.current_period_end > now());
 
-  if not v_new_is_active then
+  if tg_op = 'UPDATE'
+    and old.user_id is distinct from new.user_id
+    and (old.plan_id = 'founder' or new.plan_id = 'founder')
+  then
+    raise exception 'Founder subscription owner cannot be changed';
+  end if;
+
+  if new.plan_id <> 'founder' then
     return new;
   end if;
 
   if tg_op = 'UPDATE' then
     v_old_was_active := old.plan_id = 'founder'
-      and old.status = 'active'
-      and old.founder_status = 'active'
-      and old.founder_price_lock = true
+      and old.status in ('active', 'past_due')
       and (old.current_period_end is null or old.current_period_end > now());
+    -- A current Founder may renew or move between active/past_due in place,
+    -- and becoming inactive simply releases capacity while retaining history.
+    if old.plan_id = 'founder' then
+      if v_old_was_active or not v_new_is_active then
+        return new;
+      end if;
+
+      -- Reactivating a lapsed Founder is a second claim even if a damaged
+      -- historical ledger were missing, so reject it unconditionally.
+      raise exception 'Founder membership cannot be claimed twice';
+    end if;
   end if;
 
-  if v_old_was_active then
-    return new;
-  end if;
-
+  -- INSERTs and transitions from another plan create the durable no-reclaim
+  -- marker even when the imported row is already inactive historical data.
   perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
 
   if exists (select 1 from public.founder_seat_ledger where user_id = new.user_id) then
     raise exception 'Founder membership cannot be claimed twice';
   end if;
 
-  select count(distinct s.user_id)::integer into v_founder_count
-  from public.subscriptions s
-  where s.id <> new.id
-    and s.plan_id = 'founder'
-    and s.status = 'active'
-    and s.founder_status = 'active'
-    and s.founder_price_lock = true
-    and (s.current_period_end is null or s.current_period_end > now());
+  if v_new_is_active then
+    select count(distinct s.user_id)::integer into v_founder_count
+    from public.subscriptions s
+    where s.id <> new.id
+      and s.plan_id = 'founder'
+      and s.status in ('active', 'past_due')
+      and (s.current_period_end is null or s.current_period_end > now());
 
-  if v_founder_count >= 100 then
-    raise exception 'Founder 100 is full';
+    if v_founder_count >= 100 then
+      raise exception 'Founder 100 is full';
+    end if;
   end if;
 
   insert into public.founder_seat_ledger (user_id, granted_at)

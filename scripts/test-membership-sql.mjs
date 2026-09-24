@@ -262,11 +262,15 @@ try {
 
   let firstFounder;
   let secondFounder;
+  let pastDueFounder;
   let deletedFounderUser;
   for (let n = 0; n < 100; n += 1) {
     const user = randomUUID();
-    if (n === 2) deletedFounderUser = user;
+    if (n === 3) deletedFounderUser = user;
     await db.query("insert into public.profiles(id) values ($1)", [user]);
+    const status = n === 0 ? "expired" : n === 2 ? "past_due" : "active";
+    const founderStatus = n === 0 ? "lost_price_lock" : "active";
+    const founderPriceLock = n !== 0;
     const inserted = await db.query(`
       insert into public.subscriptions (
         user_id, plan_id, status, source, billing_interval, price_amount_thb,
@@ -275,9 +279,10 @@ try {
         $1, 'founder', $2, 'admin', 'year', 299,
         now() + interval '1 year', now(), $3, $4
       ) returning id
-    `, [user, n === 0 ? "expired" : "active", n === 0 ? "lost_price_lock" : "active", n !== 0]);
+    `, [user, status, founderStatus, founderPriceLock]);
     if (n === 0) firstFounder = inserted.rows[0].id;
     if (n === 1) secondFounder = inserted.rows[0].id;
+    if (n === 2) pastDueFounder = inserted.rows[0].id;
   }
   // The expired historical row above no longer consumes active capacity, so
   // the 100th active Founder may now be admitted even though old grants remain
@@ -309,6 +314,29 @@ try {
   assert.equal(seatCount.rows[0].seats, 100, "admin sees active Founder seat usage");
   const publicCapacity = await db.query("select * from public.get_founder_capacity()");
   assert.deepEqual(publicCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
+
+  const historicalFounderLedger = await db.query(
+    "select count(*)::integer as seats from public.founder_seat_ledger where user_id = (select user_id from public.subscriptions where id = $1)",
+    [firstFounder],
+  );
+  assert.equal(historicalFounderLedger.rows[0].seats, 1, "inactive Founder history did not create a no-reclaim ledger entry");
+  await rejectsWith(
+    () => db.query(`
+      update public.subscriptions
+      set status = 'active', founder_status = 'active', founder_price_lock = true,
+          current_period_end = now() + interval '1 year'
+      where id = $1
+    `, [firstFounder]),
+    "Founder membership cannot be claimed twice",
+  );
+
+  const transferTarget = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [transferTarget]);
+  await rejectsWith(
+    () => db.query("update public.subscriptions set user_id = $1 where id = $2", [transferTarget, secondFounder]),
+    "Founder subscription owner cannot be changed",
+  );
+
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [nextFounder]);
   await rejectsWith(() => db.query("select public.get_founder_seat_count()"), "Admin access required");
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
@@ -346,10 +374,21 @@ try {
   const founderPrice = await db.query("select price_amount_thb from public.subscriptions where id = $1", [secondFounder]);
   assert.equal(founderPrice.rows[0].price_amount_thb, 299);
 
+  await db.query("select public.renew_subscription($1)", [pastDueFounder]);
+  const renewedPastDueFounder = await db.query(
+    "select status, price_amount_thb from public.subscriptions where id = $1",
+    [pastDueFounder],
+  );
+  assert.deepEqual(
+    renewedPastDueFounder.rows[0],
+    { status: "active", price_amount_thb: 299 },
+    "an unexpired past_due Founder could not renew in place",
+  );
+
   await db.query("delete from public.profiles where id = $1", [deletedFounderUser]);
   const ledger = await db.query("select count(*)::integer as seats, count(user_id)::integer as linked from public.founder_seat_ledger");
-  assert.equal(ledger.rows[0].seats, 100, "historical Founder grants were unexpectedly deleted");
-  assert.equal(ledger.rows[0].linked, 99, "erased profile UUID was retained in the ledger");
+  assert.equal(ledger.rows[0].seats, 101, "historical Founder grants were unexpectedly deleted");
+  assert.equal(ledger.rows[0].linked, 100, "erased profile UUID was retained in the ledger");
   const afterDeletion = await db.query("select public.get_founder_seat_count() as seats");
   assert.equal(afterDeletion.rows[0].seats, 99, "an inactive/deleted Founder still consumed active capacity");
 
@@ -365,7 +404,7 @@ try {
   const finalCapacity = await db.query("select * from public.get_founder_capacity()");
   assert.deepEqual(finalCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
   const finalLedger = await db.query("select count(*)::integer as seats from public.founder_seat_ledger");
-  assert.equal(finalLedger.rows[0].seats, 101, "historical grants should remain append-only after a replacement seat");
+  assert.equal(finalLedger.rows[0].seats, 102, "historical grants should remain append-only after a replacement seat");
 
   process.stdout.write("SQL execution and membership behaviors passed in isolated PGlite.\n");
 } finally {

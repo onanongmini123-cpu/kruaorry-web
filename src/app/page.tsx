@@ -239,6 +239,10 @@ export default function LandingPage() {
                     <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block" style={{ marginTop: "auto" }}>
                       Founder 100 เต็มแล้ว
                     </button>
+                  ) : plan.id === "founder" && founderCapacity === null ? (
+                    <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block" style={{ marginTop: "auto" }}>
+                      กำลังตรวจสอบสิทธิ์ Founder
+                    </button>
                   ) : (
                     <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="kru-btn kru-btn--primary kru-btn--block" style={{ marginTop: "auto", textDecoration: "none" }}>
                       <MessageCircle size={18} aria-hidden="true" /> สนใจอัปเกรด

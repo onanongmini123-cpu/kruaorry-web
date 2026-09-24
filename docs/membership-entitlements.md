@@ -8,7 +8,7 @@ Supabase remains authoritative; frontend checks are presentation only.
 Public plans:
 
 - `free` — 0 THB
-- `founder` — 299 THB/year, capped at 100 distinct members ever admitted
+- `founder` — 299 THB/year, capped at 100 concurrent current memberships
 - `teacher` — 599 THB/year and the primary public plan
 
 Compatibility plans:
@@ -79,15 +79,17 @@ approval updates on `upgrade_requests` are blocked.
 
 ## Founder 100 invariant
 
-Every new Founder activation obtains the same transaction-level advisory lock.
-The subscription insert trigger reserves one row in `founder_seat_ledger` in
-the same transaction and rejects the 101st row. Expired seats are not recycled.
-The ledger survives account deletion: its user reference becomes null for
-erasure, but the anonymous seat row remains counted. A user with a previous
-Founder seat cannot claim it again; renewal is the only path that keeps the
-299 THB price lock.
-The admin-only `get_founder_seat_count()` RPC displays this permanent seat
-usage without exposing ledger entries or erased member identities.
+Every transition into a current Founder membership obtains the same
+transaction-level advisory lock. `active` and unexpired `past_due` rows count
+as current because both still have entitlement under the existing membership
+model. The subscription trigger rejects a 101st concurrent current member.
+When a membership expires, is cancelled/revoked, or the account is erased, its
+place becomes available again; the historical `founder_seat_ledger` row remains
+append-only so the same person cannot reclaim the introductory price. Renewal
+is the only path that keeps the 299 THB price lock.
+The public `get_founder_capacity()` RPC exposes aggregate used/capacity/
+remaining values only. The admin-only `get_founder_seat_count()` RPC reports
+the same current usage without exposing ledger entries or member identities.
 
 If renewal occurs after the Founder period has ended, the subscription history
 is retained, the lock becomes `lost_price_lock`, and the effective plan becomes
@@ -103,8 +105,9 @@ automatic expiry scheduling are intentionally outside Phase 1B.
 ## Verification and release limits
 
 `npm test` exercises UI/data helpers and static migration invariants.
-`npm run test:membership-sql` additionally runs the five pending SQL files
-against an isolated PGlite database with a minimal stub of the older schema.
+`npm run test:membership-sql` additionally runs the six membership SQL files
+used by its regression chain against an isolated PGlite database with a
+minimal stub of the older schema.
 It checks the Plus copy, legacy backfill, Free favorite limit, Founder cap
 including account deletion, and renewal behavior. PGlite is **not** a copy of
 Supabase production and cannot prove real multi-connection concurrency, all
@@ -115,9 +118,8 @@ server-side rules permit it. No automatic payment is collected.
 
 The two older migrations executed manually (016d and 017) were verified
 against the live schema and recorded with `supabase migration repair` on
-2026-09-18 without rerunning their SQL. Recheck the ledger and dry-run before
-release. The pending 017b–023 chain must be applied in order in a coordinated
-maintenance window with the matching frontend deployment: older production
-code would break after the restrictive migrations, while new code needs the
-new views and RPCs. Verify RLS and approval flows as real roles. As of this
-note, none of the seven pending migrations has been applied live.
+2026-09-18 without rerunning their SQL. Migrations 017b through 024 were
+verified as applied in the live ledger on 2026-09-24. Migration 025 is the next
+additive change and must still be rechecked with `supabase migration list` and
+`supabase db push --dry-run` immediately before release. Verify RLS and
+approval flows as real roles after application.

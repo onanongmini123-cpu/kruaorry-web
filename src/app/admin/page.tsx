@@ -1225,7 +1225,7 @@ export default function AdminConsolePage() {
               <h1 style={{ fontSize: "var(--fs-30)" }}>สมาชิก</h1>
               <p style={{ margin: "var(--sp-3) 0 var(--sp-3)", color: "var(--text-muted)" }}>รายชื่อผู้ใช้ที่สมัครจริง · แพ็กที่แสดงคำนวณจากสิทธิ์ที่ยังมีผล ไม่ใช่ค่าแคชในโปรไฟล์</p>
               <p style={{ margin: "0 0 var(--sp-6)", color: "var(--text-muted)" }}>
-                สมาชิก Founder ที่ active: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
+                สมาชิก Founder ที่กำลังใช้งาน: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
               </p>
               {membershipDataError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: "var(--sp-5)" }}>{membershipDataError}</p>}
               {members.length === 0 ? (

@@ -19,6 +19,7 @@ import {
   fetchSavedResourceIds,
   setResourceSaved,
   fetchUpgradeRequests,
+  submitUpgradeRequest,
   resourceIcon,
   resourceTint,
   type Resource,
@@ -72,6 +73,8 @@ export default function TeacherAppPage() {
   const [requestError, setRequestError] = useState<string | null>(null);
   const [upgradeRequests, setUpgradeRequests] = useState<UpgradeRequest[]>([]);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
+  const [submittingUpgradePlanId, setSubmittingUpgradePlanId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -94,9 +97,13 @@ export default function TeacherAppPage() {
         fetchUpgradeRequests(supabase, user.id),
         fetchFounderCapacity(supabase),
       ]);
-      if (!profileData || !canAccessMemberExperience(profileData.role)) {
-        await supabase.auth.signOut();
-        router.replace("/login");
+      if (!profileData) {
+        setLoadError("ยังโหลดข้อมูลสมาชิกไม่ได้ กรุณาลองใหม่อีกครั้ง");
+        setLoading(false);
+        return;
+      }
+      if (!canAccessMemberExperience(profileData.role)) {
+        router.replace("/");
         return;
       }
       setProfile(profileData);
@@ -131,6 +138,19 @@ export default function TeacherAppPage() {
       window.removeEventListener("focus", refreshFounderCapacity);
     };
   }, [supabase]);
+
+  const handleRequestUpgrade = async (planId: string) => {
+    if (!userId || submittingUpgradePlanId) return;
+    setSubmittingUpgradePlanId(planId);
+    const errorMessage = await submitUpgradeRequest(supabase, userId, planId);
+    setSubmittingUpgradePlanId(null);
+    if (errorMessage) {
+      window.alert(`ส่งคำขอไม่สำเร็จ: ${errorMessage}`);
+      setFounderCapacity(await fetchFounderCapacity(supabase));
+      return;
+    }
+    setUpgradeRequests(await fetchUpgradeRequests(supabase, userId));
+  };
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,6 +260,18 @@ export default function TeacherAppPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "var(--sp-6)" }}>
+        <div className="kru-card" role="alert" style={{ width: "min(480px, 100%)", padding: "var(--sp-8)", textAlign: "center" }}>
+          <h1 style={{ fontSize: "var(--fs-24)" }}>เชื่อมต่อข้อมูลไม่สำเร็จ</h1>
+          <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>{loadError}</p>
+          <Button onClick={() => window.location.reload()}>ลองใหม่</Button>
+        </div>
+      </div>
+    );
+  }
+
   const initials = (profile?.fullName || profile?.email || "ค").slice(0, 2);
 
   return (
@@ -267,6 +299,19 @@ export default function TeacherAppPage() {
           <header className="kru-app-header">
             <SearchField value={query} onChange={setQuery} placeholder="ค้นหาสื่อที่ครูต้องใช้" style={{ flex: 1, maxWidth: 560 }} />
             <div style={{ flex: 1 }} />
+            {(profile?.role === "admin" || profile?.role === "owner") && (
+              <Button
+                size="sm"
+                variant="soft"
+                icon={ShieldCheck}
+                className="kru-admin-return-mobile"
+                aria-label="ไปที่หลังบ้านแอดมิน"
+                title="ไปที่หลังบ้านแอดมิน"
+                onClick={() => router.push("/admin")}
+              >
+                หลังบ้าน
+              </Button>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }} className="kru-app-header-account">
               <span style={{ width: 36, height: 36, borderRadius: "var(--r-pill)", background: "var(--pink-100)", color: "var(--pink-700)", display: "grid", placeItems: "center", fontWeight: "var(--fw-semibold)", fontSize: "var(--fs-14)" }}>
                 {initials}
@@ -285,7 +330,7 @@ export default function TeacherAppPage() {
                   <div className="kru-member-hero__copy">
                     <div className="kru-member-hero__eyebrow"><Sparkles size={15} aria-hidden="true" /> พื้นที่พร้อมสอนของคุณ</div>
                     <h1>สวัสดีค่ะ{profile?.fullName ? ` ${profile.fullName}` : ""}</h1>
-                    <p>เลือกสื่อที่เหมาะกับคาบเรียน แล้วเปิดใช้ได้ทันที ลดเวลาทำงานซ้ำ เพื่อให้ครูมีเวลาอยู่กับเด็กมากขึ้น</p>
+                    <p>สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง</p>
                     <div className="kru-member-hero__actions">
                       <Button size="lg" icon={FolderOpen} onClick={() => setView("library")}>
                         เข้าคลังสื่อ
@@ -453,6 +498,7 @@ export default function TeacherAppPage() {
                   {plans.map((plan) => {
                     const isCurrent = entitlements.planId === plan.id;
                     const pendingRequest = upgradeRequests.find((r) => r.planId === plan.id && r.status === "pending");
+                    const founderCapacityUnknown = plan.id === "founder" && founderCapacity === null;
                     const founderIsFull = plan.id === "founder" && founderCapacity?.isFull === true;
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
@@ -489,8 +535,23 @@ export default function TeacherAppPage() {
                             <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
                               Founder 100 เต็มแล้ว
                             </button>
+                          ) : founderCapacityUnknown ? (
+                            <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
+                              กำลังตรวจสอบสิทธิ์ Founder
+                            </button>
+                          ) : submittingUpgradePlanId === plan.id ? (
+                            <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
+                              กำลังส่งคำขอ
+                            </button>
                           ) : (
-                            <a className="kru-btn kru-btn--primary kru-btn--block" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                            <a
+                              className="kru-btn kru-btn--primary kru-btn--block"
+                              href={LINE_OA_URL}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              referrerPolicy="no-referrer"
+                              onClick={() => void handleRequestUpgrade(plan.id)}
+                            >
                               <MessageCircle size={18} aria-hidden="true" />
                               สนใจอัปเกรด
                             </a>
@@ -534,6 +595,7 @@ export default function TeacherAppPage() {
         .kru-app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
         .kru-app-header { background: var(--white); border-bottom: 1px solid var(--border-subtle); height: 64px; padding: 0 var(--sp-5); display: flex; align-items: center; gap: var(--sp-4); position: sticky; top: 0; z-index: 10; }
         .kru-app-header-account { display: none; }
+        .kru-admin-return-mobile { flex: 0 0 auto; }
         .kru-app-content { padding-bottom: calc(152px + env(safe-area-inset-bottom)) !important; overflow-x: hidden; }
         .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; min-height: 64px; padding-bottom: env(safe-area-inset-bottom); background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
         .kru-lib-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-6); }
@@ -559,7 +621,7 @@ export default function TeacherAppPage() {
         .kru-founder-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-500), var(--pink-500)); }
         .kru-app-content a.kru-btn:hover { color: var(--text-on-brand); text-decoration: none; }
         .kru-contact-fab { position: fixed; right: max(var(--sp-5), env(safe-area-inset-right)); bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 40; display: grid; justify-items: end; gap: var(--sp-3); }
-        .kru-contact-fab__trigger { min-height: 48px; padding: 0 var(--sp-5); display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: var(--r-pill); color: var(--white); background: linear-gradient(135deg, var(--purple-600), var(--pink-500)); box-shadow: var(--shadow-xl); font-weight: var(--fw-semibold); cursor: pointer; }
+        .kru-contact-fab__trigger { min-height: 48px; padding: 0 var(--sp-5); display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: var(--r-pill); color: var(--white); background: linear-gradient(135deg, var(--purple-700), var(--pink-700)); box-shadow: var(--shadow-xl); font-weight: var(--fw-semibold); cursor: pointer; }
         .kru-contact-fab__menu { width: min(310px, calc(100vw - 32px)); padding: var(--sp-5); display: grid; gap: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: rgba(255,255,255,.97); box-shadow: var(--shadow-xl); backdrop-filter: blur(14px); }
         .kru-contact-fab__menu p { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-13); }
         .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
@@ -576,11 +638,16 @@ export default function TeacherAppPage() {
           .kru-app-sidebar { display: flex; flex-direction: column; width: 272px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100vh; }
           .kru-app-header { height: 72px; padding: 0 var(--sp-8); }
           .kru-app-header-account { display: flex; }
+          .kru-admin-return-mobile { display: none; }
           .kru-app-content { padding: var(--sp-8) !important; }
           .kru-app-mobile-tabs { display: none; }
           .kru-detail-grid { grid-template-columns: 1fr 340px; gap: var(--sp-9); }
           .kru-detail-side { position: sticky; top: var(--sp-6); }
           .kru-contact-fab { bottom: var(--sp-7); right: var(--sp-7); }
+        }
+        @media (max-width: 639px) {
+          .kru-admin-return-mobile > span { display: none; }
+          .kru-admin-return-mobile { width: 40px; padding-inline: 0; }
         }
       `}</style>
     </div>

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Gamepad2 } from "lucide-react";
@@ -33,5 +34,11 @@ describe("ResourceCard media", () => {
     const html = renderToStaticMarkup(React.createElement(ResourceCard, baseProps));
     expect(html).not.toContain("<img");
     expect(html).toContain("lucide-gamepad-2");
+  });
+
+  it("falls back to the icon when a configured cover fails to load", () => {
+    const source = readFileSync(new URL("./ResourceCard.tsx", import.meta.url), "utf8");
+    expect(source).toContain("onError={() => setFailedCoverUrl(coverImageUrl ?? null)}");
+    expect(source).toContain("failedCoverUrl !== coverImageUrl");
   });
 });

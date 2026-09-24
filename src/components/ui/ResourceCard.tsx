@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Bookmark, Lock, type LucideIcon } from "lucide-react";
 import { Badge } from "./Badge";
 import { Tag } from "./Badge";
@@ -38,6 +38,9 @@ interface ResourceCardProps {
 
 export function ResourceCard({ title, meta, affordance, tags, icon: Icon, coverImageUrl, tint = "purple", locked, free, saved, onAction, onSave, onClick }: ResourceCardProps) {
   const t = TINTS[tint];
+  const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
+  const showCover = Boolean(coverImageUrl) && failedCoverUrl !== coverImageUrl;
+
   return (
     <div className="kru-card" style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ position: "relative", height: 150, background: t.bg }}>
@@ -47,14 +50,15 @@ export function ResourceCard({ title, meta, affordance, tags, icon: Icon, coverI
           onClick={onClick}
           style={{ border: "none", padding: 0, background: "transparent", width: "100%", height: "100%", position: "relative", cursor: "pointer", display: "grid", placeItems: "center", color: t.fg, overflow: "hidden" }}
         >
-          {coverImageUrl ? (
+          {showCover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={coverImageUrl}
+              src={coverImageUrl ?? undefined}
               alt={`ภาพปก ${title}`}
               loading="lazy"
               decoding="async"
               referrerPolicy="no-referrer"
+              onError={() => setFailedCoverUrl(coverImageUrl ?? null)}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           ) : (
