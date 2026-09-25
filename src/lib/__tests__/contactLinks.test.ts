@@ -3,7 +3,7 @@ import { LINE_OA_URL, MESSENGER_URL } from "../config";
 
 describe("support contact destinations", () => {
   it("uses the approved HTTPS LINE OA destination everywhere", () => {
-    expect(LINE_OA_URL).toBe("https://lin.ee/wPYMzWl");
+    expect(LINE_OA_URL).toBe("https://lin.ee/qj8bUMI");
     expect(new URL(LINE_OA_URL).protocol).toBe("https:");
   });
 
