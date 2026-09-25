@@ -1,5 +1,5 @@
 import { publicCoverUrl } from "@/lib/resourceVisibility";
-import { canAccessResource, type EntitlementSnapshot } from "@/lib/entitlement";
+import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
 
 export type PublicResource = {
@@ -12,9 +12,14 @@ export type PublicResource = {
   deliveryMode: "web_app" | "google_template" | "google_form" | "file_download";
   coverImageUrl: string | null;
   tags: string[];
+  accessMode: ResourceAccessMode;
   isFree: boolean;
   isNew: boolean;
+  requiredPlanIds: string[];
   requiredPlanNames: string[];
+  featuredRank: number | null;
+  reviewAverage: number | null;
+  reviewCount: number;
 };
 
 export interface PublicResourceViewer {
@@ -36,6 +41,7 @@ type Row = Record<string, unknown>;
 const DELIVERY_MODES = new Set<PublicResource["deliveryMode"]>([
   "web_app", "google_template", "google_form", "file_download",
 ]);
+const ACCESS_MODES = new Set<ResourceAccessMode>(["public", "authenticated", "plans", "locked"]);
 
 // The resource_catalog view filters unusable/private targets before these
 // metadata rows reach the app. Never request a destination in public pages.
@@ -46,9 +52,12 @@ export function toPublicResource(value: unknown): PublicResource | null {
   if (typeof row.id !== "string" || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(row.id)) return null;
   if (typeof row.title !== "string" || !row.title.trim()) return null;
   if (!DELIVERY_MODES.has(row.delivery_mode as PublicResource["deliveryMode"])) return null;
+  if (!ACCESS_MODES.has(row.access_mode as ResourceAccessMode)) return null;
   const cover = publicCoverUrl(row.cover_image_url);
   const gradeLevels = cleanStringArray(row.grade_levels, 20).filter(isResourceGrade);
-  const requiredPlanNames = row.is_free === true ? [] : cleanStringArray(row.required_plan_names, 10);
+  const accessMode = row.access_mode as ResourceAccessMode;
+  const requiredPlanIds = accessMode === "plans" ? cleanStringArray(row.required_plan_ids, 20) : [];
+  const requiredPlanNames = accessMode === "plans" ? cleanStringArray(row.required_plan_names, 20) : [];
   return {
     id: row.id,
     title: row.title.trim(),
@@ -59,9 +68,16 @@ export function toPublicResource(value: unknown): PublicResource | null {
     deliveryMode: row.delivery_mode as PublicResource["deliveryMode"],
     coverImageUrl: cover,
     tags: cleanStringArray(row.tags, 5),
-    isFree: row.is_free === true,
+    accessMode,
+    isFree: accessMode === "public" || accessMode === "authenticated",
     isNew: row.is_new === true,
+    requiredPlanIds,
     requiredPlanNames,
+    featuredRank: typeof row.featured_rank === "number" ? row.featured_rank : null,
+    reviewAverage: row.review_average === null || row.review_average === undefined
+      ? null
+      : Number(row.review_average),
+    reviewCount: Number(row.review_count ?? 0),
   };
 }
 
@@ -74,7 +90,7 @@ function cleanStringArray(value: unknown, limit: number): string[] {
     .slice(0, limit);
 }
 
-export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, required_plan_names, is_new";
+export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, access_mode, required_plan_ids, required_plan_names, is_new, featured_rank, review_average, review_count";
 
 export function signupHref(resource: PublicResource): string {
   const destination = resource.isFree && resource.deliveryMode === "file_download"
@@ -91,25 +107,44 @@ const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
 };
 
 export function requiredPlansLabel(resource: PublicResource): string {
-  if (resource.isFree) return "บัญชีสมาชิกฟรี";
+  if (resource.accessMode === "public") return "ทุกคน";
+  if (resource.accessMode === "authenticated") return "บัญชีสมาชิกฟรี";
+  if (resource.accessMode === "locked") return "ยังไม่เปิดให้ใช้งาน";
   return resource.requiredPlanNames.length > 0
     ? resource.requiredPlanNames.join(" หรือ ")
     : "แพ็กสมาชิกที่มีสิทธิ์คลังพรีเมียม";
 }
 
 export function publicResourceAction(resource: PublicResource, viewer: PublicResourceViewer): PublicResourceAction {
-  const canUse = viewer.authenticated && canAccessResource(
-    { status: "published", isFree: resource.isFree },
-    viewer.role ? { role: viewer.role } : null,
-    viewer.entitlements,
+  const canUse = canAccessResource(
+    {
+      status: "published",
+      accessMode: resource.accessMode,
+      requiredPlanIds: resource.requiredPlanIds,
+    },
+    {
+      authenticated: viewer.authenticated,
+      role: viewer.role,
+      planId: viewer.entitlements.planId,
+    },
   );
 
-  if (!viewer.authenticated) {
+  if (resource.accessMode === "locked" && viewer.role !== "admin" && viewer.role !== "owner") {
+    return {
+      href: `/resources/${resource.id}`,
+      label: "ยังไม่เปิดให้ใช้งาน",
+      canUse: false,
+      locked: true,
+      opensNewTab: false,
+    };
+  }
+
+  if (!canUse && !viewer.authenticated) {
     return {
       href: signupHref(resource),
-      label: "สมัครสมาชิกเพื่อใช้งาน",
+      label: resource.accessMode === "authenticated" ? "สมัครสมาชิกฟรีเพื่อใช้งาน" : "สมัครสมาชิกเพื่อใช้งาน",
       canUse: false,
-      locked: !resource.isFree,
+      locked: true,
       opensNewTab: false,
     };
   }

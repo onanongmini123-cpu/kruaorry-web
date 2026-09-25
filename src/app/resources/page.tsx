@@ -53,8 +53,8 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
         <section style={{ background: "var(--wash-hero)" }}>
           <div style={{ maxWidth: "var(--container-max)", margin: "auto", padding: "var(--sp-10) var(--sp-5)" }}>
             <p style={{ fontSize: "var(--fs-14)", color: "var(--text-link)", fontWeight: "var(--fw-bold)" }}>คลังสื่อสำหรับครูไทย</p>
-            <h1 style={{ fontSize: "clamp(2rem, 5vw, var(--fs-44))", maxWidth: 680, marginTop: "var(--sp-3)" }}>เลือกสื่อที่ตรงกับชั้นเรียน ก่อนสมัครใช้งาน</h1>
-            <p style={{ fontSize: "var(--fs-18)", color: "var(--text-body)", maxWidth: 670, marginTop: "var(--sp-4)" }}>ดูภาพปก รายละเอียด และหมวดหมู่ของสื่อที่เผยแพร่จริงได้ฟรี เมื่อพบชิ้นที่ถูกใจ สมัครสมาชิกเพื่อเปิดใช้หรือดาวน์โหลด</p>
+            <h1 style={{ fontSize: "clamp(2rem, 5vw, var(--fs-44))", maxWidth: 680, marginTop: "var(--sp-3)" }}>เลือกสื่อที่ตรงกับชั้นเรียน ก่อนเปิดใช้หรือสมัครสมาชิก</h1>
+            <p style={{ fontSize: "var(--fs-18)", color: "var(--text-body)", maxWidth: 670, marginTop: "var(--sp-4)" }}>ดูภาพปก รายละเอียด และหมวดหมู่ของสื่อที่เผยแพร่จริงได้ฟรี บางรายการเปิดได้ทันที ส่วนบางรายการใช้บัญชีฟรีหรือแพ็กที่ระบุ</p>
             {result.status === "ready" && result.resources.length > 0 && <p style={{ marginTop: "var(--sp-5)", color: "var(--text-muted)" }}>สื่อพร้อมดู {result.resources.length} รายการ · สื่อใช้งานฟรี {freeCount} รายการ</p>}
           </div>
         </section>
@@ -89,7 +89,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                 <select className="kru-select" name="access" defaultValue={filters.access}>
                   <option value="all">ทั้งหมด</option>
                   <option value="free">สื่อใช้ฟรี</option>
-                  <option value="member">สื่อสำหรับสมาชิก</option>
+                  <option value="member">สื่อเฉพาะแพ็กสมาชิก</option>
                 </select>
               </label>
               <button type="submit" className="kru-btn kru-btn--primary" style={{ minHeight: 52 }}><Search size={18} />ค้นหา</button>
@@ -130,7 +130,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                         <div style={{ position: "relative" }}>
                           <PublicResourceCover title={item.title} url={item.coverImageUrl} deliveryMode={item.deliveryMode} style={{ aspectRatio: "16 / 10" }} />
                           {action.locked && (
-                            <span role="img" aria-label={`ล็อก ต้องใช้ ${planLabel}`} style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(255,255,255,.55)" }}>
+                            <span role="img" aria-label={item.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : `ล็อก ต้องใช้ ${planLabel}`} style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(255,255,255,.55)" }}>
                               <span style={{ width: 42, height: 42, display: "grid", placeItems: "center", borderRadius: "var(--r-pill)", color: "var(--status-member-fg)", background: "var(--status-member-bg)", boxShadow: "var(--shadow-sm)" }}><Lock size={19} aria-hidden="true" /></span>
                             </span>
                           )}
@@ -139,7 +139,9 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                       <div style={{ padding: "var(--sp-5)", display: "flex", flex: 1, flexDirection: "column", gap: "var(--sp-3)" }}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minHeight: 28 }}>
                           {item.isNew && <Badge tone="brand">ใหม่</Badge>}
-                          <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>{item.isFree ? "ใช้ได้ฟรี" : `สำหรับ ${planLabel}`}</span>
+                          <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>
+                            {item.accessMode === "public" ? "เปิดใช้ฟรีทุกคน" : item.accessMode === "authenticated" ? "ใช้ฟรีเมื่อเข้าสู่ระบบ" : item.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : `สำหรับ ${planLabel}`}
+                          </span>
                         </div>
                         <h2 style={{ minHeight: "2.8em", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, fontSize: "var(--fs-20)", lineHeight: "var(--lh-snug)" }}><Link href={`/resources/${item.id}`} style={{ color: "inherit" }}>{item.title}</Link></h2>
                         <p style={{ minHeight: "1.5em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{item.meta || "สื่อพร้อมใช้ในชั้นเรียน"}</p>

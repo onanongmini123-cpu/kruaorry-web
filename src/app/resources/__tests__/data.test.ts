@@ -50,6 +50,24 @@ describe("public resource viewer", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("treats a Supabase anonymous identity as a guest without loading member data", async () => {
+    const from = vi.fn();
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "anonymous-1", is_anonymous: true } } })) },
+      from,
+      rpc,
+    } as never);
+
+    await expect(loadPublicResourceViewer()).resolves.toEqual({
+      authenticated: false,
+      role: null,
+      entitlements: { planId: "free", features: {} },
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("derives role and capabilities from the caller's own session", async () => {
     const profile = profileQuery("member");
     const rpc = vi.fn(async () => ({

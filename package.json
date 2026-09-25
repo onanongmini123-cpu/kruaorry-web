@@ -12,7 +12,8 @@
     "test:resource-file-sql": "node scripts/test-resource-file-signup-gate.mjs",
     "test:public-resource-sql": "node scripts/test-public-resource-read-policy.mjs",
     "test:resource-placeholder-sql": "node scripts/test-resource-placeholder-demotion.mjs",
-    "test:resource-discovery-sql": "node scripts/test-resource-discovery-metadata.mjs"
+    "test:resource-discovery-sql": "node scripts/test-resource-discovery-metadata.mjs",
+    "test:platform-completion-sql": "node scripts/test-platform-completion-sql.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

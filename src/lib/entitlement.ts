@@ -1,10 +1,15 @@
 export interface EntitlementResource {
   status: "draft" | "published" | "archived";
-  isFree: boolean;
+  accessMode: ResourceAccessMode;
+  requiredPlanIds: readonly string[];
 }
 
-export interface EntitlementProfile {
-  role: "member" | "admin" | "owner";
+export type ResourceAccessMode = "public" | "authenticated" | "plans" | "locked";
+
+export interface ResourceAccessViewer {
+  authenticated: boolean;
+  role: "member" | "admin" | "owner" | null;
+  planId: string | null;
 }
 
 export interface EntitlementGrant {
@@ -31,15 +36,20 @@ export function entitlementLimit(snapshot: EntitlementSnapshot | null, featureId
   return grant?.enabled ? grant.limit : null;
 }
 
-// Single source of truth for "can this viewer open this resource" on the
-// client. Mirrors the storage.objects RLS policy in
-// supabase/migrations/20260829015429_014b_fix_resource_files_entitlement.sql
-// exactly (admin/owner bypass, then published-only, then free-or-capability),
-// so the UI never shows an action the server would actually deny, and never
-// hides one the server would actually allow.
-export function canAccessResource(resource: EntitlementResource, profile: EntitlementProfile | null, entitlements: EntitlementSnapshot | null): boolean {
-  if (profile?.role === "admin" || profile?.role === "owner") return true;
+// UI mirror of public.can_access_resource(uuid). The database function and
+// Storage RLS remain authoritative; this helper only prevents presenting an
+// action that the server will reject. Access is explicitly independent from
+// publish status so admins can preview drafts without weakening member rules.
+export function canAccessResource(resource: EntitlementResource, viewer: ResourceAccessViewer): boolean {
+  if (viewer.authenticated && (viewer.role === "admin" || viewer.role === "owner")) return true;
   if (resource.status !== "published") return false;
-  if (resource.isFree) return true;
-  return hasEntitlement(entitlements, "download.premium");
+
+  if (resource.accessMode === "public") return true;
+  if (resource.accessMode === "authenticated") return viewer.authenticated;
+  if (resource.accessMode === "plans") {
+    return viewer.authenticated
+      && typeof viewer.planId === "string"
+      && resource.requiredPlanIds.includes(viewer.planId);
+  }
+  return false;
 }

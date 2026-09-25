@@ -1,71 +1,71 @@
 import { describe, expect, it } from "vitest";
-import { canAccessResource, entitlementLimit, hasEntitlement, type EntitlementSnapshot } from "../entitlement";
+import {
+  canAccessResource,
+  entitlementLimit,
+  hasEntitlement,
+  type EntitlementSnapshot,
+  type ResourceAccessMode,
+  type ResourceAccessViewer,
+} from "../entitlement";
 
 describe("canAccessResource", () => {
-  const published = (isFree: boolean) => ({ status: "published" as const, isFree });
-  const draft = (isFree: boolean) => ({ status: "draft" as const, isFree });
-  const archived = (isFree: boolean) => ({ status: "archived" as const, isFree });
+  const resource = (
+    accessMode: ResourceAccessMode,
+    requiredPlanIds: string[] = [],
+    status: "draft" | "published" | "archived" = "published",
+  ) => ({ status, accessMode, requiredPlanIds });
+  const viewer = (
+    authenticated: boolean,
+    planId: string | null = null,
+    role: ResourceAccessViewer["role"] = authenticated ? "member" : null,
+  ): ResourceAccessViewer => ({ authenticated, role, planId });
 
-  const memberProfile = { role: "member" as const };
-  const adminProfile = { role: "admin" as const };
-  const ownerProfile = { role: "owner" as const };
-  const freeEntitlements: EntitlementSnapshot = {
+  it("allows anonymous access only to explicitly public published resources", () => {
+    expect(canAccessResource(resource("public"), viewer(false))).toBe(true);
+    expect(canAccessResource(resource("authenticated"), viewer(false))).toBe(false);
+    expect(canAccessResource(resource("plans", ["teacher"]), viewer(false))).toBe(false);
+    expect(canAccessResource(resource("locked"), viewer(false))).toBe(false);
+  });
+
+  it("allows any signed-in member to authenticated resources", () => {
+    expect(canAccessResource(resource("authenticated"), viewer(true, "free"))).toBe(true);
+    expect(canAccessResource(resource("authenticated"), viewer(true, "teacher"))).toBe(true);
+  });
+
+  it("matches plan-scoped resources by exact current plan id", () => {
+    const teacherOnly = resource("plans", ["teacher"]);
+    expect(canAccessResource(teacherOnly, viewer(true, "free"))).toBe(false);
+    expect(canAccessResource(teacherOnly, viewer(true, "founder"))).toBe(false);
+    expect(canAccessResource(teacherOnly, viewer(true, "teacher"))).toBe(true);
+  });
+
+  it("keeps locked resources closed to members on every plan", () => {
+    expect(canAccessResource(resource("locked"), viewer(true, "free"))).toBe(false);
+    expect(canAccessResource(resource("locked"), viewer(true, "teacher"))).toBe(false);
+  });
+
+  it("lets admins and owners preview every status and access mode", () => {
+    expect(canAccessResource(resource("locked", [], "draft"), viewer(true, "free", "admin"))).toBe(true);
+    expect(canAccessResource(resource("locked", [], "archived"), viewer(true, "free", "owner"))).toBe(true);
+  });
+
+  it("never grants an unpublished resource to a non-admin", () => {
+    expect(canAccessResource(resource("public", [], "draft"), viewer(false))).toBe(false);
+    expect(canAccessResource(resource("authenticated", [], "draft"), viewer(true, "free"))).toBe(false);
+    expect(canAccessResource(resource("plans", ["teacher"], "archived"), viewer(true, "teacher"))).toBe(false);
+  });
+});
+
+describe("entitlement helpers", () => {
+  const snapshot: EntitlementSnapshot = {
     planId: "free",
     features: { "favorites.limit": { enabled: true, limit: 10 } },
   };
-  const paidEntitlements: EntitlementSnapshot = {
-    planId: "plus",
-    features: { "download.premium": { enabled: true, limit: null } },
-  };
-
-  it("free user can download only free published media", () => {
-    expect(canAccessResource(published(true), memberProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(published(false), memberProfile, freeEntitlements)).toBe(false);
-  });
-
-  it("paid user can download both free and member-only published media", () => {
-    expect(canAccessResource(published(true), memberProfile, paidEntitlements)).toBe(true);
-    expect(canAccessResource(published(false), memberProfile, paidEntitlements)).toBe(true);
-  });
-
-  it("admin can download everything, including drafts and archived resources", () => {
-    expect(canAccessResource(published(true), adminProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(published(false), adminProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(draft(true), adminProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(draft(false), adminProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(archived(false), adminProfile, freeEntitlements)).toBe(true);
-  });
-
-  it("owner can download everything, including drafts and archived resources", () => {
-    expect(canAccessResource(published(true), ownerProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(published(false), ownerProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(draft(true), ownerProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(draft(false), ownerProfile, freeEntitlements)).toBe(true);
-    expect(canAccessResource(archived(false), ownerProfile, freeEntitlements)).toBe(true);
-  });
-
-  it("draft or archived resources are never downloadable by a non-admin, regardless of plan", () => {
-    expect(canAccessResource(draft(true), memberProfile, freeEntitlements)).toBe(false);
-    expect(canAccessResource(draft(false), memberProfile, paidEntitlements)).toBe(false);
-    expect(canAccessResource(archived(true), memberProfile, freeEntitlements)).toBe(false);
-    expect(canAccessResource(archived(false), memberProfile, paidEntitlements)).toBe(false);
-  });
-
-  it("a free resource is accessible even with no profile (not signed in / no profile row)", () => {
-    expect(canAccessResource(published(true), null, null)).toBe(true);
-    expect(canAccessResource(published(false), null, null)).toBe(false);
-  });
-
-  it("uses capability ids rather than treating every non-free plan as paid", () => {
-    const unknownPlan: EntitlementSnapshot = { planId: "custom", features: {} };
-    expect(canAccessResource(published(false), memberProfile, unknownPlan)).toBe(false);
-    expect(canAccessResource(published(false), memberProfile, paidEntitlements)).toBe(true);
-  });
 
   it("reads boolean and numeric grants from one entitlement snapshot", () => {
-    expect(hasEntitlement(freeEntitlements, "favorites.limit")).toBe(true);
-    expect(entitlementLimit(freeEntitlements, "favorites.limit")).toBe(10);
-    expect(hasEntitlement(freeEntitlements, "download.premium")).toBe(false);
-    expect(entitlementLimit(freeEntitlements, "download.premium")).toBeNull();
+    expect(hasEntitlement(snapshot, "favorites.limit")).toBe(true);
+    expect(entitlementLimit(snapshot, "favorites.limit")).toBe(10);
+    expect(hasEntitlement(snapshot, "download.premium")).toBe(false);
+    expect(entitlementLimit(snapshot, "download.premium")).toBeNull();
   });
 });

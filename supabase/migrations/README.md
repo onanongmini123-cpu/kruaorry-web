@@ -71,6 +71,24 @@ publication timestamp. No private destination is added to the view. It was
 applied and recorded on the live project on 2026-09-24; a follow-up CLI dry-run
 reported the remote database up to date.
 
+The following Batch 4 migrations are pending deployment and must remain in
+this order:
+
+- `20260925110000_028_resource_access_featured_benefits.sql` — adds the
+  canonical resource access predicate, resource-to-plan grants, curated
+  featured positions, anonymous access for explicitly public resources, and a
+  benefit catalogue derived only from enabled capabilities.
+- `20260925120000_029_private_requests_reviews_reports.sql` — isolates teacher
+  requests, adds entitlement-gated reviews with a sanitized public feed, and
+  adds private, rate-limited resource issue reports for admin triage.
+- `20260925130000_030_member_profile_avatars.sql` — limits self-service profile
+  edits to display name/avatar data and provisions owner-scoped private avatar
+  Storage objects served through short-lived signed URLs.
+
+Their combined SQL/RLS behavior is exercised by
+`npm run test:platform-completion-sql`; this local test does not establish
+their live migration-ledger state.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
