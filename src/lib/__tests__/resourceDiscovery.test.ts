@@ -15,6 +15,7 @@ const resources = [
     tags: ["เกม", "อ่านออกเสียง"],
     gradeLevels: ["p2"],
     isFree: true,
+    accessMode: "authenticated" as const,
   },
   {
     id: "math-p4",
@@ -25,6 +26,7 @@ const resources = [
     tags: ["ใบงาน"],
     gradeLevels: ["p4"],
     isFree: false,
+    accessMode: "plans" as const,
   },
   {
     id: "thai-p4",
@@ -35,6 +37,7 @@ const resources = [
     tags: ["ใบงาน"],
     gradeLevels: ["p4"],
     isFree: false,
+    accessMode: "locked" as const,
   },
   {
     id: "all-grades",
@@ -45,6 +48,7 @@ const resources = [
     tags: ["เกม"],
     gradeLevels: ["all"],
     isFree: true,
+    accessMode: "public" as const,
   },
 ];
 
@@ -73,6 +77,11 @@ describe("resource discovery", () => {
       grade: "",
       access: "all",
     });
+  });
+
+  it("does not misclassify locked resources as a paid member offer", () => {
+    expect(filterDiscoveredResources(resources, { access: "member" }).map((resource) => resource.id)).toEqual(["math-p4"]);
+    expect(filterDiscoveredResources(resources, { access: "free" }).map((resource) => resource.id)).toEqual(["thai-p2", "all-grades"]);
   });
 
   it("searches the full resource description while bounding the URL query", () => {

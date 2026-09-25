@@ -15,10 +15,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const client = await createClient();
-    const auth = await withTimeout(client.auth.getUser(), "resource open auth");
-    if (!auth.ok) return new NextResponse("ตรวจสอบสิทธิ์ไม่สำเร็จ", { status: 503, headers: HEADERS });
-    if (!auth.value.data.user) return new NextResponse("กรุณาเข้าสู่ระบบก่อนเปิดสื่อ", { status: 401, headers: HEADERS });
-
+    // The resolver is the authorization boundary. It permits an anonymous
+    // caller only when the resource is explicitly marked public, and checks
+    // the current plan/admin role for every other mode.
     const resolved = await withTimeout(
       Promise.resolve(client.rpc("resolve_resource_target", { p_resource_id: id }).maybeSingle()),
       "resource destination",

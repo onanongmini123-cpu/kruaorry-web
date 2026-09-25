@@ -7,9 +7,9 @@ export function resourceIdFromSearch(search: string, resources: readonly { id: s
   return resources.some((resource) => resource.id === requested[0]) ? requested[0] : null;
 }
 
-export type AppView = "home" | "library" | "favorites" | "plans" | "requests";
+export type AppView = "home" | "library" | "favorites" | "plans" | "requests" | "account";
 
-const APP_VIEWS = new Set<AppView>(["home", "library", "favorites", "plans", "requests"]);
+const APP_VIEWS = new Set<AppView>(["home", "library", "favorites", "plans", "requests", "account"]);
 
 export interface AppDiscoveryState {
   view: AppView;

@@ -17,6 +17,7 @@ export interface DiscoverableResource {
   tags?: readonly string[] | null;
   gradeLevels?: readonly string[] | null;
   isFree: boolean;
+  accessMode?: "public" | "authenticated" | "plans" | "locked";
 }
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
@@ -54,8 +55,16 @@ export function filterDiscoveredResources<T extends DiscoverableResource>(
   return resources.filter((resource) => {
     if (normalized.category && resource.category !== normalized.category) return false;
     if (normalized.grade && !resource.gradeLevels?.includes(normalized.grade) && !resource.gradeLevels?.includes("all")) return false;
-    if (normalized.access === "free" && !resource.isFree) return false;
-    if (normalized.access === "member" && resource.isFree) return false;
+    if (normalized.access === "free") {
+      const isFreeAccess = resource.accessMode
+        ? resource.accessMode === "public" || resource.accessMode === "authenticated"
+        : resource.isFree;
+      if (!isFreeAccess) return false;
+    }
+    if (normalized.access === "member") {
+      const isPlanAccess = resource.accessMode ? resource.accessMode === "plans" : !resource.isFree;
+      if (!isPlanAccess) return false;
+    }
     if (!query) return true;
 
     const haystack = [

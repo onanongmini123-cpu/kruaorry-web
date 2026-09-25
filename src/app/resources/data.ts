@@ -87,7 +87,10 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
     const client = await createClient();
     const auth = await withTimeout(client.auth.getUser(), "public resource viewer auth");
     const user = auth.ok ? auth.value.data.user : null;
-    if (!user) return GUEST_VIEWER;
+    // Supabase anonymous sign-ins have a user id, but are still guests for
+    // review/report and member entitlement purposes. Never query a profile or
+    // capabilities for that temporary identity.
+    if (!user || user.is_anonymous === true) return GUEST_VIEWER;
 
     const [profileResult, entitlementResult] = await Promise.all([
       withTimeout(

@@ -77,6 +77,19 @@ describe("ResourceCard media", () => {
     expect(html).toMatch(/-webkit-line-clamp:\s*3/);
   });
 
+  it("distinguishes an unavailable resource from a plan upgrade", () => {
+    const html = renderToStaticMarkup(React.createElement(ResourceCard, {
+      ...baseProps,
+      locked: true,
+      unavailable: true,
+      onAction: vi.fn(),
+    }));
+
+    expect(html).toContain("ยังไม่เปิดให้ใช้งาน");
+    expect(html).not.toContain("อัปเกรดเพื่อปลดล็อก");
+    expect(html).not.toContain("สำหรับสมาชิก");
+  });
+
   it("keeps an accessible favorite name while an optimistic save is pending", () => {
     const html = renderToStaticMarkup(React.createElement(ResourceCard, {
       ...baseProps,

@@ -16,7 +16,14 @@ const publicRow = {
   file_path: `${id}/sample.pdf`,
   cover_image_url: "https://cdn.school.example/cover.png",
   tags: ["ใบงาน"],
+  access_mode: "authenticated",
+  required_plan_ids: [],
+  required_plan_names: [],
   is_free: true,
+  is_new: false,
+  featured_rank: null,
+  review_average: null,
+  review_count: 0,
   file_name: "sample.pdf",
 };
 

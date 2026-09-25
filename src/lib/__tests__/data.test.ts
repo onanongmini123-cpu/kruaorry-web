@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, fetchFounderCapacity, fetchPlans, fetchPublishedResources, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
+import { fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -189,10 +189,78 @@ describe("fetchFounderCapacity", () => {
   });
 });
 
+describe("fetchMyResourceReview", () => {
+  it("reads only the caller's review through the narrow RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ rating: 4, body: "นำไปใช้กับนักเรียนได้จริง" }],
+      error: null,
+    });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await expect(fetchMyResourceReview(supabase, "resource-1")).resolves.toEqual({
+      rating: 4,
+      body: "นำไปใช้กับนักเรียนได้จริง",
+    });
+    expect(rpc).toHaveBeenCalledWith("get_my_resource_review", { p_resource_id: "resource-1" });
+  });
+
+  it("fails closed for malformed or unavailable RPC data", async () => {
+    const malformed = {
+      rpc: vi.fn().mockResolvedValue({ data: [{ rating: 99, body: "invalid" }], error: null }),
+    } as unknown as SupabaseClient;
+    await expect(fetchMyResourceReview(malformed, "resource-1")).resolves.toBeNull();
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const denied = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "Authenticated member required", code: "42501", details: "", hint: "" },
+      }),
+    } as unknown as SupabaseClient;
+    await expect(fetchMyResourceReview(denied, "resource-1")).resolves.toBeNull();
+  });
+});
+
+describe("fetchResourceReviews", () => {
+  it("loads only the latest 20 public reviews while the catalog keeps the aggregate", async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    const supabase = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+
+    await expect(fetchResourceReviews(supabase, "resource-1")).resolves.toEqual([]);
+    expect(supabase.from).toHaveBeenCalledWith("resource_review_feed");
+    expect(query.eq).toHaveBeenCalledWith("resource_id", "resource-1");
+    expect(query.limit).toHaveBeenCalledWith(20);
+  });
+});
+
 describe("public catalog reads", () => {
   it("uses only the safe catalog view and never requests private destination columns", async () => {
     const rows = [
-      { id: "one", title: "แบบฝึกจริง", meta: "", description: "", category: "", delivery_mode: "file_download", cover_image_url: null, tags: [], grade_levels: [], required_plan_names: [], is_free: true, is_new: true, file_size: 100 },
+      {
+        id: "one",
+        title: "แบบฝึกจริง",
+        meta: "",
+        description: "",
+        category: "",
+        delivery_mode: "file_download",
+        cover_image_url: null,
+        tags: [],
+        grade_levels: [],
+        access_mode: "authenticated",
+        required_plan_ids: [],
+        required_plan_names: [],
+        is_free: true,
+        is_new: true,
+        file_size: 100,
+        featured_rank: null,
+        review_average: null,
+        review_count: 0,
+      },
     ];
     const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: rows, error: null }) };
     const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
@@ -200,7 +268,7 @@ describe("public catalog reads", () => {
     await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง", isNew: true }]);
     expect(client.from).toHaveBeenCalledWith("resource_catalog");
     expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
-    expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*required_plan_names.*is_new/));
+    expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*access_mode.*required_plan_ids.*required_plan_names.*is_new.*featured_rank.*review_average.*review_count/));
     expect(query.order).toHaveBeenNthCalledWith(1, "published_at", { ascending: false, nullsFirst: false });
     expect(query.order).toHaveBeenNthCalledWith(2, "id", { ascending: true });
   });
@@ -208,12 +276,24 @@ describe("public catalog reads", () => {
   it("ends a stalled plan request instead of leaving the home page loading forever", async () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnValue(new Promise(() => {})) };
-    const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+    const planQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnValue(new Promise(() => {})),
+    };
+    const benefitQuery = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    const client = {
+      from: vi.fn((table: string) => table === "plans" ? planQuery : benefitQuery),
+    } as unknown as SupabaseClient;
 
     const result = fetchPlans(client);
     await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
     await expect(result).resolves.toEqual([]);
+    expect(client.from).toHaveBeenCalledWith("plans");
+    expect(client.from).toHaveBeenCalledWith("plan_benefit_catalog");
   });
 });
 

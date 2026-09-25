@@ -17,9 +17,14 @@ const base = {
   cover_image_url: "https://images.example.org/worksheet.png",
   tags: ["ป.4", "ใบงาน"],
   grade_levels: ["p4"],
+  access_mode: "authenticated",
+  required_plan_ids: [],
   required_plan_names: [],
   is_free: true,
   is_new: true,
+  featured_rank: 1,
+  review_average: 4.5,
+  review_count: 2,
   file_name: "worksheet.pdf",
 };
 
@@ -34,7 +39,7 @@ describe("public resource showcase", () => {
   });
 
   it("supports a real same-origin web app and routes signup back to its app detail", () => {
-    const item = toPublicResource({ ...base, delivery_mode: "web_app", file_path: null, cta_url: "/tools/timer", is_free: false });
+    const item = toPublicResource({ ...base, delivery_mode: "web_app", file_path: null, cta_url: "/tools/timer", access_mode: "plans", required_plan_ids: ["teacher"], is_free: false });
     expect(item).not.toBeNull();
     expect(signupHref(item!)).toBe(`/login?next=${encodeURIComponent(`/app?resource=${id}`)}&mode=signup`);
     expect(safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"))).toBe(`/app?resource=${id}`);
@@ -45,6 +50,8 @@ describe("public resource showcase", () => {
     expect(JSON.stringify(item)).not.toMatch(/SECRET|private\/path|worksheet[.]pdf/);
     expect(PUBLIC_RESOURCE_SELECT).toContain("grade_levels");
     expect(PUBLIC_RESOURCE_SELECT).toContain("required_plan_names");
+    expect(PUBLIC_RESOURCE_SELECT).toContain("access_mode");
+    expect(PUBLIC_RESOURCE_SELECT).toContain("featured_rank");
     expect(PUBLIC_RESOURCE_SELECT).toContain("is_new");
     expect(PUBLIC_RESOURCE_SELECT).not.toMatch(/cta_url|file_path|file_name/);
   });
@@ -53,7 +60,9 @@ describe("public resource showcase", () => {
     const item = toPublicResource({
       ...base,
       is_free: false,
+      access_mode: "plans",
       cover_image_url: null,
+      required_plan_ids: ["founder", "teacher"],
       required_plan_names: ["Founder 100", "Teacher", "Teacher"],
     });
 
@@ -61,7 +70,11 @@ describe("public resource showcase", () => {
       coverImageUrl: null,
       gradeLevels: ["p4"],
       requiredPlanNames: ["Founder 100", "Teacher"],
+      requiredPlanIds: ["founder", "teacher"],
       isNew: true,
+      featuredRank: 1,
+      reviewAverage: 4.5,
+      reviewCount: 2,
     });
     expect(requiredPlansLabel(item!)).toBe("Founder 100 หรือ Teacher");
   });
@@ -82,6 +95,8 @@ describe("public resource showcase", () => {
     const premium = toPublicResource({
       ...base,
       is_free: false,
+      access_mode: "plans",
+      required_plan_ids: ["founder", "teacher"],
       required_plan_names: ["Founder 100", "Teacher"],
     })!;
     const guest = publicResourceAction(premium, {
@@ -97,7 +112,7 @@ describe("public resource showcase", () => {
       role: null,
       entitlements: EMPTY_ENTITLEMENTS,
     });
-    expect(guestFree).toMatchObject({ label: "สมัครสมาชิกเพื่อใช้งาน", locked: false, canUse: false });
+    expect(guestFree).toMatchObject({ label: "สมัครสมาชิกฟรีเพื่อใช้งาน", locked: true, canUse: false });
     expect(guestFree.href).toContain(encodeURIComponent(`/download/${id}`));
 
     const freeMember = publicResourceAction(premium, {
@@ -137,6 +152,8 @@ describe("public resource showcase", () => {
       ...base,
       delivery_mode: "web_app",
       is_free: false,
+      access_mode: "plans",
+      required_plan_ids: ["teacher"],
       required_plan_names: ["Teacher"],
     })!;
     expect(publicResourceAction(premiumWebApp, {
@@ -144,5 +161,14 @@ describe("public resource showcase", () => {
       role: "member",
       entitlements: { planId: "teacher", features: { "download.premium": { enabled: true, limit: null } } },
     })).toMatchObject({ href: `/api/resources/${id}/open`, canUse: true, locked: false });
+  });
+
+  it("opens explicitly public resources for guests without a signup detour", () => {
+    const item = toPublicResource({ ...base, access_mode: "public" })!;
+    expect(publicResourceAction(item, {
+      authenticated: false,
+      role: null,
+      entitlements: EMPTY_ENTITLEMENTS,
+    })).toMatchObject({ href: `/download/${id}`, canUse: true, locked: false, opensNewTab: true });
   });
 });

@@ -9,6 +9,7 @@ import { parseResourceTarget } from "@/lib/resourceTarget";
 export const dynamic = "force-dynamic";
 
 const RESPONSE_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
+const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 // Same-origin download route. This exists so the browser can call
 // window.open() synchronously, inside the click handler, with a real URL —
@@ -53,6 +54,10 @@ function errorPage(status: number, message: string, action?: { href: string; lab
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Reject malformed path input before creating a client or sending anything
+  // to Postgres. Apart from avoiding unnecessary work, this keeps untrusted
+  // route text out of database calls, logs, and rendered return links.
+  if (!UUID.test(id)) return errorPage(404, "ไม่พบไฟล์นี้ หรือรหัสสื่อไม่ถูกต้อง");
 
   let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
@@ -64,17 +69,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const authResult = await withTimeout(supabase.auth.getUser(), "auth.getUser");
-  if (!authResult.ok) {
-    console.error(`[download] ${authResult.reason}`);
-    return errorPage(500, "ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-  }
-  const { user } = authResult.value.data;
-  if (!user) {
-    return errorPage(401, "กรุณาเข้าสู่ระบบก่อนดาวน์โหลดไฟล์", {
-      href: downloadLoginHref(id),
-      label: "เข้าสู่ระบบเพื่อดาวน์โหลดไฟล์นี้",
-    });
-  }
+  const user = authResult.ok ? authResult.value.data.user : null;
+  if (!authResult.ok) console.error(`[download] ${authResult.reason}`);
 
   // The private file path is never selectable from public.resources. This
   // RPC checks the current user and entitlement before revealing it; Storage
@@ -88,6 +84,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const resource = parseResourceTarget(data);
   if (resourceError || resource?.delivery_mode !== "file_download" || !resource.file_path) {
     console.error(`[download] resource lookup returned an error for id=${id}: ${redactSensitive(resourceError?.message ?? "no file_path")}`);
+    if (!user) {
+      return errorPage(401, "สื่อนี้ต้องเข้าสู่ระบบหรือบัญชีของคุณยังไม่มีสิทธิ์ดาวน์โหลด", {
+        href: downloadLoginHref(id),
+        label: "เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์",
+      });
+    }
     return errorPage(404, "ไม่พบไฟล์นี้ หรือคุณไม่มีสิทธิ์เข้าถึง");
   }
 

@@ -2,9 +2,12 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Heart, ShieldCheck, MessageSquareText, MessageCircle, Sparkles } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Heart, ShieldCheck, MessageSquareText, MessageCircle, Sparkles, UserRound, CheckCircle2 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { MemberContactMenu } from "@/components/MemberContactMenu";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { ProfileSettings } from "@/components/ProfileSettings";
+import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import { Button, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -25,6 +28,7 @@ import {
   resourceTint,
   type Resource,
   type Plan,
+  type PlanBenefit,
   type Profile,
   type TeacherRequest,
   type UpgradeRequest,
@@ -50,12 +54,20 @@ const NAV_GROUPS: SideNavGroup[] = [
       { key: "favorites", label: "สื่อโปรด", icon: Heart },
       { key: "requests", label: "เสนอไอเดีย", icon: MessageSquareText },
       { key: "plans", label: "แพ็กเกจ", icon: IdCard },
+      { key: "account", label: "บัญชี", icon: UserRound },
     ],
   },
 ];
 
 const REQUEST_STATUS_LABEL: Record<TeacherRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
 const REQUEST_STATUS_TONE: Record<TeacherRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
+
+function benefitLabel(benefit: PlanBenefit): string {
+  if (benefit.valueType === "integer") {
+    return `${benefit.name}: ${benefit.limitValue === null ? "ไม่จำกัด" : benefit.limitValue.toLocaleString("th-TH")}`;
+  }
+  return benefit.name;
+}
 
 export default function TeacherAppPage() {
   const router = useRouter();
@@ -186,7 +198,7 @@ export default function TeacherAppPage() {
     setRequestError(null);
     if (!newRequestTitle.trim() || !userId) return;
     setSubmittingRequest(true);
-    const errorMessage = await submitRequest(supabase, userId, newRequestTitle);
+    const errorMessage = await submitRequest(supabase, newRequestTitle);
     setSubmittingRequest(false);
     if (errorMessage) {
       setRequestError(errorMessage);
@@ -232,7 +244,10 @@ export default function TeacherAppPage() {
 
   // Every published resource fetched by fetchPublishedResources already has
   // status "published", so it's hardcoded here rather than carried on Resource.
-  const canAccess = (r: Resource) => canAccessResource({ status: "published", isFree: r.free }, profile && { role: profile.role }, entitlements);
+  const canAccess = (r: Resource) => canAccessResource(
+    { status: "published", accessMode: r.accessMode, requiredPlanIds: r.requiredPlanIds },
+    { authenticated: Boolean(profile), role: profile?.role ?? null, planId: entitlements.planId },
+  );
 
   const openResource = (r: Resource) => {
     if (!canAccess(r)) {
@@ -309,7 +324,6 @@ export default function TeacherAppPage() {
     );
   }
 
-  const initials = (profile?.fullName || profile?.email || "ค").slice(0, 2);
   const renderResourceGrid = (items: Resource[]) => (
     <div className="kru-resource-grid">
       {items.map((resource) => (
@@ -328,11 +342,12 @@ export default function TeacherAppPage() {
           free={resource.free}
           isNew={resource.isNew}
           locked={!canAccess(resource)}
+          unavailable={resource.accessMode === "locked" && profile?.role !== "admin" && profile?.role !== "owner"}
           saved={saved.includes(resource.id)}
           savePending={savingIds.includes(resource.id)}
           onSave={() => toggleSaved(resource.id)}
           onClick={() => openDetail(resource)}
-          onAction={() => openResource(resource)}
+          onAction={() => resource.accessMode === "locked" && profile?.role !== "admin" && profile?.role !== "owner" ? openDetail(resource) : openResource(resource)}
         />
       ))}
     </div>
@@ -385,15 +400,15 @@ export default function TeacherAppPage() {
                 หลังบ้าน
               </Button>
             )}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }} className="kru-app-header-account">
-              <span style={{ width: 36, height: 36, borderRadius: "var(--r-pill)", background: "var(--pink-100)", color: "var(--pink-700)", display: "grid", placeItems: "center", fontWeight: "var(--fw-semibold)", fontSize: "var(--fs-14)" }}>
-                {initials}
-              </span>
-              <div style={{ fontSize: "var(--fs-14)", lineHeight: 1.3 }}>
-                <div style={{ fontWeight: "var(--fw-semibold)" }}>{profile?.fullName || profile?.email}</div>
-                <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-13)" }}>แพ็ก {entitlements.planId}</div>
-              </div>
-            </div>
+            {profile && (
+              <button type="button" className="kru-app-header-account" onClick={() => setView("account")} aria-label="เปิดบัญชีของฉัน">
+                <ProfileAvatar supabase={supabase} avatarPath={profile.avatarPath} name={profile.fullName || profile.email} size={36} />
+                <span className="kru-app-header-account__copy">
+                  <strong>{profile.fullName || profile.email}</strong>
+                  <small>แพ็ก {entitlements.planId}</small>
+                </span>
+              </button>
+            )}
           </header>
 
           <main style={{ padding: "var(--sp-6) var(--sp-5)", flex: 1 }} className="kru-app-content">
@@ -522,15 +537,15 @@ export default function TeacherAppPage() {
                   <div className="kru-detail-side">
                     <div className="kru-card" style={{ padding: "var(--sp-7)" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
-                        {canAccess(detail) ? "พร้อมใช้สอนได้เลย" : "สื่อนี้สำหรับสมาชิก"}
+                        {canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : "สื่อนี้สำหรับสมาชิก"}
                       </div>
                       {!canAccess(detail) && detail.requiredPlanNames.length > 0 && (
                         <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
                           ปลดล็อกได้ด้วยแพ็ก {detail.requiredPlanNames.join(" หรือ ")}
                         </p>
                       )}
-                      <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} onClick={() => openResource(detail)}>
-                        {canAccess(detail) ? "เปิดใช้งาน" : "อัปเกรดเพื่อปลดล็อก"}
+                      <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} disabled={!canAccess(detail) && detail.accessMode === "locked"} onClick={() => openResource(detail)}>
+                        {canAccess(detail) ? "เปิดใช้งาน" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : "อัปเกรดเพื่อปลดล็อก"}
                       </Button>
                       <Button
                         block
@@ -549,6 +564,13 @@ export default function TeacherAppPage() {
                     </div>
                   </div>
                 </div>
+                <ResourceFeedback
+                  resourceId={detail.id}
+                  authenticated={Boolean(profile)}
+                  canInteract={canAccess(detail)}
+                  initialAverage={detail.reviewAverage}
+                  initialCount={detail.reviewCount}
+                />
               </div>
             )}
 
@@ -566,14 +588,14 @@ export default function TeacherAppPage() {
                   {requestError && <p style={{ width: "100%", fontSize: "var(--fs-14)", color: "var(--status-danger-fg)" }}>{requestError}</p>}
                 </form>
                 {requests.length === 0 ? (
-                  <EmptyState icon={MessageSquareText} title="ยังไม่มีไอเดียจากครู" description="เป็นคนแรกที่เสนอไอเดียสิ" />
+                  <EmptyState icon={MessageSquareText} title="คุณยังไม่ได้เสนอไอเดีย" description="ส่งไอเดียด้านบน แล้วติดตามสถานะคำขอของคุณได้ที่นี่" />
                 ) : (
                   <div style={{ display: "grid", gap: "var(--sp-5)", maxWidth: 700 }}>
                     {requests.map((r) => (
                       <div key={r.id} className="kru-card" style={{ padding: "var(--sp-6)", display: "flex", alignItems: "center", gap: "var(--sp-6)" }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: "var(--fw-semibold)" }}>{r.title}</div>
-                          <div style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>{r.votes} โหวต</div>
+                          <div style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>คำขอของคุณ</div>
                         </div>
                         <Badge tone={REQUEST_STATUS_TONE[r.status]}>{REQUEST_STATUS_LABEL[r.status]}</Badge>
                       </div>
@@ -599,6 +621,17 @@ export default function TeacherAppPage() {
                         {plan.isPopular && <Badge tone="success">ยอดนิยม</Badge>}
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
                         <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
+                        <div className="kru-plan-benefits">
+                          <strong>สิทธิ์ที่ได้รับ</strong>
+                          <ul>
+                            {plan.benefits.map((benefit) => (
+                              <li key={benefit.featureId}>
+                                <CheckCircle2 size={16} aria-hidden="true" />
+                                <span>{benefitLabel(benefit)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                         {plan.id === "founder" && (
                           <div role="status" className="kru-founder-capacity">
                             {founderCapacity ? (
@@ -659,6 +692,10 @@ export default function TeacherAppPage() {
                 </p>
               </div>
             )}
+
+            {view === "account" && profile && (
+              <ProfileSettings supabase={supabase} profile={profile} onUpdated={setProfile} />
+            )}
           </main>
         </div>
       </div>
@@ -687,10 +724,14 @@ export default function TeacherAppPage() {
         .kru-app-sidebar { display: none; }
         .kru-app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
         .kru-app-header { background: var(--white); border-bottom: 1px solid var(--border-subtle); height: 64px; padding: 0 var(--sp-5); display: flex; align-items: center; gap: var(--sp-4); position: sticky; top: 0; z-index: 10; }
-        .kru-app-header-account { display: none; }
+        .kru-app-header-account { display: none; border: 0; border-radius: var(--r-md); background: transparent; color: inherit; text-align: left; cursor: pointer; }
+        .kru-app-header-account:focus-visible { outline: 0; box-shadow: var(--ring-focus); }
+        .kru-app-header-account__copy { display: grid; gap: 2px; font-size: var(--fs-14); line-height: 1.3; }
+        .kru-app-header-account__copy small { color: var(--text-muted); font-size: var(--fs-13); }
         .kru-admin-return-mobile { flex: 0 0 auto; }
         .kru-app-content { padding-bottom: calc(152px + env(safe-area-inset-bottom)) !important; overflow-x: hidden; }
         .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; min-height: 64px; padding-bottom: env(safe-area-inset-bottom); background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
+        .kru-app-mobile-tabs > button { min-width: 0; min-height: 56px; }
         .kru-resource-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); align-items: stretch; gap: var(--gap-grid); }
         .kru-discovery-controls { padding: var(--sp-5); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: end; border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-card); }
         .kru-filter-field { min-width: 0; display: grid; gap: 7px; color: var(--text-body); font-size: var(--fs-13); font-weight: var(--fw-semibold); }
@@ -716,6 +757,10 @@ export default function TeacherAppPage() {
         .kru-founder-capacity strong { color: var(--text-strong); }
         .kru-founder-capacity__track { height: 7px; margin-top: 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--purple-100); }
         .kru-founder-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-500), var(--pink-500)); }
+        .kru-plan-benefits { margin-top: var(--sp-5); display: grid; gap: var(--sp-3); }
+        .kru-plan-benefits ul { margin: 0; padding: 0; display: grid; gap: 8px; }
+        .kru-plan-benefits li { display: flex; align-items: flex-start; gap: 8px; color: var(--text-body); font-size: var(--fs-14); list-style: none; }
+        .kru-plan-benefits li > :first-child { flex: 0 0 auto; margin-top: 2px; color: var(--status-success-fg); }
         .kru-app-content a.kru-btn:hover { color: var(--text-on-brand); text-decoration: none; }
         .kru-contact-fab { position: fixed; right: max(var(--sp-5), env(safe-area-inset-right)); bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 40; display: grid; justify-items: end; gap: var(--sp-3); }
         .kru-contact-fab__trigger { min-height: 48px; padding: 0 var(--sp-5); display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: var(--r-pill); color: var(--white); background: linear-gradient(135deg, var(--purple-700), var(--pink-700)); box-shadow: var(--shadow-xl); font-weight: var(--fw-semibold); cursor: pointer; }
