@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -257,6 +258,26 @@ export default function LandingPage() {
             )}
           </section>
         )}
+
+        <section className="kru-game-spotlight" aria-labelledby="tugOfWarGameTitle">
+          <div className="kru-game-spotlight__copy">
+            <span className="kru-game-spotlight__eyebrow"><Sparkles size={16} aria-hidden="true" /> เกมฟรี · ไม่ต้องสมัคร</span>
+            <h2 id="tugOfWarGameTitle">ชักเย่อประลองความรู้</h2>
+            <p>แบ่งเป็นทีมแมวและทีมกระต่าย ผลัดกันตอบคณิตศาสตร์ ภาษาอังกฤษ และภาษาไทยบนจอเดียว เหมาะสำหรับเล่นร่วมกันหรือฉายหน้าห้อง</p>
+            <a href="/games/tug-of-war/index.html" className="kru-btn kru-btn--primary kru-btn--lg">
+              เริ่มเล่นทันที <ArrowRight size={18} aria-hidden="true" />
+            </a>
+          </div>
+          <a href="/games/tug-of-war/index.html" className="kru-game-spotlight__cover" aria-label="เปิดเกมชักเย่อประลองความรู้">
+            <Image
+              src="/games/tug-of-war/cover.png"
+              alt="ทีมแมวและทีมกระต่ายกำลังชักเย่อในสนามกีฬาสี"
+              width={1672}
+              height={941}
+              sizes="(max-width: 860px) calc(100vw - 40px), 46vw"
+            />
+          </a>
+        </section>
 
         <section style={{ maxWidth: "var(--container-max)", margin: "0 auto", padding: "var(--sp-12) var(--sp-5)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
@@ -651,6 +672,75 @@ export default function LandingPage() {
           line-height: 1;
         }
 
+        .kru-game-spotlight {
+          width: min(calc(100% - 2 * var(--sp-5)), var(--container-max));
+          margin: var(--sp-11) auto 0;
+          padding: clamp(22px, 4vw, 42px);
+          display: grid;
+          grid-template-columns: minmax(0, .82fr) minmax(320px, 1.18fr);
+          align-items: center;
+          gap: clamp(22px, 4vw, 46px);
+          overflow: hidden;
+          border-radius: var(--r-panel);
+          background:
+            radial-gradient(circle at 12% 12%, rgba(244,114,182,.34), transparent 34%),
+            linear-gradient(135deg, #4c1d95, #6d28d9 58%, #9d174d);
+          box-shadow: var(--shadow-lg);
+          color: white;
+        }
+
+        .kru-game-spotlight__eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 5px 11px;
+          border: 1px solid rgba(255,255,255,.3);
+          border-radius: var(--r-pill);
+          background: rgba(255,255,255,.12);
+          font-size: var(--fs-13);
+          font-weight: var(--fw-bold);
+        }
+
+        .kru-game-spotlight h2 {
+          margin-top: var(--sp-4);
+          color: white;
+          font-size: clamp(2rem, 4.2vw, var(--fs-44));
+          line-height: var(--lh-snug);
+        }
+
+        .kru-game-spotlight p {
+          margin: var(--sp-4) 0 var(--sp-6);
+          color: rgba(255,255,255,.88);
+          font-size: var(--fs-17);
+          line-height: var(--lh-loose);
+        }
+
+        .kru-game-spotlight__copy > a:hover {
+          color: white;
+          text-decoration: none;
+        }
+
+        .kru-game-spotlight__cover {
+          display: block;
+          overflow: hidden;
+          border: 3px solid rgba(255,255,255,.72);
+          border-radius: var(--r-card);
+          background: white;
+          box-shadow: 0 18px 40px rgba(21,5,47,.32);
+          transition: transform var(--transition-base), box-shadow var(--transition-base);
+        }
+
+        .kru-game-spotlight__cover:hover {
+          transform: translateY(-3px) rotate(.25deg);
+          box-shadow: 0 24px 54px rgba(21,5,47,.4);
+        }
+
+        .kru-game-spotlight__cover img {
+          width: 100%;
+          height: auto;
+          display: block;
+        }
+
         .kru-free-showcase {
           max-width: var(--container-max);
           margin: 0 auto;
@@ -946,6 +1036,10 @@ export default function LandingPage() {
           .kru-discovery-hero__grid {
             grid-template-columns: minmax(0, 1fr);
           }
+
+          .kru-game-spotlight {
+            grid-template-columns: minmax(0, 1fr);
+          }
         }
 
         @media (max-width: 560px) {
@@ -984,7 +1078,8 @@ export default function LandingPage() {
 
         @media (prefers-reduced-motion: reduce) {
           .kru-discovery-result-card,
-          .kru-sample-card {
+          .kru-sample-card,
+          .kru-game-spotlight__cover {
             transition: none;
           }
         }
