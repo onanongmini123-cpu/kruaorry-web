@@ -7,7 +7,6 @@ import { Mascot } from "@/components/Mascot";
 import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { safeAuthNext } from "@/lib/authReturnPath";
-import { isAuthenticatedAccount } from "@/lib/authUser";
 
 const POINTS = [
   "สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง",
@@ -49,7 +48,7 @@ function LoginForm() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (isAuthenticatedAccount(user)) router.replace(next);
+      if (user) router.replace(next);
     }).catch(() => {
       // A temporary auth/network failure must not prevent manual sign-in.
     });

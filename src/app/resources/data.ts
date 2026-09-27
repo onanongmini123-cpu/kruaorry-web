@@ -3,7 +3,6 @@ import { withTimeout } from "@/lib/asyncTimeout";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import { PUBLIC_RESOURCE_SELECT, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
 import { collectResourcePages } from "./pagination";
-import { isAuthenticatedAccount } from "@/lib/authUser";
 
 type LoadResult = { status: "ready"; resources: PublicResource[] } | { status: "unavailable"; resources: [] };
 
@@ -91,7 +90,7 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
     // Supabase anonymous sign-ins have a user id, but are still guests for
     // review/report and member entitlement purposes. Never query a profile or
     // capabilities for that temporary identity.
-    if (!isAuthenticatedAccount(user)) return GUEST_VIEWER;
+    if (!user || user.is_anonymous === true) return GUEST_VIEWER;
 
     const [profileResult, entitlementResult] = await Promise.all([
       withTimeout(

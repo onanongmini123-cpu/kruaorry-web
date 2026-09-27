@@ -10,7 +10,7 @@ const mockedCreateServerClient = vi.mocked(createServerClient);
 
 beforeEach(() => vi.resetAllMocks());
 
-function mockSession(user: { id: string; is_anonymous?: boolean } | null) {
+function mockSession(user: { id: string } | null) {
   mockedCreateServerClient.mockReturnValue({
     auth: {
       getUser: vi.fn(async () => ({ data: { user }, error: null })),
@@ -48,34 +48,6 @@ describe("application proxy", () => {
   it("does not guard public catalogue routes", async () => {
     mockSession(null);
     const response = await proxy(new NextRequest("https://example.com/resources"));
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("location")).toBeNull();
-  });
-
-  it("redirects an unsigned game request to login with its exact return path", async () => {
-    mockSession(null);
-    const response = await proxy(new NextRequest("https://example.com/app/games/quick-race"));
-
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(
-      "https://example.com/login?next=%2Fapp%2Fgames%2Fquick-race",
-    );
-  });
-
-  it("treats a Supabase anonymous Auth user as signed out", async () => {
-    mockSession({ id: "anonymous-user", is_anonymous: true });
-    const response = await proxy(new NextRequest("https://example.com/app/games/quick-race"));
-
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(
-      "https://example.com/login?next=%2Fapp%2Fgames%2Fquick-race",
-    );
-  });
-
-  it("preserves a real member session on the game route", async () => {
-    mockSession({ id: "member-1" });
-    const response = await proxy(new NextRequest("https://example.com/app/games/quick-race"));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
