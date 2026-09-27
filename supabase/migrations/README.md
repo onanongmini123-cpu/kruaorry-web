@@ -108,6 +108,16 @@ normalized target URL, or protected catalogue metadata conflicts. It was
 applied and recorded on the live project on 2026-09-27; a post-apply ledger
 check confirmed that local and remote both contain version `20260927195000`.
 
+Migration `20260927203000_033_public_bingo_fun_resource.sql` publishes the
+external **บิงโกหรรษา** game as a free public catalogue resource for Grades
+1–3. It records the verified solo and whole-class modes, three complete content
+sets, printable 3×3/4×4 boards, the production Site URL, and a
+production-hosted cover. The migration is idempotent, grants no paid plan, and
+fails closed when its title, normalized target URL, or protected catalogue
+metadata conflicts. It was applied and recorded on the live project on
+2026-09-27; a post-apply ledger check confirmed that local and remote both
+contain version `20260927203000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
