@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isProtectedAppPath } from "@/lib/routeAccess";
+import { isAuthenticatedAccount } from "@/lib/authUser";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -30,7 +31,7 @@ export async function proxy(request: NextRequest) {
 
   const protectedPath = isProtectedAppPath(request.nextUrl.pathname);
 
-  if (protectedPath && !user) {
+  if (protectedPath && !isAuthenticatedAccount(user)) {
     const url = request.nextUrl.clone();
     const requestedPath = `${url.pathname}${url.search}`;
     url.pathname = "/login";

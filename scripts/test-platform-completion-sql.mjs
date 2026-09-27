@@ -7,6 +7,7 @@ const migrations = [
   "20260925110000_028_resource_access_featured_benefits.sql",
   "20260925120000_029_private_requests_reviews_reports.sql",
   "20260925130000_030_member_profile_avatars.sql",
+  "20260927160000_031_authenticated_quick_race_resource.sql",
 ];
 
 const USERS = {
@@ -23,6 +24,7 @@ const RESOURCES = {
   lockedFile: "10000000-0000-4000-8000-000000000005",
   anotherPublic: "10000000-0000-4000-8000-000000000006",
   newLegacyPremium: "10000000-0000-4000-8000-000000000007",
+  quickRace: "70c9b34d-00d8-4524-b9c5-766b45c7152a",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -263,6 +265,68 @@ try {
     await db.exec(sql);
     process.stdout.write(`executed ${filename}\n`);
   }
+
+  const quickRaceBeforeReplay = (await db.query(`
+    select id::text, title, meta, category, grade_levels, delivery_mode,
+      cta_url, cover_image_url, tags, is_free, status, published_at,
+      access_mode, file_path, file_name, file_size, file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.quickRace])).rows[0];
+  assert.equal(quickRaceBeforeReplay.title, "รถแข่งตอบไว");
+  assert.equal(quickRaceBeforeReplay.meta, "เว็บเกม · 2–4 ทีม · ป.1–3");
+  assert.equal(quickRaceBeforeReplay.category, "เกมการศึกษา");
+  assert.deepEqual(quickRaceBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(quickRaceBeforeReplay.delivery_mode, "web_app");
+  assert.equal(quickRaceBeforeReplay.cta_url, "/app/games/quick-race");
+  assert.equal(quickRaceBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/quick-race-quiz.jpg");
+  assert.deepEqual(quickRaceBeforeReplay.tags, ["เกม", "ทบทวนบทเรียน", "คณิตศาสตร์", "ภาษาอังกฤษ"]);
+  assert.equal(quickRaceBeforeReplay.is_free, true);
+  assert.equal(quickRaceBeforeReplay.status, "published");
+  assert.equal(quickRaceBeforeReplay.access_mode, "authenticated");
+  assert.equal(quickRaceBeforeReplay.file_path, null);
+  assert.equal(quickRaceBeforeReplay.file_name, null);
+  assert.equal(quickRaceBeforeReplay.file_size, null);
+  assert.equal(quickRaceBeforeReplay.file_mime_type, null);
+  assert.equal(quickRaceBeforeReplay.created_by, null);
+  assert.ok(quickRaceBeforeReplay.published_at);
+
+  const quickRaceSql = readFileSync(
+    new URL("../supabase/migrations/20260927160000_031_authenticated_quick_race_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(quickRaceSql);
+  const quickRaceAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.quickRace],
+  )).rows[0];
+  assert.equal(quickRaceAfterReplay.count, 1);
+  assert.equal(
+    new Date(quickRaceAfterReplay.published_at).toISOString(),
+    new Date(quickRaceBeforeReplay.published_at).toISOString(),
+    "replaying the idempotent seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.quickRace],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'authenticated'",
+    [RESOURCES.quickRace],
+  )).rows[0].count, 1);
+
+  assert.equal((await resolveAs("anon", null, RESOURCES.quickRace, true)).length, 0);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.quickRace, true)).length, 0);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.quickRace, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.quickRace, false)).length, 1);
+  for (const plan of ["founder", "lifetime"]) {
+    await asRole("authenticated", USERS.admin, () => db.query(
+      "update public.profiles set plan = $1 where id = $2", [plan, USERS.other],
+    ));
+    assert.equal((await resolveAs("authenticated", USERS.other, RESOURCES.quickRace, false)).length, 1);
+  }
+  await asRole("authenticated", USERS.admin, () => db.query(
+    "update public.profiles set plan = 'free' where id = $1", [USERS.other],
+  ));
 
   // Existing semantics are preserved by the backfill.
   const backfill = await db.query(`

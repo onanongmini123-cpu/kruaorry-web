@@ -84,6 +84,12 @@ this order:
 - `20260925130000_030_member_profile_avatars.sql` — limits self-service profile
   edits to display name/avatar data and provisions owner-scoped private avatar
   Storage objects served through short-lived signed URLs.
+- `20260927160000_031_authenticated_quick_race_resource.sql` — publishes the
+  server-hosted “รถแข่งตอบไว” resource for every real signed-in account,
+  including Free, without exposing its executable bundle in the public web
+  root or adding plan-specific grants. Deploy the protected route and cover
+  before applying this migration so the new catalogue action never points to
+  a missing route.
 
 Their combined SQL/RLS behavior is exercised by
 `npm run test:platform-completion-sql`; this local test does not establish

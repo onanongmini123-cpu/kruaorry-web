@@ -5,6 +5,7 @@ describe("route access", () => {
   it("protects only the member and admin application route families", () => {
     expect(isProtectedAppPath("/app")).toBe(true);
     expect(isProtectedAppPath("/app/settings")).toBe(true);
+    expect(isProtectedAppPath("/app/games/quick-race")).toBe(true);
     expect(isProtectedAppPath("/admin")).toBe(true);
     expect(isProtectedAppPath("/admin/members")).toBe(true);
     expect(isProtectedAppPath("/application")).toBe(false);
