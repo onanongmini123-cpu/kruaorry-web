@@ -8,6 +8,7 @@ const migrations = [
   "20260925120000_029_private_requests_reviews_reports.sql",
   "20260925130000_030_member_profile_avatars.sql",
   "20260927193000_031_public_vocab_defuse_resource.sql",
+  "20260927195000_032_public_treasure_chest_resource.sql",
 ];
 
 const USERS = {
@@ -25,6 +26,7 @@ const RESOURCES = {
   anotherPublic: "10000000-0000-4000-8000-000000000006",
   newLegacyPremium: "10000000-0000-4000-8000-000000000007",
   vocabDefuse: "6cc12b2d-5ebc-4533-85d0-13038a0dc189",
+  treasureChest: "4c1203ce-6e4f-40bd-8dc2-01713e88dcdd",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -318,6 +320,59 @@ try {
   assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.vocabDefuse, true)).length, 1);
   assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.vocabDefuse, false)).length, 1);
   assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.vocabDefuse, false)).length, 1);
+
+  const treasureChestBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.treasureChest])).rows[0];
+  assert.equal(treasureChestBeforeReplay.title, "เปิดหีบสมบัติ");
+  assert.equal(treasureChestBeforeReplay.meta, "เว็บเกมทีม · 120 ข้อ · คณิตศาสตร์และอังกฤษ · 3 ระดับ · 2–4 ทีม · ป.1–6");
+  assert.equal(treasureChestBeforeReplay.category, "คณิตศาสตร์และภาษาอังกฤษ");
+  assert.deepEqual(treasureChestBeforeReplay.grade_levels, ["p1", "p2", "p3", "p4", "p5", "p6"]);
+  assert.equal(treasureChestBeforeReplay.delivery_mode, "web_app");
+  assert.equal(treasureChestBeforeReplay.cta_url, "https://kru-treasure-chest-2026.onanongmini123.chatgpt.site");
+  assert.equal(treasureChestBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/treasure-chest.jpg");
+  assert.deepEqual(treasureChestBeforeReplay.tags, ["เกม", "คณิตศาสตร์", "ภาษาอังกฤษ", "ประถมศึกษา", "กิจกรรมกลุ่ม"]);
+  assert.equal(treasureChestBeforeReplay.is_free, true);
+  assert.equal(treasureChestBeforeReplay.status, "published");
+  assert.equal(treasureChestBeforeReplay.access_mode, "public");
+  assert.equal(treasureChestBeforeReplay.file_path, null);
+  assert.equal(treasureChestBeforeReplay.file_name, null);
+  assert.equal(treasureChestBeforeReplay.file_size, null);
+  assert.equal(treasureChestBeforeReplay.file_mime_type, null);
+  assert.equal(treasureChestBeforeReplay.created_by, null);
+  assert.ok(treasureChestBeforeReplay.published_at);
+
+  const treasureChestSql = readFileSync(
+    new URL("../supabase/migrations/20260927195000_032_public_treasure_chest_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(treasureChestSql);
+  const treasureChestAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.treasureChest],
+  )).rows[0];
+  assert.equal(treasureChestAfterReplay.count, 1);
+  assert.equal(
+    new Date(treasureChestAfterReplay.published_at).toISOString(),
+    new Date(treasureChestBeforeReplay.published_at).toISOString(),
+    "replaying the Treasure Chest seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.treasureChest],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.treasureChest],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.treasureChest, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.treasureChest, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.treasureChest, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.treasureChest, false)).length, 1);
 
   // Existing semantics are preserved by the backfill.
   const backfill = await db.query(`
