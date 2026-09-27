@@ -9,6 +9,7 @@ const migrations = [
   "20260925130000_030_member_profile_avatars.sql",
   "20260927193000_031_public_vocab_defuse_resource.sql",
   "20260927195000_032_public_treasure_chest_resource.sql",
+  "20260927203000_033_public_bingo_fun_resource.sql",
 ];
 
 const USERS = {
@@ -27,6 +28,7 @@ const RESOURCES = {
   newLegacyPremium: "10000000-0000-4000-8000-000000000007",
   vocabDefuse: "6cc12b2d-5ebc-4533-85d0-13038a0dc189",
   treasureChest: "4c1203ce-6e4f-40bd-8dc2-01713e88dcdd",
+  bingoFun: "03ae013c-1409-4cb1-aa7c-ce264a94312a",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -373,6 +375,108 @@ try {
   assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.treasureChest, true)).length, 1);
   assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.treasureChest, false)).length, 1);
   assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.treasureChest, false)).length, 1);
+
+  const bingoFunBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.bingoFun])).rows[0];
+  assert.equal(bingoFunBeforeReplay.title, "บิงโกหรรษา");
+  assert.equal(bingoFunBeforeReplay.meta, "เว็บเกมบิงโก · 3 ชุด · เดี่ยวและทั้งห้อง · กระดาน 3×3/4×4 · 1–40 ใบ · ป.1–3");
+  assert.equal(bingoFunBeforeReplay.description, "เกมบิงโกงานวัดความรู้สำหรับเล่นเดี่ยวบนอุปกรณ์หรือเล่นทั้งห้องจากจอครูหนึ่งจอ เลือกชุดตัวเลข 1–30 คำศัพท์สัตว์อย่างน้อย 24 คำ หรือผลบวกอย่างน้อย 24 ค่า โหมดเดี่ยวใช้กระดาน 3×3 แตะคำตอบจากคำใบ้และขอเฉลยช่วยได้ ส่วนโหมดครูฉายจอสร้างกระดาน 3×3 หรือ 4×4 ได้ 1–40 ใบพร้อมรหัสและสั่งพิมพ์ ครูสุ่มรายการแบบไม่ซ้ำ ดูประวัติ และกรอกรหัสเพื่อตรวจรายการที่เรียกก่อนยืนยันผู้ชนะ ระบบไม่อ้างว่าอ่านรอยทำเครื่องหมายบนกระดาษได้");
+  assert.equal(bingoFunBeforeReplay.category, "คณิตศาสตร์และภาษาอังกฤษ");
+  assert.deepEqual(bingoFunBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(bingoFunBeforeReplay.delivery_mode, "web_app");
+  assert.equal(bingoFunBeforeReplay.cta_url, "https://kru-bingo-fun-2026.onanongmini123.chatgpt.site");
+  assert.equal(bingoFunBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/bingo-fun.jpg");
+  assert.deepEqual(bingoFunBeforeReplay.tags, ["เกม", "บิงโก", "คณิตศาสตร์", "ภาษาอังกฤษ", "กิจกรรมทั้งห้อง"]);
+  assert.equal(bingoFunBeforeReplay.is_free, true);
+  assert.equal(bingoFunBeforeReplay.status, "published");
+  assert.equal(bingoFunBeforeReplay.access_mode, "public");
+  assert.equal(bingoFunBeforeReplay.file_path, null);
+  assert.equal(bingoFunBeforeReplay.file_name, null);
+  assert.equal(bingoFunBeforeReplay.file_size, null);
+  assert.equal(bingoFunBeforeReplay.file_mime_type, null);
+  assert.equal(bingoFunBeforeReplay.created_by, null);
+  assert.ok(bingoFunBeforeReplay.published_at);
+
+  const bingoFunSql = readFileSync(
+    new URL("../supabase/migrations/20260927203000_033_public_bingo_fun_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(bingoFunSql);
+  const bingoFunAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.bingoFun],
+  )).rows[0];
+  assert.equal(bingoFunAfterReplay.count, 1);
+  assert.equal(
+    new Date(bingoFunAfterReplay.published_at).toISOString(),
+    new Date(bingoFunBeforeReplay.published_at).toISOString(),
+    "replaying the Bingo Fun seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.bingoFun],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.bingoFun],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.bingoFun, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.bingoFun, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.bingoFun, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.bingoFun, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000033',
+        'บิงโกหรรษา',
+        'web_app',
+        'https://duplicate-title.test/bingo',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(bingoFunSql),
+      /Bingo Fun title or target already belongs to another resource/,
+      "the Bingo Fun seed must reject a duplicate title owned by another resource",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000034',
+        'เกมบิงโกชื่ออื่น',
+        'web_app',
+        'https://kru-bingo-fun-2026.onanongmini123.chatgpt.site/',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(bingoFunSql),
+      /Bingo Fun title or target already belongs to another resource/,
+      "the Bingo Fun seed must reject a normalized duplicate target URL",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
 
   // Existing semantics are preserved by the backfill.
   const backfill = await db.query(`
