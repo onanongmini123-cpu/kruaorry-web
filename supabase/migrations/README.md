@@ -89,6 +89,13 @@ Their combined SQL/RLS behavior is exercised by
 `npm run test:platform-completion-sql`; the live ledger currently matches the
 local chain through migration `030`.
 
+Migration `20260927193000_031_public_vocab_defuse_resource.sql` publishes the
+external **กู้ระเบิดคำศัพท์** web game as a free public catalogue resource. It
+records the six primary grade levels, a production-hosted cover, and the
+verified public game URL without storing a private file target or granting a
+paid plan. The migration is idempotent and fails closed if the title, target,
+or protected catalogue metadata conflicts with an existing row.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
