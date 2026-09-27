@@ -104,7 +104,9 @@ external **เปิดหีบสมบัติ** team game as a free public 
 records the verified 120-question scope, both subject areas, all six primary
 grade levels, the production Site URL, and a production-hosted cover. The
 migration is idempotent, grants no paid plan, and fails closed when its title,
-normalized target URL, or protected catalogue metadata conflicts.
+normalized target URL, or protected catalogue metadata conflicts. It was
+applied and recorded on the live project on 2026-09-27; a post-apply ledger
+check confirmed that local and remote both contain version `20260927195000`.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
