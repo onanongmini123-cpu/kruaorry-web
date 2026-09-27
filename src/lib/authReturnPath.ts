@@ -8,7 +8,6 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 const BASE = "https://return-path.invalid";
 const APP_VIEWS = new Set(["home", "library", "favorites", "plans", "requests"]);
 const APP_FILTER_PARAMS = ["resource", "view", "q", "category", "grade"] as const;
-const QUICK_RACE_PATH = "/app/games/quick-race";
 
 function hasOnlyParams(params: URLSearchParams, allowed: readonly string[]): boolean {
   const keys = [...params.keys()];
@@ -23,10 +22,6 @@ export function safeAuthNext(raw: string | null | undefined): string {
   try {
     const url = new URL(raw, BASE);
     if (url.origin !== BASE || url.hash) return "/app";
-
-    if ((url.pathname === QUICK_RACE_PATH || url.pathname === `${QUICK_RACE_PATH}/`) && !url.search) {
-      return QUICK_RACE_PATH;
-    }
 
     if (url.pathname === "/app") {
       if (!hasOnlyParams(url.searchParams, APP_FILTER_PARAMS)) return "/app";

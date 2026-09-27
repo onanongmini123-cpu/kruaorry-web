@@ -11,8 +11,6 @@ describe("safeAuthNext", () => {
     expect(safeAuthNext(`/download/${id}?name=${encodeURIComponent("ใบงานภาษาไทย.pdf")}&autoclose=1`))
       .toBe(`/download/${id}?name=${encodeURIComponent("ใบงานภาษาไทย.pdf")}&autoclose=1`);
     expect(safeAuthNext("/app?view=favorites")).toBe("/app?view=favorites");
-    expect(safeAuthNext("/app/games/quick-race")).toBe("/app/games/quick-race");
-    expect(safeAuthNext("/app/games/quick-race/")).toBe("/app/games/quick-race");
     expect(safeAuthNext("/app?view=library&q=%E0%B8%A0%E0%B8%B2%E0%B8%A9%E0%B8%B2%E0%B9%84%E0%B8%97%E0%B8%A2&category=%E0%B9%83%E0%B8%9A%E0%B8%87%E0%B8%B2%E0%B8%99&grade=p2"))
       .toBe("/app?view=library&q=%E0%B8%A0%E0%B8%B2%E0%B8%A9%E0%B8%B2%E0%B9%84%E0%B8%97%E0%B8%A2&category=%E0%B9%83%E0%B8%9A%E0%B8%87%E0%B8%B2%E0%B8%99&grade=p2");
   });
@@ -25,8 +23,6 @@ describe("safeAuthNext", () => {
     "/\\evil.example/path",
     "/admin",
     "/auth/callback",
-    "/app/games/quick-race/app.js",
-    "/app/games/quick-race?source=external",
     "/download/not-a-uuid",
     `/download/${id}?autoclose=0`,
     `/download/${id}?name=a%2Fb.pdf`,
