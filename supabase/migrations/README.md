@@ -118,6 +118,16 @@ metadata conflicts. It was applied and recorded on the live project on
 2026-09-27; a post-apply ledger check confirmed that local and remote both
 contain version `20260927203000`.
 
+Migration `20260927214500_034_public_picture_word_match_resource.sql`
+publishes the external **จับคู่ภาพกับคำ** game as a free public catalogue
+resource for Grades 1–3. It records the verified 24-pair, three-category scope,
+solo and two-player modes, 4/6/8-pair difficulty options, the production Site
+URL, and a production-hosted cover. The migration is idempotent, grants no paid
+plan, and fails closed when its title, normalized target URL, or protected
+catalogue metadata conflicts. It was applied and recorded on the live project
+on 2026-09-27; a post-apply ledger check confirmed that local and remote both
+contain version `20260927214500`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
