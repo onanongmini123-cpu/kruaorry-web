@@ -167,6 +167,17 @@ target URL, or protected catalogue metadata conflicts. It was applied and
 recorded on the live project on 2026-09-28; a post-apply ledger check confirmed
 that local and remote both contain version `20260928103000`.
 
+Migration `20260928113000_039_public_word_squad_resource.sql` publishes the
+external **Word Squad — รวมแก๊งคำศัพท์** game as a free public catalogue
+resource for Grades 2–12. It records the reviewed 18-template, 72-group and
+432-entry vocabulary bank, solo/pair/team/class modes, configurable board,
+time, heart and hint options, the production Site URL, and a production-hosted
+cover. The migration is idempotent, grants no paid plan, and fails closed when
+its title, normalized target URL, or protected catalogue metadata conflicts.
+It was applied and recorded on the live project on 2026-09-28; a post-apply
+ledger check confirmed that local and remote both contain version
+`20260928113000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
