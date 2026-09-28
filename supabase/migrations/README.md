@@ -189,6 +189,17 @@ metadata conflicts. It was applied and recorded on the live project on
 2026-09-28; a post-apply ledger check confirmed that local and remote both
 contain version `20260928125500`.
 
+Migration `20260928140000_041_public_listening_detective_resource.sql`
+publishes the external **Listening Detective** game as a free public catalogue
+resource for Kindergarten–Grade 12. It records the reviewed 600-clue bank,
+six listening types, five age-adjusted levels, solo/2–12-player/2–4-team modes,
+fair turn totals, American/British audio support, the production Site URL, and
+a production-hosted cover. The migration is idempotent, grants no paid plan,
+and fails closed when its title, normalized target URL, or protected catalogue
+metadata conflicts. It was applied and recorded on the live project on
+2026-09-28; a post-apply ledger check confirmed that local and remote both
+contain version `20260928140000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
