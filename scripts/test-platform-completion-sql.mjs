@@ -15,6 +15,7 @@ const migrations = [
   "20260928093000_036_public_vocab_fishing_resource.sql",
   "20260928100000_037_public_sentence_train_resource.sql",
   "20260928103000_038_public_ice_cream_math_resource.sql",
+  "20260928113000_039_public_word_squad_resource.sql",
 ];
 
 const USERS = {
@@ -39,6 +40,7 @@ const RESOURCES = {
   vocabFishing: "2fd4da60-b60a-43ea-b382-5b2065e15241",
   sentenceTrain: "427fb64e-34e0-4f8b-be0e-ee5131e78060",
   iceCreamMath: "a6bdbe60-2672-45ba-8773-bab8cd700ef4",
+  wordSquad: "ace15fc3-a6da-46b6-b3bc-bdfdd8f7b5c8",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -939,6 +941,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000043",
     duplicateUrlId: "90000000-0000-4000-8000-000000000044",
     alternateTitle: "เกมไอศกรีมชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.wordSquad,
+    migration: "20260928113000_039_public_word_squad_resource.sql",
+    label: "Word Squad",
+    title: "Word Squad — รวมแก๊งคำศัพท์",
+    meta: "เว็บเกมภาษาอังกฤษ · 16 คำ/กระดาน · 4 กลุ่ม · เดี่ยว/ทีม/ทั้งห้อง · ป.2–ม.6",
+    description: "เกมจัดกลุ่มคำศัพท์ธีมทีมสายลับสำหรับนักเรียน ป.2–ม.6 ในแต่ละกระดานมีคำ 16 คำให้ค้นหาความสัมพันธ์และจัดเป็น 4 กลุ่ม กลุ่มละ 4 คำ เลือกคำ 4 คำแล้วกดตรวจ เมื่อถูกระบบล็อกกลุ่มและเปิดชื่อหมวด เล่นได้ทั้งคนเดียว 2 คน 2–4 ทีม หรือทั้งห้อง มีชุดเนื้อหาที่ตรวจสอบแล้ว ครอบคลุม Animals, Food, School, Verbs, Adjectives, Synonyms, Antonyms, Collocations และ Idioms โดยไม่สร้างคำแบบอิสระ ครูเลือกระดับชั้น หมวด จำนวนกระดาน เวลา หัวใจ และคำใบ้ได้ จัดกลุ่มถูกได้ 100 คะแนน โบนัสเวลาสูงสุด 50 คะแนน ใช้คำใบ้หัก 25 คะแนน ส่วนคำตอบผิดเสียหัวใจโดยชุดเดิมไม่เสียซ้ำ พร้อมสรุปคะแนน เวลา ความแม่นยำ หมวดที่พลาด และคำศัพท์ที่ควรทบทวน",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["p2", "p3", "p4", "p5", "p6", "m1", "m2", "m3", "m4", "m5", "m6"],
+    ctaUrl: "https://word-squad-vocabulary-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/word-squad.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "คำศัพท์", "จัดหมวดหมู่", "คิดวิเคราะห์", "Synonyms", "Antonyms", "Collocations", "Idioms"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000045",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000046",
+    alternateTitle: "เกมรวมแก๊งชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.
