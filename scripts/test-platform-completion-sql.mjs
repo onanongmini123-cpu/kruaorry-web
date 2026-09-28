@@ -17,6 +17,7 @@ const migrations = [
   "20260928103000_038_public_ice_cream_math_resource.sql",
   "20260928113000_039_public_word_squad_resource.sql",
   "20260928125500_040_public_daily_word_detective_resource.sql",
+  "20260928140000_041_public_listening_detective_resource.sql",
 ];
 
 const USERS = {
@@ -43,6 +44,7 @@ const RESOURCES = {
   iceCreamMath: "a6bdbe60-2672-45ba-8773-bab8cd700ef4",
   wordSquad: "ace15fc3-a6da-46b6-b3bc-bdfdd8f7b5c8",
   dailyWordDetective: "4136ab94-76c8-43c7-a622-37ed9f41b167",
+  listeningDetective: "df55f95a-b307-4aec-8b42-e6b9a1244a6e",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -977,6 +979,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000047",
     duplicateUrlId: "90000000-0000-4000-8000-000000000048",
     alternateTitle: "เกมนักสืบคำศัพท์ชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.listeningDetective,
+    migration: "20260928140000_041_public_listening_detective_resource.sql",
+    label: "Listening Detective",
+    title: "Listening Detective",
+    meta: "เว็บเกมภาษาอังกฤษ · 600 เบาะแส · 6 ประเภทเสียง · เดี่ยว/2–12 คน/2–4 ทีม · อนุบาล–ม.6",
+    description: "เกมฝึกฟังภาษาอังกฤษธีมสำนักงานนักสืบสำหรับผู้เรียนอนุบาล–ม.6 มีคลังเบาะแสที่ตรวจแล้ว 600 ข้อ ครบคำศัพท์ ประโยคสั้น คำสั่ง บทสนทนา เรื่องเล่า รายละเอียด และการระบุบุคคล พร้อม 5 ระดับความยาก เล่นได้ทั้งคนเดียว ผลัดกัน 2–12 คน หรือ 2–4 ทีมบนจอเดียว ระบบจัดจำนวนตาให้ทุกฝ่ายเท่ากัน เลือก 10–20 ข้อ ตัวเลือก 3–4 ข้อ สำเนียง American/British และไม่จับเวลาหรือจับเวลา 15–30 วินาที ฟังครั้งแรกได้ 100 คะแนน ครั้งที่สอง 75 คะแนน ครั้งที่สาม 50 คะแนน หากตอบผิดให้ลองใหม่หนึ่งครั้งและได้ไม่เกิน 25 คะแนน ใช้ไฟล์เสียงที่ตรวจแล้วร่วมกับเสียงสังเคราะห์ มีข้อความสำรองเมื่ออุปกรณ์ไม่มีเสียงโดยไม่นับคะแนน พร้อมสรุปความแม่นยำ คำที่ควรทบทวน และประเภทเสียงที่ควรฝึกเพิ่ม โดยเลือกไม่เก็บข้อมูลหรือเก็บเฉพาะผลล่าสุดในอุปกรณ์ได้",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["kindergarten", "p1", "p2", "p3", "p4", "p5", "p6", "m1", "m2", "m3", "m4", "m5", "m6"],
+    ctaUrl: "https://listening-detective-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/listening-detective.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "การฟัง", "จับใจความ", "คำศัพท์", "Listening Detective", "กิจกรรมทีม"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000049",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000050",
+    alternateTitle: "เกมนักสืบการฟังชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.
