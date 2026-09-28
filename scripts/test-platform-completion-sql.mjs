@@ -11,6 +11,7 @@ const migrations = [
   "20260927195000_032_public_treasure_chest_resource.sql",
   "20260927203000_033_public_bingo_fun_resource.sql",
   "20260927214500_034_public_picture_word_match_resource.sql",
+  "20260928001500_035_public_mission_wheel_resource.sql",
 ];
 
 const USERS = {
@@ -31,6 +32,7 @@ const RESOURCES = {
   treasureChest: "4c1203ce-6e4f-40bd-8dc2-01713e88dcdd",
   bingoFun: "03ae013c-1409-4cb1-aa7c-ce264a94312a",
   pictureWordMatch: "fa15179e-9937-4d25-951c-7af9ab466589",
+  missionWheel: "a7266b9c-3539-423b-9119-dbf019b887cb",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -577,6 +579,108 @@ try {
       () => db.exec(pictureWordMatchSql),
       /Picture-to-Word Match title or target already belongs to another resource/,
       "the Picture-to-Word Match seed must reject a normalized duplicate target URL",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  const missionWheelBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.missionWheel])).rows[0];
+  assert.equal(missionWheelBeforeReplay.title, "วงล้อพิชิตภารกิจ");
+  assert.equal(missionWheelBeforeReplay.meta, "เว็บเกมทีม · 60 ข้อ · 4 หมวดวิชา · ง่าย/กลาง · 2–4 ทีม · ป.1–3");
+  assert.equal(missionWheelBeforeReplay.description, "เกมตอบคำถามแบบทีมบนจอเดียวในธีมสวนสนุก สำหรับ 2–4 ทีมผลัดกันหมุนวงล้อเพื่อเลือกหมวดคณิตศาสตร์ ภาษาไทย ภาษาอังกฤษ หรือความรู้รอบตัวด้วยน้ำหนักเท่ากัน วงล้อมีหน้าที่เลือกหมวดเท่านั้น ตอบคำถาม 3 ตัวเลือกถูกได้ 1 ดาว ผิดได้ 0 ดาวพร้อมเฉลย มีคลังอย่างน้อย 60 ข้อ ระดับง่ายและกลางใช้คำถามต่างกัน ระบบจัดลำดับทีมและจำนวนตาให้เท่ากันก่อนตัดสินผู้ได้ดาวสูงสุด รองรับการชนะร่วมกัน และเลือกไม่จับเวลาหรือจับเวลา 30 วินาทีต่อข้อได้");
+  assert.equal(missionWheelBeforeReplay.category, "บูรณาการหลายวิชา");
+  assert.deepEqual(missionWheelBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(missionWheelBeforeReplay.delivery_mode, "web_app");
+  assert.equal(missionWheelBeforeReplay.cta_url, "https://kru-mission-wheel-2026.onanongmini123.chatgpt.site");
+  assert.equal(missionWheelBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/mission-wheel.jpg");
+  assert.deepEqual(missionWheelBeforeReplay.tags, ["เกม", "คณิตศาสตร์", "ภาษาไทย", "ภาษาอังกฤษ", "ความรู้รอบตัว", "กิจกรรมกลุ่ม"]);
+  assert.equal(missionWheelBeforeReplay.is_free, true);
+  assert.equal(missionWheelBeforeReplay.status, "published");
+  assert.equal(missionWheelBeforeReplay.access_mode, "public");
+  assert.equal(missionWheelBeforeReplay.file_path, null);
+  assert.equal(missionWheelBeforeReplay.file_name, null);
+  assert.equal(missionWheelBeforeReplay.file_size, null);
+  assert.equal(missionWheelBeforeReplay.file_mime_type, null);
+  assert.equal(missionWheelBeforeReplay.created_by, null);
+  assert.ok(missionWheelBeforeReplay.published_at);
+
+  const missionWheelSql = readFileSync(
+    new URL("../supabase/migrations/20260928001500_035_public_mission_wheel_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(missionWheelSql);
+  const missionWheelAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.missionWheel],
+  )).rows[0];
+  assert.equal(missionWheelAfterReplay.count, 1);
+  assert.equal(
+    new Date(missionWheelAfterReplay.published_at).toISOString(),
+    new Date(missionWheelBeforeReplay.published_at).toISOString(),
+    "replaying the Mission Wheel seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.missionWheel],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.missionWheel],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.missionWheel, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.missionWheel, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.missionWheel, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.missionWheel, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000037',
+        'วงล้อพิชิตภารกิจ',
+        'web_app',
+        'https://duplicate-title.test/mission-wheel',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(missionWheelSql),
+      /Mission Wheel title or target already belongs to another resource/,
+      "the Mission Wheel seed must reject a duplicate title owned by another resource",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000038',
+        'เกมวงล้อชื่ออื่น',
+        'web_app',
+        'https://kru-mission-wheel-2026.onanongmini123.chatgpt.site/',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(missionWheelSql),
+      /Mission Wheel title or target already belongs to another resource/,
+      "the Mission Wheel seed must reject a normalized duplicate target URL",
     );
   } finally {
     await db.exec("rollback");
