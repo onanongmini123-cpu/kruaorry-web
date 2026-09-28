@@ -157,6 +157,16 @@ metadata conflicts. It was applied and recorded on the live project on
 2026-09-28; a post-apply ledger check confirmed that local and remote both
 contain version `20260928100000`.
 
+Migration `20260928103000_038_public_ice_cream_math_resource.sql` publishes the
+external **ไอศกรีมคิดเลข** game as a free public catalogue resource for Grades
+1–3. It records the verified code-generated addition/subtraction scope, three
+number ranges, solo and alternating-pair modes, scored and practice options,
+the production Site URL, and a production-hosted cover. The migration is
+idempotent, grants no paid plan, and fails closed when its title, normalized
+target URL, or protected catalogue metadata conflicts. It was applied and
+recorded on the live project on 2026-09-28; a post-apply ledger check confirmed
+that local and remote both contain version `20260928103000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
