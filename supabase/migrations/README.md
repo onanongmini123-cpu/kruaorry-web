@@ -137,6 +137,16 @@ its title, normalized target URL, or protected catalogue metadata conflicts. It
 was applied and recorded on the live project on 2026-09-28; a post-apply ledger
 check confirmed that local and remote both contain version `20260928001500`.
 
+Migration `20260928093000_036_public_vocab_fishing_resource.sql` publishes the
+external **ตกปลาคำศัพท์** game as a free public catalogue resource for Grades
+1–3. It records the reviewed 40-word, four-category scope, solo and fair
+two-player modes, timed and untimed practice options, the production Site URL,
+and a production-hosted cover. The migration is idempotent, grants no paid
+plan, and fails closed when its title, normalized target URL, or protected
+catalogue metadata conflicts. It was applied and recorded on the live project
+on 2026-09-28; a post-apply ledger check confirmed that local and remote both
+contain version `20260928093000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
