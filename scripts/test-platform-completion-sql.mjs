@@ -16,6 +16,7 @@ const migrations = [
   "20260928100000_037_public_sentence_train_resource.sql",
   "20260928103000_038_public_ice_cream_math_resource.sql",
   "20260928113000_039_public_word_squad_resource.sql",
+  "20260928125500_040_public_daily_word_detective_resource.sql",
 ];
 
 const USERS = {
@@ -41,6 +42,7 @@ const RESOURCES = {
   sentenceTrain: "427fb64e-34e0-4f8b-be0e-ee5131e78060",
   iceCreamMath: "a6bdbe60-2672-45ba-8773-bab8cd700ef4",
   wordSquad: "ace15fc3-a6da-46b6-b3bc-bdfdd8f7b5c8",
+  dailyWordDetective: "4136ab94-76c8-43c7-a622-37ed9f41b167",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -958,6 +960,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000045",
     duplicateUrlId: "90000000-0000-4000-8000-000000000046",
     alternateTitle: "เกมรวมแก๊งชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.dailyWordDetective,
+    migration: "20260928125500_040_public_daily_word_detective_resource.sql",
+    label: "Daily Word Detective",
+    title: "Daily Word Detective",
+    meta: "เว็บเกมภาษาอังกฤษ · 180 คำ · 3–8 ตัวอักษร · เดี่ยว/เพื่อน/ทั้งห้อง · ป.3–ม.6",
+    description: "เกมสืบสวนคำศัพท์ประจำวันสำหรับนักเรียน ป.3–ม.6 ฝึกการสะกดคำ คำศัพท์ การวิเคราะห์ตำแหน่งตัวอักษร และการใช้เหตุผล ผู้เล่นเดาคำลับยาว 3–8 ตัวอักษร โดยระบบใช้สี สัญลักษณ์ และข้อความกำกับเพื่อบอกว่าตัวอักษรถูกตำแหน่ง อยู่ผิดตำแหน่ง หรือไม่มีในคำ มีคลังคำเป้าหมายที่ตรวจแล้ว 180 คำและพจนานุกรมคำที่อนุญาต 598 คำ รองรับเล่นคนเดียว เทียบผลกับเพื่อน หรือให้ทั้งห้องเล่นพร้อมกัน ครูตั้งระดับ หมวด ความยาว จำนวนครั้ง เวลา และคำใบ้ได้ เริ่ม 600 คะแนน เดาผิดหัก 75 คะแนน ใช้คำใบ้หัก 100 คะแนน และถูกครั้งแรกโบนัส 200 คะแนน หลังจบแสดงความหมาย คำอ่าน ประโยคตัวอย่าง และ streak โดยเก็บสถิติเฉพาะในอุปกรณ์และไม่เก็บชื่อเด็ก",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["p3", "p4", "p5", "p6", "m1", "m2", "m3", "m4", "m5", "m6"],
+    ctaUrl: "https://daily-word-detective-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/daily-word-detective.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "คำศัพท์", "สะกดคำ", "คิดวิเคราะห์", "Word Detective", "คำศัพท์ประจำวัน"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000047",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000048",
+    alternateTitle: "เกมนักสืบคำศัพท์ชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.
