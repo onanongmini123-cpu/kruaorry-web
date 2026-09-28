@@ -12,6 +12,7 @@ const migrations = [
   "20260927203000_033_public_bingo_fun_resource.sql",
   "20260927214500_034_public_picture_word_match_resource.sql",
   "20260928001500_035_public_mission_wheel_resource.sql",
+  "20260928093000_036_public_vocab_fishing_resource.sql",
 ];
 
 const USERS = {
@@ -33,6 +34,7 @@ const RESOURCES = {
   bingoFun: "03ae013c-1409-4cb1-aa7c-ce264a94312a",
   pictureWordMatch: "fa15179e-9937-4d25-951c-7af9ab466589",
   missionWheel: "a7266b9c-3539-423b-9119-dbf019b887cb",
+  vocabFishing: "2fd4da60-b60a-43ea-b382-5b2065e15241",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -681,6 +683,108 @@ try {
       () => db.exec(missionWheelSql),
       /Mission Wheel title or target already belongs to another resource/,
       "the Mission Wheel seed must reject a normalized duplicate target URL",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  const vocabFishingBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.vocabFishing])).rows[0];
+  assert.equal(vocabFishingBeforeReplay.title, "ตกปลาคำศัพท์");
+  assert.equal(vocabFishingBeforeReplay.meta, "เว็บเกมคำศัพท์ · 40 คำ · 4 หมวด · เดี่ยว/2 คน · 60 วินาที/ฝึก · ป.1–3");
+  assert.equal(vocabFishingBeforeReplay.description, "เกมฝึกคำศัพท์ภาษาอังกฤษในโลกใต้ทะเลสดใส เล่นได้ทั้งคนเดียวหรือ 2 คนผลัดกันบนอุปกรณ์เดียว เลือกสัตว์ อาหาร สี หรือของใช้ในห้องเรียนจากคลังอย่างน้อย 40 คำ แล้วแตะปลาคำศัพท์อังกฤษที่ตรงกับภาพหรือคำแปลไทยจากปลา 3 ตัว ตอบถูกได้ 10 คะแนน ตอบผิดได้ 0 คะแนนและดูเฉลยก่อนข้อถัดไป เลือกเล่น 60 วินาทีหรือฝึกแบบไม่จับเวลาได้ พร้อมตัวเลือกหยุดปลาเคลื่อนที่ ปุ่มฟังคำศัพท์เสริม และสรุปคำที่เรียนรู้กับคำที่ควรทบทวน");
+  assert.equal(vocabFishingBeforeReplay.category, "ภาษาอังกฤษ");
+  assert.deepEqual(vocabFishingBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(vocabFishingBeforeReplay.delivery_mode, "web_app");
+  assert.equal(vocabFishingBeforeReplay.cta_url, "https://kru-vocab-fishing-2026.onanongmini123.chatgpt.site");
+  assert.equal(vocabFishingBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/vocab-fishing.jpg");
+  assert.deepEqual(vocabFishingBeforeReplay.tags, ["เกม", "ภาษาอังกฤษ", "คำศัพท์", "สัตว์", "อาหาร", "สี", "ห้องเรียน"]);
+  assert.equal(vocabFishingBeforeReplay.is_free, true);
+  assert.equal(vocabFishingBeforeReplay.status, "published");
+  assert.equal(vocabFishingBeforeReplay.access_mode, "public");
+  assert.equal(vocabFishingBeforeReplay.file_path, null);
+  assert.equal(vocabFishingBeforeReplay.file_name, null);
+  assert.equal(vocabFishingBeforeReplay.file_size, null);
+  assert.equal(vocabFishingBeforeReplay.file_mime_type, null);
+  assert.equal(vocabFishingBeforeReplay.created_by, null);
+  assert.ok(vocabFishingBeforeReplay.published_at);
+
+  const vocabFishingSql = readFileSync(
+    new URL("../supabase/migrations/20260928093000_036_public_vocab_fishing_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(vocabFishingSql);
+  const vocabFishingAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.vocabFishing],
+  )).rows[0];
+  assert.equal(vocabFishingAfterReplay.count, 1);
+  assert.equal(
+    new Date(vocabFishingAfterReplay.published_at).toISOString(),
+    new Date(vocabFishingBeforeReplay.published_at).toISOString(),
+    "replaying the Vocabulary Fishing seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.vocabFishing],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.vocabFishing],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.vocabFishing, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.vocabFishing, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.vocabFishing, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.vocabFishing, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000039',
+        'ตกปลาคำศัพท์',
+        'web_app',
+        'https://duplicate-title.test/vocab-fishing',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(vocabFishingSql),
+      /Vocabulary Fishing title or target already belongs to another resource/,
+      "the Vocabulary Fishing seed must reject a duplicate title owned by another resource",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000040',
+        'เกมตกปลาชื่ออื่น',
+        'web_app',
+        'https://kru-vocab-fishing-2026.onanongmini123.chatgpt.site/',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(vocabFishingSql),
+      /Vocabulary Fishing title or target already belongs to another resource/,
+      "the Vocabulary Fishing seed must reject a normalized duplicate target URL",
     );
   } finally {
     await db.exec("rollback");
