@@ -7,6 +7,11 @@ const migrations = [
   "20260925110000_028_resource_access_featured_benefits.sql",
   "20260925120000_029_private_requests_reviews_reports.sql",
   "20260925130000_030_member_profile_avatars.sql",
+  "20260927193000_031_public_vocab_defuse_resource.sql",
+  "20260927195000_032_public_treasure_chest_resource.sql",
+  "20260927203000_033_public_bingo_fun_resource.sql",
+  "20260927214500_034_public_picture_word_match_resource.sql",
+  "20260928001500_035_public_mission_wheel_resource.sql",
 ];
 
 const USERS = {
@@ -23,6 +28,11 @@ const RESOURCES = {
   lockedFile: "10000000-0000-4000-8000-000000000005",
   anotherPublic: "10000000-0000-4000-8000-000000000006",
   newLegacyPremium: "10000000-0000-4000-8000-000000000007",
+  vocabDefuse: "6cc12b2d-5ebc-4533-85d0-13038a0dc189",
+  treasureChest: "4c1203ce-6e4f-40bd-8dc2-01713e88dcdd",
+  bingoFun: "03ae013c-1409-4cb1-aa7c-ce264a94312a",
+  pictureWordMatch: "fa15179e-9937-4d25-951c-7af9ab466589",
+  missionWheel: "a7266b9c-3539-423b-9119-dbf019b887cb",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -262,6 +272,418 @@ try {
     const sql = readFileSync(new URL(`../supabase/migrations/${filename}`, import.meta.url), "utf8");
     await db.exec(sql);
     process.stdout.write(`executed ${filename}\n`);
+  }
+
+  const vocabDefuseBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.vocabDefuse])).rows[0];
+  assert.equal(vocabDefuseBeforeReplay.title, "กู้ระเบิดคำศัพท์");
+  assert.equal(vocabDefuseBeforeReplay.meta, "เว็บเกมภาษาอังกฤษ · 48 คำ · 4 หมวด · 8 ด่าน · ป.1–6");
+  assert.equal(vocabDefuseBeforeReplay.category, "ภาษาอังกฤษ");
+  assert.deepEqual(vocabDefuseBeforeReplay.grade_levels, ["p1", "p2", "p3", "p4", "p5", "p6"]);
+  assert.equal(vocabDefuseBeforeReplay.delivery_mode, "web_app");
+  assert.equal(vocabDefuseBeforeReplay.cta_url, "https://kru-vocab-defuse-2026.onanongmini123.chatgpt.site");
+  assert.equal(vocabDefuseBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/vocab-defuse.jpg");
+  assert.deepEqual(vocabDefuseBeforeReplay.tags, ["เกม", "ภาษาอังกฤษ", "คำศัพท์", "ประถมศึกษา", "กิจกรรมทั้งห้อง"]);
+  assert.equal(vocabDefuseBeforeReplay.is_free, true);
+  assert.equal(vocabDefuseBeforeReplay.status, "published");
+  assert.equal(vocabDefuseBeforeReplay.access_mode, "public");
+  assert.equal(vocabDefuseBeforeReplay.file_path, null);
+  assert.equal(vocabDefuseBeforeReplay.file_name, null);
+  assert.equal(vocabDefuseBeforeReplay.file_size, null);
+  assert.equal(vocabDefuseBeforeReplay.file_mime_type, null);
+  assert.equal(vocabDefuseBeforeReplay.created_by, null);
+  assert.ok(vocabDefuseBeforeReplay.published_at);
+
+  const vocabDefuseSql = readFileSync(
+    new URL("../supabase/migrations/20260927193000_031_public_vocab_defuse_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(vocabDefuseSql);
+  const vocabDefuseAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.vocabDefuse],
+  )).rows[0];
+  assert.equal(vocabDefuseAfterReplay.count, 1);
+  assert.equal(
+    new Date(vocabDefuseAfterReplay.published_at).toISOString(),
+    new Date(vocabDefuseBeforeReplay.published_at).toISOString(),
+    "replaying the idempotent seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.vocabDefuse],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.vocabDefuse],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.vocabDefuse, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.vocabDefuse, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.vocabDefuse, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.vocabDefuse, false)).length, 1);
+
+  const treasureChestBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.treasureChest])).rows[0];
+  assert.equal(treasureChestBeforeReplay.title, "เปิดหีบสมบัติ");
+  assert.equal(treasureChestBeforeReplay.meta, "เว็บเกมทีม · 120 ข้อ · คณิตศาสตร์และอังกฤษ · 3 ระดับ · 2–4 ทีม · ป.1–6");
+  assert.equal(treasureChestBeforeReplay.category, "คณิตศาสตร์และภาษาอังกฤษ");
+  assert.deepEqual(treasureChestBeforeReplay.grade_levels, ["p1", "p2", "p3", "p4", "p5", "p6"]);
+  assert.equal(treasureChestBeforeReplay.delivery_mode, "web_app");
+  assert.equal(treasureChestBeforeReplay.cta_url, "https://kru-treasure-chest-2026.onanongmini123.chatgpt.site");
+  assert.equal(treasureChestBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/treasure-chest.jpg");
+  assert.deepEqual(treasureChestBeforeReplay.tags, ["เกม", "คณิตศาสตร์", "ภาษาอังกฤษ", "ประถมศึกษา", "กิจกรรมกลุ่ม"]);
+  assert.equal(treasureChestBeforeReplay.is_free, true);
+  assert.equal(treasureChestBeforeReplay.status, "published");
+  assert.equal(treasureChestBeforeReplay.access_mode, "public");
+  assert.equal(treasureChestBeforeReplay.file_path, null);
+  assert.equal(treasureChestBeforeReplay.file_name, null);
+  assert.equal(treasureChestBeforeReplay.file_size, null);
+  assert.equal(treasureChestBeforeReplay.file_mime_type, null);
+  assert.equal(treasureChestBeforeReplay.created_by, null);
+  assert.ok(treasureChestBeforeReplay.published_at);
+
+  const treasureChestSql = readFileSync(
+    new URL("../supabase/migrations/20260927195000_032_public_treasure_chest_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(treasureChestSql);
+  const treasureChestAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.treasureChest],
+  )).rows[0];
+  assert.equal(treasureChestAfterReplay.count, 1);
+  assert.equal(
+    new Date(treasureChestAfterReplay.published_at).toISOString(),
+    new Date(treasureChestBeforeReplay.published_at).toISOString(),
+    "replaying the Treasure Chest seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.treasureChest],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.treasureChest],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.treasureChest, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.treasureChest, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.treasureChest, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.treasureChest, false)).length, 1);
+
+  const bingoFunBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.bingoFun])).rows[0];
+  assert.equal(bingoFunBeforeReplay.title, "บิงโกหรรษา");
+  assert.equal(bingoFunBeforeReplay.meta, "เว็บเกมบิงโก · 3 ชุด · เดี่ยวและทั้งห้อง · กระดาน 3×3/4×4 · 1–40 ใบ · ป.1–3");
+  assert.equal(bingoFunBeforeReplay.description, "เกมบิงโกงานวัดความรู้สำหรับเล่นเดี่ยวบนอุปกรณ์หรือเล่นทั้งห้องจากจอครูหนึ่งจอ เลือกชุดตัวเลข 1–30 คำศัพท์สัตว์อย่างน้อย 24 คำ หรือผลบวกอย่างน้อย 24 ค่า โหมดเดี่ยวใช้กระดาน 3×3 แตะคำตอบจากคำใบ้และขอเฉลยช่วยได้ ส่วนโหมดครูฉายจอสร้างกระดาน 3×3 หรือ 4×4 ได้ 1–40 ใบพร้อมรหัสและสั่งพิมพ์ ครูสุ่มรายการแบบไม่ซ้ำ ดูประวัติ และกรอกรหัสเพื่อตรวจรายการที่เรียกก่อนยืนยันผู้ชนะ ระบบไม่อ้างว่าอ่านรอยทำเครื่องหมายบนกระดาษได้");
+  assert.equal(bingoFunBeforeReplay.category, "คณิตศาสตร์และภาษาอังกฤษ");
+  assert.deepEqual(bingoFunBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(bingoFunBeforeReplay.delivery_mode, "web_app");
+  assert.equal(bingoFunBeforeReplay.cta_url, "https://kru-bingo-fun-2026.onanongmini123.chatgpt.site");
+  assert.equal(bingoFunBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/bingo-fun.jpg");
+  assert.deepEqual(bingoFunBeforeReplay.tags, ["เกม", "บิงโก", "คณิตศาสตร์", "ภาษาอังกฤษ", "กิจกรรมทั้งห้อง"]);
+  assert.equal(bingoFunBeforeReplay.is_free, true);
+  assert.equal(bingoFunBeforeReplay.status, "published");
+  assert.equal(bingoFunBeforeReplay.access_mode, "public");
+  assert.equal(bingoFunBeforeReplay.file_path, null);
+  assert.equal(bingoFunBeforeReplay.file_name, null);
+  assert.equal(bingoFunBeforeReplay.file_size, null);
+  assert.equal(bingoFunBeforeReplay.file_mime_type, null);
+  assert.equal(bingoFunBeforeReplay.created_by, null);
+  assert.ok(bingoFunBeforeReplay.published_at);
+
+  const bingoFunSql = readFileSync(
+    new URL("../supabase/migrations/20260927203000_033_public_bingo_fun_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(bingoFunSql);
+  const bingoFunAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.bingoFun],
+  )).rows[0];
+  assert.equal(bingoFunAfterReplay.count, 1);
+  assert.equal(
+    new Date(bingoFunAfterReplay.published_at).toISOString(),
+    new Date(bingoFunBeforeReplay.published_at).toISOString(),
+    "replaying the Bingo Fun seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.bingoFun],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.bingoFun],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.bingoFun, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.bingoFun, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.bingoFun, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.bingoFun, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000033',
+        'บิงโกหรรษา',
+        'web_app',
+        'https://duplicate-title.test/bingo',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(bingoFunSql),
+      /Bingo Fun title or target already belongs to another resource/,
+      "the Bingo Fun seed must reject a duplicate title owned by another resource",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000034',
+        'เกมบิงโกชื่ออื่น',
+        'web_app',
+        'https://kru-bingo-fun-2026.onanongmini123.chatgpt.site/',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(bingoFunSql),
+      /Bingo Fun title or target already belongs to another resource/,
+      "the Bingo Fun seed must reject a normalized duplicate target URL",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  const pictureWordMatchBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.pictureWordMatch])).rows[0];
+  assert.equal(pictureWordMatchBeforeReplay.title, "จับคู่ภาพกับคำ");
+  assert.equal(pictureWordMatchBeforeReplay.meta, "เว็บเกมคำศัพท์ · 24 คู่ · 3 หมวด · เดี่ยว/2 คน · 4/6/8 คู่ · ป.1–3");
+  assert.equal(pictureWordMatchBeforeReplay.description, "เกมจับคู่การ์ดภาพกับคำศัพท์อังกฤษบนอุปกรณ์เดียว เลือกสัตว์ ผลไม้ หรือสิ่งของในห้องเรียน และเล่นได้ทั้งคนเดียวหรือ 2 คนผลัดกัน ระบบเปิดการ์ดครั้งละ 2 ใบ ตรวจคู่ด้วยรหัสที่แน่นอน ล็อกการเปิดระหว่างปิดการ์ดที่ไม่ตรง และจัดคะแนนหรือเปลี่ยนตาอัตโนมัติ เลือกความยาก 4, 6 หรือ 8 คู่ ระดับง่ายมีคำแปล ส่วนระดับกลางและยากฝึกจำคำศัพท์ พร้อมสรุปจำนวนครั้งที่เปิด ความแม่นยำ เวลา และคำที่จับคู่ครบโดยไม่ใช้ข้อความตัดสินความฉลาด");
+  assert.equal(pictureWordMatchBeforeReplay.category, "ภาษาอังกฤษ");
+  assert.deepEqual(pictureWordMatchBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(pictureWordMatchBeforeReplay.delivery_mode, "web_app");
+  assert.equal(pictureWordMatchBeforeReplay.cta_url, "https://kru-picture-word-match-2026.onanongmini123.chatgpt.site");
+  assert.equal(pictureWordMatchBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/picture-word-match.jpg");
+  assert.deepEqual(pictureWordMatchBeforeReplay.tags, ["เกม", "ภาษาอังกฤษ", "คำศัพท์", "จับคู่", "ประถมต้น"]);
+  assert.equal(pictureWordMatchBeforeReplay.is_free, true);
+  assert.equal(pictureWordMatchBeforeReplay.status, "published");
+  assert.equal(pictureWordMatchBeforeReplay.access_mode, "public");
+  assert.equal(pictureWordMatchBeforeReplay.file_path, null);
+  assert.equal(pictureWordMatchBeforeReplay.file_name, null);
+  assert.equal(pictureWordMatchBeforeReplay.file_size, null);
+  assert.equal(pictureWordMatchBeforeReplay.file_mime_type, null);
+  assert.equal(pictureWordMatchBeforeReplay.created_by, null);
+  assert.ok(pictureWordMatchBeforeReplay.published_at);
+
+  const pictureWordMatchSql = readFileSync(
+    new URL("../supabase/migrations/20260927214500_034_public_picture_word_match_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(pictureWordMatchSql);
+  const pictureWordMatchAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.pictureWordMatch],
+  )).rows[0];
+  assert.equal(pictureWordMatchAfterReplay.count, 1);
+  assert.equal(
+    new Date(pictureWordMatchAfterReplay.published_at).toISOString(),
+    new Date(pictureWordMatchBeforeReplay.published_at).toISOString(),
+    "replaying the Picture-to-Word Match seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.pictureWordMatch],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.pictureWordMatch],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.pictureWordMatch, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.pictureWordMatch, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.pictureWordMatch, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.pictureWordMatch, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000035',
+        'จับคู่ภาพกับคำ',
+        'web_app',
+        'https://duplicate-title.test/picture-word-match',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(pictureWordMatchSql),
+      /Picture-to-Word Match title or target already belongs to another resource/,
+      "the Picture-to-Word Match seed must reject a duplicate title owned by another resource",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000036',
+        'เกมจับคู่ชื่ออื่น',
+        'web_app',
+        'https://kru-picture-word-match-2026.onanongmini123.chatgpt.site/',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(pictureWordMatchSql),
+      /Picture-to-Word Match title or target already belongs to another resource/,
+      "the Picture-to-Word Match seed must reject a normalized duplicate target URL",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  const missionWheelBeforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [RESOURCES.missionWheel])).rows[0];
+  assert.equal(missionWheelBeforeReplay.title, "วงล้อพิชิตภารกิจ");
+  assert.equal(missionWheelBeforeReplay.meta, "เว็บเกมทีม · 60 ข้อ · 4 หมวดวิชา · ง่าย/กลาง · 2–4 ทีม · ป.1–3");
+  assert.equal(missionWheelBeforeReplay.description, "เกมตอบคำถามแบบทีมบนจอเดียวในธีมสวนสนุก สำหรับ 2–4 ทีมผลัดกันหมุนวงล้อเพื่อเลือกหมวดคณิตศาสตร์ ภาษาไทย ภาษาอังกฤษ หรือความรู้รอบตัวด้วยน้ำหนักเท่ากัน วงล้อมีหน้าที่เลือกหมวดเท่านั้น ตอบคำถาม 3 ตัวเลือกถูกได้ 1 ดาว ผิดได้ 0 ดาวพร้อมเฉลย มีคลังอย่างน้อย 60 ข้อ ระดับง่ายและกลางใช้คำถามต่างกัน ระบบจัดลำดับทีมและจำนวนตาให้เท่ากันก่อนตัดสินผู้ได้ดาวสูงสุด รองรับการชนะร่วมกัน และเลือกไม่จับเวลาหรือจับเวลา 30 วินาทีต่อข้อได้");
+  assert.equal(missionWheelBeforeReplay.category, "บูรณาการหลายวิชา");
+  assert.deepEqual(missionWheelBeforeReplay.grade_levels, ["p1", "p2", "p3"]);
+  assert.equal(missionWheelBeforeReplay.delivery_mode, "web_app");
+  assert.equal(missionWheelBeforeReplay.cta_url, "https://kru-mission-wheel-2026.onanongmini123.chatgpt.site");
+  assert.equal(missionWheelBeforeReplay.cover_image_url, "https://kruaorry-web.vercel.app/images/resources/mission-wheel.jpg");
+  assert.deepEqual(missionWheelBeforeReplay.tags, ["เกม", "คณิตศาสตร์", "ภาษาไทย", "ภาษาอังกฤษ", "ความรู้รอบตัว", "กิจกรรมกลุ่ม"]);
+  assert.equal(missionWheelBeforeReplay.is_free, true);
+  assert.equal(missionWheelBeforeReplay.status, "published");
+  assert.equal(missionWheelBeforeReplay.access_mode, "public");
+  assert.equal(missionWheelBeforeReplay.file_path, null);
+  assert.equal(missionWheelBeforeReplay.file_name, null);
+  assert.equal(missionWheelBeforeReplay.file_size, null);
+  assert.equal(missionWheelBeforeReplay.file_mime_type, null);
+  assert.equal(missionWheelBeforeReplay.created_by, null);
+  assert.ok(missionWheelBeforeReplay.published_at);
+
+  const missionWheelSql = readFileSync(
+    new URL("../supabase/migrations/20260928001500_035_public_mission_wheel_resource.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec(missionWheelSql);
+  const missionWheelAfterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [RESOURCES.missionWheel],
+  )).rows[0];
+  assert.equal(missionWheelAfterReplay.count, 1);
+  assert.equal(
+    new Date(missionWheelAfterReplay.published_at).toISOString(),
+    new Date(missionWheelBeforeReplay.published_at).toISOString(),
+    "replaying the Mission Wheel seed must preserve first publication time",
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [RESOURCES.missionWheel],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [RESOURCES.missionWheel],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, RESOURCES.missionWheel, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.missionWheel, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, RESOURCES.missionWheel, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, RESOURCES.missionWheel, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000037',
+        'วงล้อพิชิตภารกิจ',
+        'web_app',
+        'https://duplicate-title.test/mission-wheel',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(missionWheelSql),
+      /Mission Wheel title or target already belongs to another resource/,
+      "the Mission Wheel seed must reject a duplicate title owned by another resource",
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values (
+        '90000000-0000-4000-8000-000000000038',
+        'เกมวงล้อชื่ออื่น',
+        'web_app',
+        'https://kru-mission-wheel-2026.onanongmini123.chatgpt.site/',
+        true,
+        'draft',
+        'public'
+      )
+    `);
+    await rejectsWith(
+      () => db.exec(missionWheelSql),
+      /Mission Wheel title or target already belongs to another resource/,
+      "the Mission Wheel seed must reject a normalized duplicate target URL",
+    );
+  } finally {
+    await db.exec("rollback");
   }
 
   // Existing semantics are preserved by the backfill.
