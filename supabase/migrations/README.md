@@ -147,6 +147,16 @@ catalogue metadata conflicts. It was applied and recorded on the live project
 on 2026-09-28; a post-apply ledger check confirmed that local and remote both
 contain version `20260928093000`.
 
+Migration `20260928100000_037_public_sentence_train_resource.sql` publishes the
+external **รถไฟเรียงประโยค** game as a free public catalogue resource for
+Grades 1–3. It records the reviewed 150-sentence, five-topic and three-level
+scope, solo and cooperative-pair modes, the production Site URL, and a
+production-hosted cover. The migration is idempotent, grants no paid plan, and
+fails closed when its title, normalized target URL, or protected catalogue
+metadata conflicts. It was applied and recorded on the live project on
+2026-09-28; a post-apply ledger check confirmed that local and remote both
+contain version `20260928100000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
