@@ -13,6 +13,8 @@ const migrations = [
   "20260927214500_034_public_picture_word_match_resource.sql",
   "20260928001500_035_public_mission_wheel_resource.sql",
   "20260928093000_036_public_vocab_fishing_resource.sql",
+  "20260928100000_037_public_sentence_train_resource.sql",
+  "20260928103000_038_public_ice_cream_math_resource.sql",
 ];
 
 const USERS = {
@@ -35,6 +37,8 @@ const RESOURCES = {
   pictureWordMatch: "fa15179e-9937-4d25-951c-7af9ab466589",
   missionWheel: "a7266b9c-3539-423b-9119-dbf019b887cb",
   vocabFishing: "2fd4da60-b60a-43ea-b382-5b2065e15241",
+  sentenceTrain: "427fb64e-34e0-4f8b-be0e-ee5131e78060",
+  iceCreamMath: "a6bdbe60-2672-45ba-8773-bab8cd700ef4",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -56,6 +60,119 @@ async function resolveAs(role, userId, resourceId, anonymous) {
   return asRole(role, userId, async () => (
     await db.query("select delivery_mode, cta_url, file_path from public.resolve_resource_target($1)", [resourceId])
   ).rows, anonymous);
+}
+
+async function assertPublicGameSeed({
+  resourceId,
+  migration,
+  label,
+  title,
+  meta,
+  description,
+  category,
+  gradeLevels,
+  ctaUrl,
+  coverImageUrl,
+  tags,
+  duplicateTitleId,
+  duplicateUrlId,
+  alternateTitle,
+}) {
+  const beforeReplay = (await db.query(`
+    select id::text, title, meta, description, category, grade_levels,
+      delivery_mode, cta_url, cover_image_url, tags, is_free, status,
+      published_at, access_mode, file_path, file_name, file_size,
+      file_mime_type, created_by
+    from public.resources where id = $1
+  `, [resourceId])).rows[0];
+  assert.equal(beforeReplay.id, resourceId);
+  assert.equal(beforeReplay.title, title);
+  assert.equal(beforeReplay.meta, meta);
+  assert.equal(beforeReplay.description, description);
+  assert.equal(beforeReplay.category, category);
+  assert.deepEqual(beforeReplay.grade_levels, gradeLevels);
+  assert.equal(beforeReplay.delivery_mode, "web_app");
+  assert.equal(beforeReplay.cta_url, ctaUrl);
+  assert.equal(beforeReplay.cover_image_url, coverImageUrl);
+  assert.deepEqual(beforeReplay.tags, tags);
+  assert.equal(beforeReplay.is_free, true);
+  assert.equal(beforeReplay.status, "published");
+  assert.equal(beforeReplay.access_mode, "public");
+  assert.equal(beforeReplay.file_path, null);
+  assert.equal(beforeReplay.file_name, null);
+  assert.equal(beforeReplay.file_size, null);
+  assert.equal(beforeReplay.file_mime_type, null);
+  assert.equal(beforeReplay.created_by, null);
+  assert.ok(beforeReplay.published_at);
+
+  const sql = readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8");
+  await db.exec(sql);
+  const afterReplay = (await db.query(
+    "select count(*)::integer as count, min(published_at) as published_at from public.resources where id = $1",
+    [resourceId],
+  )).rows[0];
+  assert.equal(afterReplay.count, 1);
+  assert.equal(
+    new Date(afterReplay.published_at).toISOString(),
+    new Date(beforeReplay.published_at).toISOString(),
+    `replaying the ${label} seed must preserve first publication time`,
+  );
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_plan_access where resource_id = $1",
+    [resourceId],
+  )).rows[0].count, 0);
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
+    [resourceId],
+  )).rows[0].count, 1);
+  assert.equal((await resolveAs("anon", null, resourceId, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, resourceId, true)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.free, resourceId, false)).length, 1);
+  assert.equal((await resolveAs("authenticated", USERS.teacher, resourceId, false)).length, 1);
+
+  await db.exec("begin");
+  try {
+    await db.query(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values ($1, $2, 'web_app', $3, true, 'draft', 'public')
+    `, [duplicateTitleId, title, `https://duplicate-title.test/${label.toLowerCase().replaceAll(" ", "-")}`]);
+    await rejectsWith(
+      () => db.exec(sql),
+      new RegExp(`${label} title or target already belongs to another resource`),
+      `the ${label} seed must reject a duplicate title owned by another resource`,
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.query(`
+      insert into public.resources (
+        id, title, delivery_mode, cta_url, is_free, status, access_mode
+      ) values ($1, $2, 'web_app', $3, true, 'draft', 'public')
+    `, [duplicateUrlId, alternateTitle, `${ctaUrl}/`]);
+    await rejectsWith(
+      () => db.exec(sql),
+      new RegExp(`${label} title or target already belongs to another resource`),
+      `the ${label} seed must reject a normalized duplicate target URL`,
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.query("update public.resources set meta = 'tampered contract' where id = $1", [resourceId]);
+    await rejectsWith(
+      () => db.exec(sql),
+      new RegExp(`Existing ${label} resource does not match the protected catalogue contract`),
+      `the ${label} seed must fail closed when its existing ID has mismatched protected metadata`,
+    );
+  } finally {
+    await db.exec("rollback");
+  }
 }
 
 try {
@@ -789,6 +906,40 @@ try {
   } finally {
     await db.exec("rollback");
   }
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.sentenceTrain,
+    migration: "20260928100000_037_public_sentence_train_resource.sql",
+    label: "Sentence Train",
+    title: "รถไฟเรียงประโยค",
+    meta: "เว็บเกมภาษาอังกฤษ · 150 ประโยค · 5 หัวข้อ · 3 ระดับ · เดี่ยว/คู่ · ป.1–3",
+    description: "เกมฝึกเรียงคำภาษาอังกฤษในสถานีรถไฟแสนสนุกสำหรับนักเรียนประถมต้น มีคลัง 150 ประโยค ครบคำทักทาย แนะนำตัว สี สิ่งของ และสัตว์ พร้อมระดับง่าย 3–4 คำ ระดับกลาง 5–6 คำ และระดับยาก 7–8 คำ เล่นได้ทั้งคนเดียวหรือคู่ร่วมมือบนเครื่องเดียว เลือกเล่น 5 หรือ 10 ข้อ จัดตู้คำด้วยการลากหรือแตะบนมือถือ ตรวจลำดับจากรหัสคำที่แน่นอน แสดงตัวพิมพ์ใหญ่และเครื่องหมายวรรคตอนอัตโนมัติ พร้อมโหมดสาธิต คะแนนครั้งแรก 10 คะแนน ครั้งที่สอง 5 คะแนน และดูเฉลยได้ 0 คะแนน",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["p1", "p2", "p3"],
+    ctaUrl: "https://kru-sentence-train-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/sentence-train.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "ประโยค", "ไวยากรณ์", "คำทักทาย", "สี", "สิ่งของ", "สัตว์"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000041",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000042",
+    alternateTitle: "เกมรถไฟชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.iceCreamMath,
+    migration: "20260928103000_038_public_ice_cream_math_resource.sql",
+    label: "Ice Cream Math",
+    title: "ไอศกรีมคิดเลข",
+    meta: "เว็บเกมคณิตศาสตร์ · บวก–ลบ · 3 ระดับ · 10 ข้อ · เดี่ยว/คู่ · ป.1–3",
+    description: "เกมฝึกบวก–ลบในคาเฟ่ไอศกรีมพาสเทลสำหรับนักเรียนประถมต้น เล่นได้ทั้งคนเดียวหรือคู่ผลัดกันตอบบนเครื่องเดียว เกมละ 10 ข้อ โดยระบบสร้างโจทย์และคำนวณคำตอบจริง เลือกระดับง่ายช่วง 0–20 ระดับกลาง 0–100 หรือระดับยาก 0–1,000 พร้อมเลือกบวก ลบ หรือแบบผสม โดยไม่สร้างผลลบติดลบ มีคำตอบ 3 ตัวเลือกที่ไม่ซ้ำกัน ลากหรือแตะลูกไอศกรีมลงโคน ตอบถูกครั้งแรกได้ 10 คะแนน หากผิดดูภาพวิธีคิดและลองใหม่ได้ 5 คะแนน พร้อมโหมดฝึกไม่คิดคะแนน ทุก 3 ชั้นเสิร์ฟหนึ่งถ้วย และหน้าผลลัพธ์แยกคะแนน จำนวนถ้วย และข้อที่ควรฝึกเพิ่มอย่างชัดเจน",
+    category: "คณิตศาสตร์",
+    gradeLevels: ["p1", "p2", "p3"],
+    ctaUrl: "https://kru-ice-cream-math-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/ice-cream-math.jpg",
+    tags: ["เกม", "คณิตศาสตร์", "บวก", "ลบ", "คิดเลข", "ประถมต้น", "ไอศกรีม"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000043",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000044",
+    alternateTitle: "เกมไอศกรีมชื่ออื่น",
+  });
 
   // Existing semantics are preserved by the backfill.
   const backfill = await db.query(`
