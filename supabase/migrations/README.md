@@ -178,6 +178,17 @@ It was applied and recorded on the live project on 2026-09-28; a post-apply
 ledger check confirmed that local and remote both contain version
 `20260928113000`.
 
+Migration `20260928125500_040_public_daily_word_detective_resource.sql`
+publishes the external **Daily Word Detective** game as a free public catalogue
+resource for Grades 3–12. It records the reviewed 180-target and 598-word
+allowed dictionary, 3–8-letter scope, solo/friend/class modes, configurable
+level, category, attempt, time and hint settings, the production Site URL, and
+a production-hosted cover. The migration is idempotent, grants no paid plan,
+and fails closed when its title, normalized target URL, or protected catalogue
+metadata conflicts. It was applied and recorded on the live project on
+2026-09-28; a post-apply ledger check confirmed that local and remote both
+contain version `20260928125500`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
