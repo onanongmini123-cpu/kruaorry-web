@@ -200,6 +200,16 @@ metadata conflicts. It was applied and recorded on the live project on
 2026-09-28; a post-apply ledger check confirmed that local and remote both
 contain version `20260928140000`.
 
+Migration `20260929090000_042_public_sentence_train_grammar_resource.sql`
+publishes the new **Sentence Train** grammar game as a separate free public
+catalogue resource for Grades 2–9, without replacing the earlier Thai-titled
+sentence-train game. It records the reviewed 810-sentence bank, six grammar
+structures, three word-count bands, solo/2-player/2–4-team modes, fair turn
+totals, the production Site URL, and its distinct production-hosted cover. The
+migration is idempotent, grants no paid plan, and fails closed when its title,
+normalized target URL, or protected catalogue metadata conflicts. Apply it only
+after the Site and cover are live, then record the verified remote ledger here.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 

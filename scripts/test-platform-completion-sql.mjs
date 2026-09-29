@@ -18,6 +18,7 @@ const migrations = [
   "20260928113000_039_public_word_squad_resource.sql",
   "20260928125500_040_public_daily_word_detective_resource.sql",
   "20260928140000_041_public_listening_detective_resource.sql",
+  "20260929090000_042_public_sentence_train_grammar_resource.sql",
 ];
 
 const USERS = {
@@ -45,6 +46,7 @@ const RESOURCES = {
   wordSquad: "ace15fc3-a6da-46b6-b3bc-bdfdd8f7b5c8",
   dailyWordDetective: "4136ab94-76c8-43c7-a622-37ed9f41b167",
   listeningDetective: "df55f95a-b307-4aec-8b42-e6b9a1244a6e",
+  sentenceTrainGrammar: "86afb9c3-20f2-4ab6-9ebc-9a454b36692b",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -996,6 +998,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000049",
     duplicateUrlId: "90000000-0000-4000-8000-000000000050",
     alternateTitle: "เกมนักสืบการฟังชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.sentenceTrainGrammar,
+    migration: "20260929090000_042_public_sentence_train_grammar_resource.sql",
+    label: "Sentence Train Grammar",
+    title: "Sentence Train",
+    meta: "เว็บเกมภาษาอังกฤษ · 810 ประโยค · 6 โครงสร้าง · เดี่ยว/2 คน/2–4 ทีม · ป.2–ม.3",
+    description: "เกมฝึกโครงสร้างและลำดับคำภาษาอังกฤษธีมต่อขบวนรถไฟสำหรับนักเรียน ป.2–ม.3 เล่นได้ทั้งคนเดียว 2 คน หรือ 2–4 ทีมบนจอเดียว มีคลังประโยคที่ตรวจสอบแล้ว 810 ข้อ ครบ Present Simple, Past Simple, Future, Questions, Negatives และประโยคซับซ้อน พร้อมคำตอบทางเลือกที่ถูกหลักซึ่งระบบยอมรับตามรายการ ผู้เล่นลากหรือแตะตู้คำลงรางแล้วกดตรวจ ระบบบอกจำนวนตำแหน่งที่ถูกโดยยังไม่เฉลยทันที ครูเลือกระดับ โครงสร้าง ช่วงจำนวนคำ จำนวนข้อ 8–15 ข้อ เวลา 30–60 วินาทีหรือไม่จับเวลา และจำนวนครั้งที่ลองได้ ตอบถูกครั้งแรก 100 คะแนน ครั้งที่สอง 70 คะแนน ครั้งที่สาม 40 คะแนน และคำใบ้ลดคะแนนข้อนั้น 20 คะแนน ระบบซ่อนโจทย์จนผู้เล่นกดพร้อม จัดตาให้ทุกฝ่ายเท่ากัน และสรุปคะแนน โครงสร้างที่พลาด ประโยคที่ตอบผิด และคำอธิบายไวยากรณ์ โดยเลือกเก็บผลล่าสุดเฉพาะในอุปกรณ์ได้",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["p2", "p3", "p4", "p5", "p6", "m1", "m2", "m3"],
+    ctaUrl: "https://sentence-train-grammar-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/sentence-train-grammar.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "ประโยค", "ไวยากรณ์", "เรียงคำ", "Sentence Train", "Tenses", "Questions", "กิจกรรมทีม"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000051",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000052",
+    alternateTitle: "เกมรถไฟไวยากรณ์ชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.
