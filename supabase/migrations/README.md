@@ -211,6 +211,17 @@ normalized target URL, or protected catalogue metadata conflicts. It was applied
 and recorded on the live project on 2026-09-29; a post-apply ledger check
 confirmed that local and remote both contain version `20260929090000`.
 
+Migration `20260929100000_043_public_grammar_boss_battle_resource.sql`
+publishes **Grammar Boss Battle — ศึกบอสไวยากรณ์** as a free public catalogue
+resource for Grades 3–12. It records the reviewed 576-question bank, six
+grammar topics, four level bands, solo/2–4-team/whole-class modes, deterministic
+score and boss-damage rules, the public production Site URL, and its distinct
+production-hosted cover. The migration is idempotent, grants no paid plan, and
+fails closed when its title, normalized target URL, or protected catalogue
+metadata conflicts. It was applied and recorded on the live project on
+2026-09-29; a post-apply ledger check confirmed that local and remote both
+contain version `20260929100000`.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 

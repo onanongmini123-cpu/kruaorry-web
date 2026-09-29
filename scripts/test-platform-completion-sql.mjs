@@ -19,6 +19,7 @@ const migrations = [
   "20260928125500_040_public_daily_word_detective_resource.sql",
   "20260928140000_041_public_listening_detective_resource.sql",
   "20260929090000_042_public_sentence_train_grammar_resource.sql",
+  "20260929100000_043_public_grammar_boss_battle_resource.sql",
 ];
 
 const USERS = {
@@ -47,6 +48,7 @@ const RESOURCES = {
   dailyWordDetective: "4136ab94-76c8-43c7-a622-37ed9f41b167",
   listeningDetective: "df55f95a-b307-4aec-8b42-e6b9a1244a6e",
   sentenceTrainGrammar: "86afb9c3-20f2-4ab6-9ebc-9a454b36692b",
+  grammarBossBattle: "f14855b7-3a39-4f59-85b9-06dde698d4d4",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -1015,6 +1017,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000051",
     duplicateUrlId: "90000000-0000-4000-8000-000000000052",
     alternateTitle: "เกมรถไฟไวยากรณ์ชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.grammarBossBattle,
+    migration: "20260929100000_043_public_grammar_boss_battle_resource.sql",
+    label: "Grammar Boss Battle",
+    title: "Grammar Boss Battle — ศึกบอสไวยากรณ์",
+    meta: "เว็บเกมภาษาอังกฤษ · 576 ข้อ · 6 หัวข้อไวยากรณ์ · เดี่ยว/2–4 ทีม/ทั้งห้อง · ป.3–ม.6",
+    description: "เกมฝึกไวยากรณ์ภาษาอังกฤษธีมฮีโร่ร่วมมือปราบบอสคำผิดสำหรับนักเรียน ป.3–ม.6 เล่นได้ทั้งคนเดียว 2–4 ทีม หรือทั้งห้องร่วมมือบนจอเดียว มีคลังคำถามที่ตรวจสอบแล้ว 576 ข้อ ครบ Parts of Speech, Articles, Pronouns, Subject–Verb Agreement, Tenses และ Error Correction พร้อม 4 ช่วงระดับ ครูเลือกหัวข้อ จำนวนตา เวลา 20/30 วินาทีหรือไม่จับเวลา และความแข็งแรงของบอสได้ ตอบถูกได้ 100 คะแนน ความเสียหายพื้นฐาน 10 หน่วย และโบนัสคอมโบ จากนั้นเลือกพลังโจมตี ป้องกัน หรือเพิ่มคะแนนให้เพื่อนด้วยผลคงที่ไม่สุ่ม ตอบผิดไม่หักคะแนนและบอสไม่เสียพลัง พร้อมคำอธิบายทุกข้อ ระบบซ่อนโจทย์จนกดพร้อม จัดตาให้ทุกทีมเท่ากันก่อนตัดสิน ชนะร่วมกันเมื่อพลังบอสหมด ส่วนโหมดแข่งขันตัดสินจากความเสียหายรวมและรองรับผู้ชนะร่วมเมื่อเสมอ พร้อมสรุปคะแนน ความแม่นยำรายหัวข้อ คอมโบ และหัวข้อที่ควรสอนซ้ำ โดยไม่เก็บชื่อเด็กและเลือกเก็บเฉพาะผลล่าสุดในอุปกรณ์ได้",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["p3", "p4", "p5", "p6", "m1", "m2", "m3", "m4", "m5", "m6"],
+    ctaUrl: "https://grammar-boss-battle-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/grammar-boss-battle.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "ไวยากรณ์", "Grammar Boss Battle", "Parts of Speech", "Tenses", "Error Correction", "กิจกรรมทีม"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000053",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000054",
+    alternateTitle: "เกมบอสไวยากรณ์ชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.
