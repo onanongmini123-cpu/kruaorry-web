@@ -10,7 +10,7 @@ export default function PrivacyPage() {
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
       </Link>
       <h1 style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-30)" }}>นโยบายความเป็นส่วนตัว</h1>
-      <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)" }}>ปรับปรุงล่าสุด: กันยายน 2569</p>
+      <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)" }}>ปรับปรุงล่าสุด: ตุลาคม 2569</p>
 
       <div style={{ marginTop: "var(--sp-7)", display: "grid", gap: "var(--sp-6)", fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)" }}>
         <section>
@@ -28,7 +28,10 @@ export default function PrivacyPage() {
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>การชำระเงิน</h2>
           <p>
-            KruAorry ไม่เก็บข้อมูลบัตรเครดิตหรือข้อมูลการเงินใดๆ ในระบบ การชำระเงินสำหรับอัปเกรดแพ็กเกจดำเนินการนอกระบบผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> โดยตรงกับทีมงาน
+            KruAorry ไม่เก็บข้อมูลบัตรเครดิต เลขบัญชีธนาคาร หรือไฟล์สลิปบนเว็บไซต์ หลักฐานการชำระส่งผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> โดยตรงกับทีมงาน
+          </p>
+          <p style={{ marginTop: 8 }}>
+            ในระบบสมาชิก เราเก็บเฉพาะเลขอ้างอิงใบสมัคร แพ็กที่สมัคร ยอดเงิน สถานะ วันเวลารับชำระ เลขอ้างอิงการชำระ และบันทึกว่าผู้ดูแลคนใดยืนยันรายการ เพื่อออกสิทธิ์สมาชิก ป้องกันการยืนยันซ้ำ และตรวจสอบย้อนหลัง
           </p>
         </section>
 

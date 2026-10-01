@@ -14,6 +14,7 @@ const files = [
   "20260901090300_020_membership_safety_guards.sql",
   "20260901090400_021_founder_seat_usage.sql",
   "20260924170000_025_active_founder_capacity.sql",
+  "20261001180000_047_founder_payment_confirmation.sql",
 ];
 const plusFeatures = [
   "คลังสื่อพร้อมสอนทั้งหมด",
@@ -61,13 +62,13 @@ try {
       file_path text
     );
     create table public.saved_resources (
-      user_id uuid not null references public.profiles(id),
+      user_id uuid not null references public.profiles(id) on delete cascade,
       resource_id uuid not null,
       primary key (user_id, resource_id)
     );
     create table public.upgrade_requests (
       id uuid primary key default gen_random_uuid(),
-      user_id uuid not null references public.profiles(id),
+      user_id uuid not null references public.profiles(id) on delete cascade,
       plan_id text not null references public.plans(id),
       status text not null default 'pending',
       created_at timestamptz not null default now(),
@@ -260,151 +261,420 @@ try {
     "Saved resource limit reached",
   );
 
-  let firstFounder;
-  let secondFounder;
-  let pastDueFounder;
-  let deletedFounderUser;
-  for (let n = 0; n < 100; n += 1) {
-    const user = randomUUID();
-    if (n === 3) deletedFounderUser = user;
-    await db.query("insert into public.profiles(id) values ($1)", [user]);
-    const status = n === 0 ? "expired" : n === 2 ? "past_due" : "active";
-    const founderStatus = n === 0 ? "lost_price_lock" : "active";
-    const founderPriceLock = n !== 0;
-    const inserted = await db.query(`
-      insert into public.subscriptions (
-        user_id, plan_id, status, source, billing_interval, price_amount_thb,
-        current_period_end, founder_started_at, founder_status, founder_price_lock
-      ) values (
-        $1, 'founder', $2, 'admin', 'year', 299,
-        now() + interval '1 year', now(), $3, $4
-      ) returning id
-    `, [user, status, founderStatus, founderPriceLock]);
-    if (n === 0) firstFounder = inserted.rows[0].id;
-    if (n === 1) secondFounder = inserted.rows[0].id;
-    if (n === 2) pastDueFounder = inserted.rows[0].id;
-  }
-  // The expired historical row above no longer consumes active capacity, so
-  // the 100th active Founder may now be admitted even though old grants remain
-  // durable in the ledger.
-  const nextFounder = randomUUID();
-  await db.query("insert into public.profiles(id) values ($1)", [nextFounder]);
-  await db.query(`
-    insert into public.subscriptions (
-      user_id, plan_id, status, source, billing_interval, price_amount_thb,
-      current_period_end, founder_started_at, founder_status, founder_price_lock
-    ) values ($1, 'founder', 'active', 'admin', 'year', 299,
-      now() + interval '1 year', now(), 'active', true)
-  `, [nextFounder]);
+  const prices = await db.query(`
+    select id, price_amount_thb, renewal_price_amount_thb
+    from public.plans where id in ('founder', 'teacher') order by id
+  `);
+  assert.deepEqual(prices.rows, [
+    { id: "founder", price_amount_thb: 299, renewal_price_amount_thb: 599 },
+    { id: "teacher", price_amount_thb: 599, renewal_price_amount_thb: 599 },
+  ]);
 
-  const overCapacityFounder = randomUUID();
-  await db.query("insert into public.profiles(id) values ($1)", [overCapacityFounder]);
+  const admin = randomUUID();
+  await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [admin]);
+
+  const setActor = async (userId) => {
+    await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
+  };
+  const createApplication = async (userId, planId) => {
+    await setActor(userId);
+    const result = await db.query("select * from public.create_membership_application($1)", [planId]);
+    return result.rows[0];
+  };
+  const confirmApplication = async (
+    requestId,
+    amount,
+    paymentReference,
+    idempotencyKey,
+    paidAt = new Date().toISOString(),
+  ) => {
+    await setActor(admin);
+    const result = await db.query(
+      "select public.confirm_membership_payment($1, $2, $3, $4, $5) as subscription_id",
+      [requestId, amount, paymentReference, paidAt, idempotencyKey],
+    );
+    return result.rows[0].subscription_id;
+  };
+  const confirmRenewal = async (
+    subscriptionId,
+    amount,
+    paymentReference,
+    idempotencyKey,
+    paidAt = new Date().toISOString(),
+  ) => {
+    await setActor(admin);
+    const result = await db.query(
+      "select public.confirm_subscription_renewal($1, $2, $3, $4, $5) as period_end",
+      [subscriptionId, amount, paymentReference, paidAt, idempotencyKey],
+    );
+    return result.rows[0].period_end;
+  };
+
+  const firstFounderUser = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [firstFounderUser]);
+  const firstApplication = await createApplication(firstFounderUser, "founder");
+  assert.match(firstApplication.reference_code, /^KA-\d{8,}$/);
+  assert.equal(firstApplication.quoted_amount_thb, 299);
+  assert.equal(firstApplication.status, "pending");
+
+  const repeatedApplication = await createApplication(firstFounderUser, "founder");
+  assert.equal(repeatedApplication.id, firstApplication.id, "a pending application must be idempotent per member and plan");
+  assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 0,
+    "a pending application reserved a Founder place");
+
+  await setActor(admin);
+  await rejectsWith(
+    () => db.query(
+      "select public.confirm_membership_payment($1, 599, 'wrong-founder-amount', now(), $2)",
+      [firstApplication.id, randomUUID()],
+    ),
+    "does not match quoted amount",
+  );
+  const failedConfirmation = await db.query(`
+    select status, payment_confirmed_at, payment_confirmed_amount_thb
+    from public.upgrade_requests where id = $1
+  `, [firstApplication.id]);
+  assert.deepEqual(failedConfirmation.rows[0], {
+    status: "pending",
+    payment_confirmed_at: null,
+    payment_confirmed_amount_thb: null,
+  }, "a rejected confirmation left partial request state");
+  assert.equal((await db.query("select count(*)::integer as count from public.membership_payment_confirmations")).rows[0].count, 0);
+
+  await setActor(firstFounderUser);
+  await rejectsWith(
+    () => db.query(
+      "select public.confirm_membership_payment($1, 299, 'member-cannot-confirm', now(), $2)",
+      [firstApplication.id, randomUUID()],
+    ),
+    "Admin access required",
+  );
+
+  const firstActivationKey = randomUUID();
+  const firstActivationPaidAt = new Date().toISOString();
+  const firstFounderSubscription = await confirmApplication(
+    firstApplication.id,
+    299,
+    "founder-payment-001",
+    firstActivationKey,
+    firstActivationPaidAt,
+  );
+  const retriedFounderSubscription = await confirmApplication(
+    firstApplication.id,
+    299,
+    "founder-payment-001",
+    firstActivationKey,
+    firstActivationPaidAt,
+  );
+  assert.equal(retriedFounderSubscription, firstFounderSubscription, "activation retry did not return the original subscription");
+  await rejectsWith(
+    () => confirmApplication(
+      firstApplication.id,
+      299,
+      "founder-payment-001",
+      firstActivationKey,
+      new Date(Date.parse(firstActivationPaidAt) + 1000).toISOString(),
+    ),
+    "Idempotency key was already used",
+  );
+
+  const firstActivationState = await db.query(`
+    select request.status, request.payment_confirmed_amount_thb,
+      request.payment_reference, subscription.price_amount_thb,
+      subscription.plan_id
+    from public.upgrade_requests request
+    join public.subscriptions subscription on subscription.approved_from_request_id = request.id
+    where request.id = $1
+  `, [firstApplication.id]);
+  assert.deepEqual(firstActivationState.rows[0], {
+    status: "approved",
+    payment_confirmed_amount_thb: 299,
+    payment_reference: "founder-payment-001",
+    price_amount_thb: 299,
+    plan_id: "founder",
+  });
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.membership_payment_confirmations where request_id = $1",
+    [firstApplication.id],
+  )).rows[0].count, 1, "activation retry duplicated its payment audit");
+  await rejectsWith(
+    () => db.query(
+      "delete from public.membership_payment_confirmations where request_id = $1",
+      [firstApplication.id],
+    ),
+    "Membership payment confirmations are append-only",
+  );
+  await rejectsWith(
+    () => db.query(`
+      update public.membership_payment_confirmations
+      set amount_thb = 300 where request_id = $1
+    `, [firstApplication.id]),
+    "Membership payment confirmation facts cannot be changed",
+  );
+
+  const founderUsers = [firstFounderUser];
+  // Reach 99 permanent grants. Every application is created before its own
+  // confirmation and therefore never changes the public capacity by itself.
+  for (let n = 2; n <= 99; n += 1) {
+    const userId = randomUUID();
+    founderUsers.push(userId);
+    await db.query("insert into public.profiles(id) values ($1)", [userId]);
+    const application = await createApplication(userId, "founder");
+    await confirmApplication(application.id, 299, `founder-payment-${String(n).padStart(3, "0")}`, randomUUID());
+  }
+
+  const hundredthFounderUser = randomUUID();
+  const overCapacityFounderUser = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1), ($2)", [hundredthFounderUser, overCapacityFounderUser]);
+  const hundredthApplication = await createApplication(hundredthFounderUser, "founder");
+  const overCapacityApplication = await createApplication(overCapacityFounderUser, "founder");
+  assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 99,
+    "pending applications changed Founder capacity");
+
+  await confirmApplication(hundredthApplication.id, 299, "founder-payment-100", randomUUID());
+  await rejectsWith(
+    () => confirmApplication(overCapacityApplication.id, 299, "founder-payment-101", randomUUID()),
+    "Founder 100 is full",
+  );
+
+  const overCapacityState = await db.query(`
+    select request.status, request.payment_confirmed_at,
+      count(confirmation.id)::integer as confirmations,
+      count(subscription.id)::integer as subscriptions
+    from public.upgrade_requests request
+    left join public.membership_payment_confirmations confirmation on confirmation.request_id = request.id
+    left join public.subscriptions subscription on subscription.approved_from_request_id = request.id
+    where request.id = $1
+    group by request.status, request.payment_confirmed_at
+  `, [overCapacityApplication.id]);
+  assert.deepEqual(overCapacityState.rows[0], {
+    status: "pending",
+    payment_confirmed_at: null,
+    confirmations: 0,
+    subscriptions: 0,
+  }, "the 101st confirmation did not roll back atomically");
+
+  await setActor(admin);
+  const seatCount = await db.query("select public.get_founder_seat_count() as seats");
+  assert.equal(seatCount.rows[0].seats, 100);
+  const publicCapacity = await db.query("select * from public.get_founder_capacity()");
+  assert.deepEqual(publicCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
+  const slots = await db.query(`
+    select count(*)::integer as count, count(distinct slot_number)::integer as distinct_count,
+      min(slot_number)::integer as first_slot, max(slot_number)::integer as last_slot
+    from public.founder_seat_ledger
+  `);
+  assert.deepEqual(slots.rows[0], { count: 100, distinct_count: 100, first_slot: 1, last_slot: 100 });
+  await rejectsWith(
+    () => db.query("delete from public.founder_seat_ledger where slot_number = 100"),
+    "Founder promotion grants are append-only",
+  );
+  await rejectsWith(
+    () => db.query(`
+      update public.founder_seat_ledger
+      set granted_at = granted_at + interval '1 second'
+      where slot_number = 100
+    `),
+    "Founder promotion grants cannot be changed or reassigned",
+  );
+  await rejectsWith(
+    () => db.query("update public.plans set renewal_price_amount_thb = null where id = 'founder'"),
+    "plans_founder_offer_price",
+  );
+
+  await rejectsWith(
+    () => db.query("select public.set_member_plan($1, 'founder', 'bypass_attempt')", [overCapacityFounderUser]),
+    "Founder grants require confirm_membership_payment",
+  );
   await rejectsWith(() => db.query(`
     insert into public.subscriptions (
       user_id, plan_id, status, source, billing_interval, price_amount_thb,
       current_period_end, founder_started_at, founder_status, founder_price_lock
     ) values ($1, 'founder', 'active', 'admin', 'year', 299,
       now() + interval '1 year', now(), 'active', true)
-  `, [overCapacityFounder]), "Founder 100 is full");
-
-  const admin = randomUUID();
-  await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [admin]);
-  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
-  const seatCount = await db.query("select public.get_founder_seat_count() as seats");
-  assert.equal(seatCount.rows[0].seats, 100, "admin sees active Founder seat usage");
-  const publicCapacity = await db.query("select * from public.get_founder_capacity()");
-  assert.deepEqual(publicCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
-
-  const historicalFounderLedger = await db.query(
-    "select count(*)::integer as seats from public.founder_seat_ledger where user_id = (select user_id from public.subscriptions where id = $1)",
-    [firstFounder],
+  `, [overCapacityFounderUser]), "Founder activation requires an admin-confirmed 299 THB payment application");
+  await rejectsWith(
+    () => db.query("select public.approve_upgrade_request($1)", [overCapacityApplication.id]),
+    "approve_upgrade_request is disabled",
   );
-  assert.equal(historicalFounderLedger.rows[0].seats, 1, "inactive Founder history did not create a no-reclaim ledger entry");
+  await rejectsWith(
+    () => db.query("select public.renew_subscription($1)", [firstFounderSubscription]),
+    "renew_subscription is disabled",
+  );
   await rejectsWith(
     () => db.query(`
       update public.subscriptions
-      set status = 'active', founder_status = 'active', founder_price_lock = true,
-          current_period_end = now() + interval '1 year'
+      set current_period_end = current_period_end + interval '1 year'
       where id = $1
-    `, [firstFounder]),
-    "Founder membership cannot be claimed twice",
+    `, [firstFounderSubscription]),
+    "Founder renewal requires an audited 599 THB payment confirmation",
   );
 
-  const transferTarget = randomUUID();
-  await db.query("insert into public.profiles(id) values ($1)", [transferTarget]);
+  const oldFounderPeriod = (await db.query(
+    "select current_period_end from public.subscriptions where id = $1",
+    [firstFounderSubscription],
+  )).rows[0].current_period_end;
   await rejectsWith(
-    () => db.query("update public.subscriptions set user_id = $1 where id = $2", [transferTarget, secondFounder]),
-    "Founder subscription owner cannot be changed",
+    () => confirmRenewal(firstFounderSubscription, 299, "founder-renewal-wrong", randomUUID()),
+    "does not match renewal amount 599",
+  );
+  const founderRenewalKey = randomUUID();
+  const founderRenewalPaidAt = new Date().toISOString();
+  const founderRenewedUntil = await confirmRenewal(
+    firstFounderSubscription,
+    599,
+    "founder-renewal-001",
+    founderRenewalKey,
+    founderRenewalPaidAt,
+  );
+  const founderRetryUntil = await confirmRenewal(
+    firstFounderSubscription,
+    599,
+    "founder-renewal-001",
+    founderRenewalKey,
+    founderRenewalPaidAt,
+  );
+  assert.equal(founderRetryUntil.toISOString(), founderRenewedUntil.toISOString(), "renewal retry changed the period twice");
+  await rejectsWith(
+    () => confirmRenewal(
+      firstFounderSubscription,
+      599,
+      "founder-renewal-001",
+      founderRenewalKey,
+      new Date(Date.parse(founderRenewalPaidAt) + 1000).toISOString(),
+    ),
+    "Idempotency key was already used",
+  );
+  assert.ok(founderRenewedUntil > oldFounderPeriod, "Founder renewal did not extend the period");
+  const renewedFounder = await db.query(`
+    select price_amount_thb, founder_price_lock, founder_status
+    from public.subscriptions where id = $1
+  `, [firstFounderSubscription]);
+  assert.deepEqual(renewedFounder.rows[0], {
+    price_amount_thb: 599,
+    founder_price_lock: false,
+    founder_status: "active",
+  });
+  assert.equal((await db.query(`
+    select count(*)::integer as count from public.membership_payment_confirmations
+    where subscription_id = $1 and operation = 'renewal'
+  `, [firstFounderSubscription])).rows[0].count, 1, "renewal retry duplicated its payment audit");
+  assert.equal((await db.query(`
+    select count(*)::integer as count from public.subscription_events
+    where subscription_id = $1 and event_type = 'renewed'
+  `, [firstFounderSubscription])).rows[0].count, 1, "renewal retry duplicated its subscription event");
+  await rejectsWith(
+    () => confirmRenewal(firstFounderSubscription, 599, "different-operation", firstActivationKey),
+    "Idempotency key was already used",
   );
 
-  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [nextFounder]);
-  await rejectsWith(() => db.query("select public.get_founder_seat_count()"), "Admin access required");
-  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
-  await rejectsWith(
-    () => db.query("select public.renew_subscription($1)", [firstFounder]),
-    "Cancelled, revoked, or expired",
+  const expiredFounderUser = founderUsers[2];
+  const expiredFounderSubscription = (await db.query(`
+    select id from public.subscriptions
+    where user_id = $1 and plan_id = 'founder'
+  `, [expiredFounderUser])).rows[0].id;
+  await setActor(admin);
+  await db.query("select set_config('app.membership_plan_change_allowed', 'on', false)");
+  await db.query("update public.profiles set plan = 'free' where id = $1", [expiredFounderUser]);
+  await db.query("select set_config('app.membership_plan_change_allowed', 'off', false)");
+  await db.query(`
+    update public.subscriptions
+    set status = 'expired',
+      current_period_start = now() - interval '2 years',
+      current_period_end = now() - interval '1 year',
+      founder_status = 'expired',
+      founder_price_lock = false
+    where id = $1
+  `, [expiredFounderSubscription]);
+  const expiredRenewalFloor = (await db.query("select now() as value")).rows[0].value;
+  const expiredFounderRenewedUntil = await confirmRenewal(
+    expiredFounderSubscription,
+    599,
+    "founder-expired-renewal-001",
+    randomUUID(),
   );
+  const expiredRenewalCeiling = (await db.query("select now() as value")).rows[0].value;
+  const revivedFounder = await db.query(`
+    select subscription.status, subscription.current_period_start,
+      subscription.current_period_end, subscription.price_amount_thb,
+      subscription.founder_status, subscription.founder_price_lock,
+      profile.plan,
+      subscription.current_period_end = subscription.current_period_start + interval '1 year'
+        as is_fresh_annual_period
+    from public.subscriptions subscription
+    join public.profiles profile on profile.id = subscription.user_id
+    where subscription.id = $1
+  `, [expiredFounderSubscription]);
+  assert.equal(revivedFounder.rows[0].status, "active");
+  assert.equal(revivedFounder.rows[0].plan, "founder");
+  assert.equal(revivedFounder.rows[0].price_amount_thb, 599);
+  assert.equal(revivedFounder.rows[0].founder_status, "active");
+  assert.equal(revivedFounder.rows[0].founder_price_lock, false);
+  assert.equal(revivedFounder.rows[0].is_fresh_annual_period, true,
+    "expired renewal did not start a fresh annual period");
+  assert.ok(revivedFounder.rows[0].current_period_start >= expiredRenewalFloor);
+  assert.ok(revivedFounder.rows[0].current_period_start <= expiredRenewalCeiling);
+  assert.equal(
+    revivedFounder.rows[0].current_period_end.toISOString(),
+    expiredFounderRenewedUntil.toISOString(),
+    "expired renewal returned a different period end from the stored subscription",
+  );
+  assert.equal((await db.query("select count(*)::integer as count from public.founder_seat_ledger")).rows[0].count, 100,
+    "renewing an expired Founder membership consumed or recycled a promotion place");
+
+  const teacherUser = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [teacherUser]);
+  const teacherApplication = await createApplication(teacherUser, "teacher");
+  assert.equal(teacherApplication.quoted_amount_thb, 599);
+  const teacherSubscription = await confirmApplication(
+    teacherApplication.id,
+    599,
+    "teacher-payment-001",
+    randomUUID(),
+  );
+  await confirmRenewal(teacherSubscription, 599, "teacher-renewal-001", randomUUID());
+  const teacherState = await db.query(`
+    select subscription.price_amount_thb, profile.plan
+    from public.subscriptions subscription
+    join public.profiles profile on profile.id = subscription.user_id
+    where subscription.id = $1
+  `, [teacherSubscription]);
+  assert.deepEqual(teacherState.rows[0], { price_amount_thb: 599, plan: "teacher" });
+
   const legacySubscription = legacy.rows[0];
   const legacyId = await db.query("select id from public.subscriptions where user_id = $1", [legacyUser]);
   assert.equal(legacySubscription.source, "legacy");
   await rejectsWith(
-    () => db.query("select public.renew_subscription($1)", [legacyId.rows[0].id]),
+    () => confirmRenewal(legacyId.rows[0].id, 990, "legacy-renewal", randomUUID()),
     "Preserved or non-annual",
   );
 
-  const teacherUser = randomUUID();
-  await db.query("insert into public.profiles(id) values ($1)", [teacherUser]);
-  const teacher = await db.query(`
-    insert into public.subscriptions (
-      user_id, plan_id, status, source, billing_interval,
-      current_period_start, current_period_end, price_amount_thb
-    ) values ($1, 'teacher', 'active', 'admin', 'year',
-      now() - interval '1 year', now() - interval '1 day', 500) returning id
-  `, [teacherUser]);
-  await db.query("select public.renew_subscription($1)", [teacher.rows[0].id]);
-  const teacherState = await db.query(`
-    select s.price_amount_thb, p.plan from public.subscriptions s
-    join public.profiles p on p.id = s.user_id where s.id = $1
-  `, [teacher.rows[0].id]);
-  assert.equal(teacherState.rows[0].price_amount_thb, 599);
-  assert.equal(teacherState.rows[0].plan, "teacher");
-
-  await db.query("update public.plans set price_amount_thb = 399 where id = 'founder'");
-  await db.query("select public.renew_subscription($1)", [secondFounder]);
-  const founderPrice = await db.query("select price_amount_thb from public.subscriptions where id = $1", [secondFounder]);
-  assert.equal(founderPrice.rows[0].price_amount_thb, 299);
-
-  await db.query("select public.renew_subscription($1)", [pastDueFounder]);
-  const renewedPastDueFounder = await db.query(
-    "select status, price_amount_thb from public.subscriptions where id = $1",
-    [pastDueFounder],
-  );
-  assert.deepEqual(
-    renewedPastDueFounder.rows[0],
-    { status: "active", price_amount_thb: 299 },
-    "an unexpired past_due Founder could not renew in place",
-  );
-
+  const deletedFounderUser = founderUsers[1];
+  const deletedPaymentCode = (await db.query(`
+    select confirmation.application_reference_code
+    from public.membership_payment_confirmations confirmation
+    where confirmation.user_id = $1 and confirmation.operation = 'activation'
+  `, [deletedFounderUser])).rows[0].application_reference_code;
   await db.query("delete from public.profiles where id = $1", [deletedFounderUser]);
-  const ledger = await db.query("select count(*)::integer as seats, count(user_id)::integer as linked from public.founder_seat_ledger");
-  assert.equal(ledger.rows[0].seats, 101, "historical Founder grants were unexpectedly deleted");
-  assert.equal(ledger.rows[0].linked, 100, "erased profile UUID was retained in the ledger");
-  const afterDeletion = await db.query("select public.get_founder_seat_count() as seats");
-  assert.equal(afterDeletion.rows[0].seats, 99, "an inactive/deleted Founder still consumed active capacity");
-
-  const replacementFounder = randomUUID();
-  await db.query("insert into public.profiles(id) values ($1)", [replacementFounder]);
-  await db.query(`
-    insert into public.subscriptions (
-      user_id, plan_id, status, source, billing_interval, price_amount_thb,
-      current_period_end, founder_started_at, founder_status, founder_price_lock
-    ) values ($1, 'founder', 'active', 'admin', 'year', 299,
-      now() + interval '1 year', now(), 'active', true)
-  `, [replacementFounder]);
-  const finalCapacity = await db.query("select * from public.get_founder_capacity()");
-  assert.deepEqual(finalCapacity.rows[0], { used: 100, capacity: 100, remaining: 0, is_full: true });
-  const finalLedger = await db.query("select count(*)::integer as seats from public.founder_seat_ledger");
-  assert.equal(finalLedger.rows[0].seats, 102, "historical grants should remain append-only after a replacement seat");
+  const ledgerAfterDeletion = await db.query(
+    "select count(*)::integer as seats, count(user_id)::integer as linked from public.founder_seat_ledger",
+  );
+  assert.deepEqual(ledgerAfterDeletion.rows[0], { seats: 100, linked: 99 },
+    "deleting an account recycled or retained identifying Founder ledger data");
+  const auditAfterDeletion = await db.query(`
+    select request_id, subscription_id, user_id, application_reference_code
+    from public.membership_payment_confirmations
+    where application_reference_code = $1 and operation = 'activation'
+  `, [deletedPaymentCode]);
+  assert.deepEqual(auditAfterDeletion.rows[0], {
+    request_id: null,
+    subscription_id: null,
+    user_id: null,
+    application_reference_code: deletedPaymentCode,
+  }, "account deletion removed the non-identifying payment audit");
+  assert.deepEqual((await db.query("select * from public.get_founder_capacity()")).rows[0],
+    { used: 100, capacity: 100, remaining: 0, is_full: true },
+    "account deletion recycled a Founder promotion place");
 
   process.stdout.write("SQL execution and membership behaviors passed in isolated PGlite.\n");
 } finally {

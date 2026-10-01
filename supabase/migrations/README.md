@@ -257,6 +257,24 @@ conflicts. It was applied and recorded on the live project on 2026-10-01; a
 post-apply ledger check confirmed that local and remote both contain version
 `20261001165640`.
 
+Migration `20261001180000_047_founder_payment_confirmation.sql` is **pending**.
+It makes 299 THB a first-year Founder offer for only the first 100 payments
+confirmed by an admin, sets Founder and Teacher renewal to 599 THB/year, and
+adds idempotent application, activation and renewal RPCs. Pending applications
+do not reserve a place. The permanent Founder ledger receives a structurally
+bounded slot 1–100 only inside successful activation, cannot be deleted or
+reassigned, and remains consumed after expiry, cancellation or account
+deletion. The migration also adds an admin-readable, browser-append-only
+payment-confirmation audit containing reference metadata only, never a slip.
+It fails closed before DDL if the historical ledger already exceeds 100.
+
+Before applying `047`, confirm no unexpected direct clients still call the now
+disabled `approve_upgrade_request` or `renew_subscription` RPCs. Run
+`npm run test:membership-sql`, the migration-focused Vitest, a CLI dry-run and
+real-role staging checks. The PGlite suite verifies transaction rollback and
+idempotency in one embedded connection; a staging test with independent
+Postgres connections is still required to validate advisory-lock contention.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
@@ -266,7 +284,7 @@ are already applied: `019` contains durable Founder grant history, renewal lock
 order and exact-file Storage policy; `020` adds Free favorites enforcement and
 reasserts the same request, renewal, and Storage rules as defense in depth;
 `021` exposes only a guarded aggregate of historical Founder grants to admins.
-Migration `025`
-supersedes that display/counting behavior with the current entitled Founder
-source of truth while retaining the ledger solely to prevent reclaiming a lost
-price lock.
+Migration `025` temporarily superseded the display/counting behavior with
+current entitled Founder usage. Pending migration `047` restores the durable
+ledger as the cumulative source of truth and hardens it as an irreversible
+first-100 promotion record; once `047` is applied, places are never recycled.

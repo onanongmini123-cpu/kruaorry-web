@@ -360,27 +360,142 @@ export async function setResourceSaved(supabase: SupabaseClient, resourceId: str
 
 export interface UpgradeRequest {
   id: string;
+  referenceCode: string;
   planId: string;
   status: "pending" | "approved" | "declined";
+  quotedAmountThb: number;
+  paymentPaidAt: string | null;
+  paymentConfirmedAt: string | null;
+  paymentConfirmedAmountThb: number | null;
+  paymentReference: string | null;
   createdAt: string;
+}
+
+interface UpgradeRequestRow {
+  id: string;
+  reference_code: string;
+  plan_id: string;
+  status: "pending" | "approved" | "declined";
+  quoted_amount_thb: number;
+  payment_paid_at: string | null;
+  payment_confirmed_at: string | null;
+  payment_confirmed_amount_thb: number | null;
+  payment_reference: string | null;
+  created_at: string;
+}
+
+interface CreatedMembershipApplicationRow {
+  id: string;
+  reference_code: string;
+  plan_id: string;
+  status: "pending" | "approved" | "declined";
+  quoted_amount_thb: number;
+  created_at: string;
+}
+
+export interface MembershipApplicationMutationResult {
+  application: UpgradeRequest | null;
+  error: string | null;
+}
+
+export interface ManualPaymentConfirmation {
+  amountThb: number;
+  paymentReference: string;
+  paidAt: string;
+  idempotencyKey: string;
+}
+
+function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | UpgradeRequestRow): UpgradeRequest | null {
+  const quotedAmountThb = Number(row.quoted_amount_thb);
+  if (!row.id || !row.reference_code || !row.plan_id || !["pending", "approved", "declined"].includes(row.status)) return null;
+  if (!Number.isInteger(quotedAmountThb) || quotedAmountThb < 0 || !row.created_at) return null;
+
+  const persisted = row as Partial<UpgradeRequestRow>;
+  return {
+    id: row.id,
+    referenceCode: row.reference_code,
+    planId: row.plan_id,
+    status: row.status,
+    quotedAmountThb,
+    paymentPaidAt: persisted.payment_paid_at ?? null,
+    paymentConfirmedAt: persisted.payment_confirmed_at ?? null,
+    paymentConfirmedAmountThb: persisted.payment_confirmed_amount_thb === null || persisted.payment_confirmed_amount_thb === undefined
+      ? null
+      : Number(persisted.payment_confirmed_amount_thb),
+    paymentReference: persisted.payment_reference ?? null,
+    createdAt: row.created_at,
+  };
 }
 
 export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
   const { data, error } = await supabase
     .from("upgrade_requests")
-    .select("id, plan_id, status, created_at")
+    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) logError("fetchUpgradeRequests failed", error);
   if (error || !data) return [];
-  return data.map((r) => ({ id: r.id, planId: r.plan_id, status: r.status, createdAt: r.created_at }));
+  return (data as UpgradeRequestRow[])
+    .map(membershipApplicationFromRow)
+    .filter((application): application is UpgradeRequest => application !== null);
 }
 
-export async function submitUpgradeRequest(supabase: SupabaseClient, userId: string, planId: string): Promise<string | null> {
-  const { error } = await supabase.from("upgrade_requests").insert({ user_id: userId, plan_id: planId });
+export async function createMembershipApplication(supabase: SupabaseClient, planId: string): Promise<MembershipApplicationMutationResult> {
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("create_membership_application", {
+    p_plan_id: planId,
+  })), "create membership application");
+  if (!outcome.ok) return { application: null, error: outcome.reason };
+
+  const { data, error } = outcome.value;
   if (error) {
-    logError("submitUpgradeRequest failed", error);
+    logError("createMembershipApplication failed", error);
+    return { application: null, error: error.message };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as CreatedMembershipApplicationRow | null;
+  const application = row ? membershipApplicationFromRow(row) : null;
+  return application
+    ? { application, error: null }
+    : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
+}
+
+export async function confirmMembershipPayment(
+  supabase: SupabaseClient,
+  requestId: string,
+  confirmation: ManualPaymentConfirmation,
+): Promise<string | null> {
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("confirm_membership_payment", {
+    p_request_id: requestId,
+    p_amount_thb: confirmation.amountThb,
+    p_payment_reference: confirmation.paymentReference.trim(),
+    p_paid_at: confirmation.paidAt,
+    p_idempotency_key: confirmation.idempotencyKey,
+  })), "confirm membership payment");
+  if (!outcome.ok) return outcome.reason;
+  const { error } = outcome.value;
+  if (error) {
+    logError("confirmMembershipPayment failed", error);
+    return error.message;
+  }
+  return null;
+}
+
+export async function confirmSubscriptionRenewal(
+  supabase: SupabaseClient,
+  subscriptionId: string,
+  confirmation: ManualPaymentConfirmation,
+): Promise<string | null> {
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("confirm_subscription_renewal", {
+    p_subscription_id: subscriptionId,
+    p_amount_thb: confirmation.amountThb,
+    p_payment_reference: confirmation.paymentReference.trim(),
+    p_paid_at: confirmation.paidAt,
+    p_idempotency_key: confirmation.idempotencyKey,
+  })), "confirm subscription renewal");
+  if (!outcome.ok) return outcome.reason;
+  const { error } = outcome.value;
+  if (error) {
+    logError("confirmSubscriptionRenewal failed", error);
     return error.message;
   }
   return null;

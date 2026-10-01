@@ -10,7 +10,7 @@ export default function TermsPage() {
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
       </Link>
       <h1 style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-30)" }}>เงื่อนไขการใช้งาน</h1>
-      <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)" }}>ปรับปรุงล่าสุด: สิงหาคม 2569</p>
+      <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)" }}>ปรับปรุงล่าสุด: ตุลาคม 2569</p>
 
       <div style={{ marginTop: "var(--sp-7)", display: "grid", gap: "var(--sp-6)", fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)" }}>
         <section>
@@ -32,8 +32,11 @@ export default function TermsPage() {
         <section>
           <h2 style={{ fontSize: "var(--fs-20)", marginBottom: 8 }}>3. การชำระเงินและการอัปเกรดแพ็กเกจ</h2>
           <p>
-            การอัปเกรดแพ็กเกจดำเนินการผ่านการติดต่อทีมงานโดยตรงทาง <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> เพื่อโอนเงินหรือชำระเงินนอกระบบ
-            ทีมงานจะอัปเกรดแพ็กเกจให้หลังจากยืนยันการชำระเงินแล้ว หากมีปัญหาเกี่ยวกับการชำระเงิน กรุณาติดต่อทีมงานผ่านช่องทางเดียวกัน
+            กรุณาสร้างใบสมัครและเลขอ้างอิงที่หน้า <Link href="/membership">สมัครสมาชิก</Link> ก่อน จึงติดต่อทีมงานทาง <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> เพื่อรับรายละเอียดและแจ้งชำระ
+            ทีมงานจะออกสิทธิ์หลังตรวจยอดเงินเข้าจริงและกดยืนยันในระบบแล้วเท่านั้น
+          </p>
+          <p style={{ marginTop: 8 }}>
+            ราคา 299 บาทใช้สำหรับปีแรกของสิทธิ์ Founder เฉพาะ 100 คนแรกที่ทีมงานยืนยันการชำระจริงสำเร็จ การกรอกใบสมัคร การส่งสลิป หรือการแจ้งชำระยังไม่นับสิทธิ์และไม่จองสิทธิ์ การต่ออายุปีถัดไปมีราคา 599 บาท/ปี
           </p>
         </section>
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -186,6 +186,69 @@ describe("fetchFounderCapacity", () => {
     } as unknown as SupabaseClient;
 
     await expect(fetchFounderCapacity(supabase)).resolves.toBeNull();
+  });
+});
+
+describe("manual membership payment RPC wrappers", () => {
+  it("creates an application and normalizes the RETURNS TABLE array row", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{
+        id: "request-1",
+        reference_code: "KA-260001",
+        plan_id: "founder",
+        status: "pending",
+        quoted_amount_thb: 299,
+        created_at: "2026-10-01T02:00:00.000Z",
+      }],
+      error: null,
+    });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await expect(createMembershipApplication(supabase, "founder")).resolves.toEqual({
+      application: {
+        id: "request-1",
+        referenceCode: "KA-260001",
+        planId: "founder",
+        status: "pending",
+        quotedAmountThb: 299,
+        paymentPaidAt: null,
+        paymentConfirmedAt: null,
+        paymentConfirmedAmountThb: null,
+        paymentReference: null,
+        createdAt: "2026-10-01T02:00:00.000Z",
+      },
+      error: null,
+    });
+    expect(rpc).toHaveBeenCalledWith("create_membership_application", { p_plan_id: "founder" });
+  });
+
+  it("passes the exact guarded confirmation contract for applications and renewals", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: "result", error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+    const confirmation = {
+      amountThb: 599,
+      paymentReference: "  BANK-9988  ",
+      paidAt: "2026-10-01T03:00:00.000Z",
+      idempotencyKey: "admin-action-1",
+    };
+
+    await expect(confirmMembershipPayment(supabase, "request-1", confirmation)).resolves.toBeNull();
+    expect(rpc).toHaveBeenNthCalledWith(1, "confirm_membership_payment", {
+      p_request_id: "request-1",
+      p_amount_thb: 599,
+      p_payment_reference: "BANK-9988",
+      p_paid_at: "2026-10-01T03:00:00.000Z",
+      p_idempotency_key: "admin-action-1",
+    });
+
+    await expect(confirmSubscriptionRenewal(supabase, "subscription-1", confirmation)).resolves.toBeNull();
+    expect(rpc).toHaveBeenNthCalledWith(2, "confirm_subscription_renewal", {
+      p_subscription_id: "subscription-1",
+      p_amount_thb: 599,
+      p_payment_reference: "BANK-9988",
+      p_paid_at: "2026-10-01T03:00:00.000Z",
+      p_idempotency_key: "admin-action-1",
+    });
   });
 });
 

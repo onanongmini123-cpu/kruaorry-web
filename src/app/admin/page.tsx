@@ -7,6 +7,7 @@ import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpe
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { confirmMembershipPayment, confirmSubscriptionRenewal } from "@/lib/data";
 import { loadResourceTarget } from "@/lib/resourceTarget";
 import {
   validateResourceFile,
@@ -35,6 +36,8 @@ import {
   canRenewMember,
   effectiveMemberPlan,
   memberPlanChangeConfirmation,
+  preferredAdminSubscription,
+  renewalAmountThb,
   type AdminPlan,
   type AdminSubscription,
 } from "@/lib/adminMembership";
@@ -108,8 +111,30 @@ interface AdminUpgradeRequest {
   user_id: string;
   plan_id: string;
   status: "pending" | "approved" | "declined";
+  reference_code: string;
+  quoted_amount_thb: number;
+  payment_paid_at: string | null;
+  payment_confirmed_at: string | null;
+  payment_confirmed_by: string | null;
+  payment_confirmed_amount_thb: number | null;
+  payment_reference: string | null;
   created_at: string;
   profiles: { full_name: string | null; email: string } | null;
+}
+
+type PaymentConfirmationTarget =
+  | { kind: "application"; request: AdminUpgradeRequest; amountThb: number; title: string }
+  | { kind: "renewal"; subscription: AdminSubscription; amountThb: number; title: string };
+
+function localDateTimeInputValue(date = new Date()): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function newIdempotencyKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `manual-payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 interface AdminReview {
@@ -227,7 +252,6 @@ export default function AdminConsolePage() {
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
   const [founderSeatsUsed, setFounderSeatsUsed] = useState<number | null>(null);
-  const [renewingId, setRenewingId] = useState<string | null>(null);
   const [changingPlanId, setChangingPlanId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -255,6 +279,12 @@ export default function AdminConsolePage() {
   // be retried instead of silently becoming an orphaned file forever.
   const [failedCleanups, setFailedCleanups] = useState<CleanupFailure[]>([]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentConfirmationTarget | null>(null);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentPaidAt, setPaymentPaidAt] = useState(() => localDateTimeInputValue());
+  const [paymentVerified, setPaymentVerified] = useState(false);
+  const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState("");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [moderationTab, setModerationTab] = useState<"reviews" | "reports">("reviews");
 
   // Derived (not state) so nothing calls setState from inside an effect —
@@ -274,7 +304,7 @@ export default function AdminConsolePage() {
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase.from("subscriptions")
         .select("id, user_id, plan_id, status, source, billing_interval, current_period_end, founder_status, founder_price_lock")
-        .in("status", ["active", "past_due"])
+        .in("status", ["active", "past_due", "expired"])
         .order("user_id", { ascending: true })
         .range(offset, offset + pageSize - 1);
       if (error) return { data: null, error };
@@ -302,8 +332,8 @@ export default function AdminConsolePage() {
       supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status, requested_by, created_at, profiles(full_name, email)").order("votes", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("upgrade_requests").select("id, user_id, plan_id, status, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
-      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
+      supabase.from("upgrade_requests").select("id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, created_at, profiles(full_name, email)").order("created_at", { ascending: false }),
+      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
       loadCurrentSubscriptions(),
       supabase.rpc("get_founder_capacity"),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
@@ -355,11 +385,14 @@ export default function AdminConsolePage() {
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
   };
 
-  const subscriptionsByUser = useMemo(
-    () => new Map((subscriptions ?? []).map((subscription) => [subscription.user_id, subscription])),
-    [subscriptions],
-  );
-  const mutationBusy = saving || pendingAction !== null || renewingId !== null || changingPlanId !== null;
+  const subscriptionsByUser = useMemo(() => {
+    const byUser = new Map<string, AdminSubscription>();
+    for (const subscription of subscriptions ?? []) {
+      byUser.set(subscription.user_id, preferredAdminSubscription(byUser.get(subscription.user_id), subscription));
+    }
+    return byUser;
+  }, [subscriptions]);
+  const mutationBusy = saving || pendingAction !== null || changingPlanId !== null || paymentTarget !== null;
 
   useEffect(() => {
     (async () => {
@@ -958,26 +991,86 @@ export default function AdminConsolePage() {
     }
   };
 
-  const handleApproveUpgrade = async (request: AdminUpgradeRequest) => {
+  const openPaymentConfirmation = (target: PaymentConfirmationTarget) => {
+    if (mutationBusy) return;
+    setPaymentTarget(target);
+    setPaymentReference("");
+    setPaymentPaidAt(localDateTimeInputValue());
+    setPaymentVerified(false);
+    setPaymentIdempotencyKey(newIdempotencyKey());
+    setPaymentError(null);
+  };
+
+  const closePaymentConfirmation = () => {
     if (pendingAction) return;
-    setPendingAction(`upgrade:${request.id}`);
+    setPaymentTarget(null);
+    setPaymentError(null);
+  };
+
+  const handleConfirmPayment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!paymentTarget || pendingAction) return;
+    const normalizedReference = paymentReference.trim();
+    const paidAt = new Date(paymentPaidAt);
+    if (!normalizedReference) {
+      setPaymentError("กรุณากรอกเลขอ้างอิงการชำระจากรายการจริง");
+      return;
+    }
+    if (!paymentPaidAt || !Number.isFinite(paidAt.getTime())) {
+      setPaymentError("กรุณาระบุวันและเวลาที่รับชำระ");
+      return;
+    }
+    if (!paymentVerified) {
+      setPaymentError("กรุณายืนยันว่าได้ตรวจยอดเงินเข้าจริงแล้ว");
+      return;
+    }
+
+    const actionId = paymentTarget.kind === "application"
+      ? `payment:${paymentTarget.request.id}`
+      : `renewal:${paymentTarget.subscription.id}`;
+    setPendingAction(actionId);
+    setPaymentError(null);
     try {
-      const { error } = await supabase.rpc("approve_upgrade_request", { p_request_id: request.id });
-      if (error) {
-        const friendly = /Founder 100 is full/i.test(error.message)
-          ? "Founder ครบ 100 สิทธิ์แล้ว ไม่สามารถอนุมัติเพิ่มได้"
-          : `อัปเกรดแพ็กไม่สำเร็จ: ${error.message}`;
-        window.alert(friendly);
+      const confirmation = {
+        amountThb: paymentTarget.amountThb,
+        paymentReference: normalizedReference,
+        paidAt: paidAt.toISOString(),
+        idempotencyKey: paymentIdempotencyKey,
+      };
+      const errorMessage = paymentTarget.kind === "application"
+        ? await confirmMembershipPayment(supabase, paymentTarget.request.id, confirmation)
+        : await confirmSubscriptionRenewal(supabase, paymentTarget.subscription.id, confirmation);
+      if (errorMessage) {
+        setPaymentError(/Founder 100 is full/i.test(errorMessage)
+          ? "Founder ครบ 100 สิทธิ์แล้ว ระบบไม่ได้อนุมัติรายการนี้"
+          : `ยืนยันการชำระไม่สำเร็จ: ${errorMessage}`);
         return;
       }
       await reloadAdminData();
+      setPaymentTarget(null);
+    } catch (error) {
+      setPaymentError(`ยืนยันการชำระไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
     } finally {
       setPendingAction(null);
     }
   };
 
+  const handleApproveUpgrade = (request: AdminUpgradeRequest) => {
+    const amountThb = Number(request.quoted_amount_thb);
+    if (!Number.isInteger(amountThb) || amountThb <= 0) {
+      window.alert("ไม่พบยอดที่คาดว่าจะชำระ จึงยังยืนยันไม่ได้");
+      return;
+    }
+    openPaymentConfirmation({
+      kind: "application",
+      request,
+      amountThb,
+      title: `ใบสมัคร ${request.reference_code}`,
+    });
+  };
+
   const handleDeclineUpgrade = async (id: string) => {
-    if (pendingAction) return;
+    if (pendingAction || paymentTarget || !window.confirm("ปฏิเสธใบสมัครนี้ใช่หรือไม่? ผู้สมัครจะเห็นสถานะว่าไม่ผ่านการตรวจสอบ")) return;
     setPendingAction(`upgrade:${id}`);
     try {
       const { error } = await supabase.rpc("decline_upgrade_request", { p_request_id: id });
@@ -1111,28 +1204,15 @@ export default function AdminConsolePage() {
     }
   };
 
-  const handleRenewSubscription = async (subscription: AdminSubscription) => {
+  const handleRenewSubscription = (subscription: AdminSubscription) => {
     if (mutationBusy || !canRenewMember(subscription)) return;
     const plan = plans.find((item) => item.id === subscription.plan_id && item.lifecycle_status === "active");
-    const price = subscription.plan_id === "founder" ? 299 : plan?.price_amount_thb;
-    if (!plan || typeof price !== "number") {
+    const price = renewalAmountThb(subscription, plan?.renewal_price_amount_thb ?? plan?.price_amount_thb ?? null);
+    if (!plan || price === null) {
       window.alert("ไม่พบราคาแพ็กปัจจุบัน จึงยังต่ออายุไม่ได้");
       return;
     }
-    if (!window.confirm(`ต่ออายุ ${plan.name} ในราคา ${price.toLocaleString("th-TH")} บาท/ปี ให้สมาชิกคนนี้หรือไม่? ระบบจะบันทึกสิทธิ์ แต่ไม่ตัดเงินอัตโนมัติ`)) return;
-    setRenewingId(subscription.id);
-    try {
-      const { error } = await supabase.rpc("renew_subscription", { p_subscription_id: subscription.id });
-      if (error) {
-        window.alert(`ต่ออายุไม่สำเร็จ: ${error.message}`);
-        return;
-      }
-      await reloadAdminData();
-    } catch (error) {
-      window.alert(`ต่ออายุไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
-    } finally {
-      setRenewingId(null);
-    }
+    openPaymentConfirmation({ kind: "renewal", subscription, amountThb: price, title: `ต่ออายุ ${plan.name}` });
   };
 
   // Only an owner can reach this at all — the role <select> in the members
@@ -1729,7 +1809,7 @@ export default function AdminConsolePage() {
           {view === "upgrades" && (
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>คำขออัปเกรด</h1>
-              <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>ตรวจสอบว่าได้รับเงินแล้วก่อนกดอนุมัติ</p>
+              <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>จับคู่เลขอ้างอิงกับแชต LINE และตรวจยอดเงินเข้าจริงก่อนยืนยัน</p>
               {upgradeRequests.length === 0 ? (
                 <EmptyState icon={Wallet} title="ยังไม่มีคำขออัปเกรด" description="" />
               ) : (
@@ -1741,13 +1821,22 @@ export default function AdminConsolePage() {
                         <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
                           {r.profiles?.email} · ขออัปเกรดเป็น <strong>{r.plan_id}</strong> · {new Date(r.created_at).toLocaleDateString("th-TH")}
                         </div>
+                        <dl className="kru-admin-payment-summary">
+                          <div><dt>เลขอ้างอิงใบสมัคร</dt><dd className="kru-admin-reference">{r.reference_code || "—"}</dd></div>
+                          <div><dt>ยอดตามใบสมัคร</dt><dd>{Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท</dd></div>
+                          <div><dt>รับชำระเมื่อ</dt><dd>{r.payment_paid_at ? new Date(r.payment_paid_at).toLocaleString("th-TH") : "ยังไม่บันทึก"}</dd></div>
+                          <div><dt>อ้างอิงการชำระ</dt><dd>{r.payment_reference || "ยังไม่บันทึก"}</dd></div>
+                          {r.payment_confirmed_at && (
+                            <div><dt>ยืนยันในระบบ</dt><dd>{new Date(r.payment_confirmed_at).toLocaleString("th-TH")} · {(r.payment_confirmed_amount_thb ?? r.quoted_amount_thb).toLocaleString("th-TH")} บาท</dd></div>
+                          )}
+                        </dl>
                       </div>
                       {r.status === "pending" ? (
                         <div className="kru-admin-card-actions">
-                          <Button size="sm" icon={Check} disabled={pendingAction !== null} loading={pendingAction === `upgrade:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
-                            อนุมัติและอัปเกรด
+                          <Button size="sm" icon={Check} disabled={mutationBusy} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
+                            ยืนยันรับเงินจริง {Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท
                           </Button>
-                          <Button size="sm" variant="ghost" icon={X} disabled={pendingAction !== null} onClick={() => handleDeclineUpgrade(r.id)}>
+                          <Button size="sm" variant="ghost" icon={X} disabled={mutationBusy} onClick={() => handleDeclineUpgrade(r.id)}>
                             ปฏิเสธ
                           </Button>
                         </div>
@@ -1803,7 +1892,7 @@ export default function AdminConsolePage() {
               <h1 style={{ fontSize: "var(--fs-30)" }}>สมาชิก</h1>
               <p style={{ margin: "var(--sp-3) 0 var(--sp-3)", color: "var(--text-muted)" }}>รายชื่อผู้ใช้ที่สมัครจริง · แพ็กที่แสดงคำนวณจากสิทธิ์ที่ยังมีผล ไม่ใช่ค่าแคชในโปรไฟล์</p>
               <p style={{ margin: "0 0 var(--sp-6)", color: "var(--text-muted)" }}>
-                สมาชิก Founder ที่กำลังใช้งาน: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
+                ยืนยันชำระ Founder แล้ว: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
               </p>
               {membershipDataError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: "var(--sp-5)" }}>{membershipDataError}</p>}
               {members.length === 0 ? (
@@ -1825,8 +1914,10 @@ export default function AdminConsolePage() {
                         const subscription = subscriptionsByUser.get(m.id) ?? null;
                         const effectivePlan = subscriptions === null ? m.plan : effectiveMemberPlan(subscription);
                         const renewablePlan = plans.find((plan) => plan.id === subscription?.plan_id && plan.lifecycle_status === "active");
-                        const canRenew = subscriptions !== null && canRenewMember(subscription) && !!renewablePlan &&
-                          (subscription?.plan_id === "founder" || typeof renewablePlan.price_amount_thb === "number");
+                        const renewalPrice = subscription && renewablePlan
+                          ? renewalAmountThb(subscription, renewablePlan.renewal_price_amount_thb ?? renewablePlan.price_amount_thb)
+                          : null;
+                        const canRenew = subscriptions !== null && canRenewMember(subscription) && renewalPrice !== null;
                         return (
                           <tr key={m.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
                           <td data-label="ครู" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
@@ -1881,8 +1972,8 @@ export default function AdminConsolePage() {
                           </td>
                           <td data-label="การต่ออายุ" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
                             {canRenew && subscription ? (
-                              <Button size="sm" variant="ghost" disabled={mutationBusy} onClick={() => void handleRenewSubscription(subscription)}>
-                                {renewingId === subscription.id ? "กำลังต่ออายุ…" : "ต่ออายุด้วยมือ"}
+                              <Button size="sm" variant="ghost" disabled={mutationBusy} onClick={() => handleRenewSubscription(subscription)}>
+                                ยืนยันชำระเพื่อต่ออายุ
                               </Button>
                             ) : "—"}
                           </td>
@@ -1938,6 +2029,54 @@ export default function AdminConsolePage() {
           )}
         </main>
       </div>
+      {paymentTarget && (
+        <div className="kru-admin-dialog-layer">
+          <button type="button" className="kru-admin-dialog-scrim" aria-label="ปิดหน้าต่างยืนยันการชำระ" onClick={closePaymentConfirmation} disabled={pendingAction !== null} />
+          <section className="kru-card kru-admin-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-confirmation-title" aria-describedby="payment-confirmation-description">
+            <form onSubmit={(event) => void handleConfirmPayment(event)}>
+              <div>
+                <span className="kru-admin-dialog-eyebrow">ยืนยันด้วยมือ</span>
+                <h2 id="payment-confirmation-title">ยืนยันรับเงินจริง</h2>
+                <p id="payment-confirmation-description">ตรวจบัญชีรับเงินและจับคู่กับเลขอ้างอิงก่อนยืนยัน การกดครั้งนี้จะออกสิทธิ์สมาชิกทันที</p>
+              </div>
+              <dl className="kru-admin-payment-dialog__summary">
+                <div><dt>รายการ</dt><dd>{paymentTarget.title}</dd></div>
+                {paymentTarget.kind === "application" && <div><dt>เลขอ้างอิงใบสมัคร</dt><dd className="kru-admin-reference">{paymentTarget.request.reference_code}</dd></div>}
+                <div><dt>ยอดที่ต้องตรวจ</dt><dd><strong>{paymentTarget.amountThb.toLocaleString("th-TH")} บาท</strong></dd></div>
+              </dl>
+              <Input
+                label="เลขอ้างอิงการชำระ"
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                placeholder="เช่น เลขธุรกรรม/รหัสจากรายการเงินเข้า"
+                autoComplete="off"
+                maxLength={120}
+                required
+                disabled={pendingAction !== null}
+              />
+              <Input
+                label="วันและเวลาที่รับชำระ"
+                type="datetime-local"
+                value={paymentPaidAt}
+                onChange={(event) => setPaymentPaidAt(event.target.value)}
+                required
+                disabled={pendingAction !== null}
+              />
+              <label className="kru-admin-payment-check">
+                <input type="checkbox" checked={paymentVerified} onChange={(event) => setPaymentVerified(event.target.checked)} disabled={pendingAction !== null} />
+                <span>ฉันตรวจแล้วว่ายอด {paymentTarget.amountThb.toLocaleString("th-TH")} บาทเข้าจริง และข้อมูลตรงกับรายการนี้</span>
+              </label>
+              {paymentError && <p className="kru-admin-payment-error" role="alert">{paymentError}</p>}
+              <div className="kru-admin-dialog-actions">
+                <Button type="button" variant="ghost" onClick={closePaymentConfirmation} disabled={pendingAction !== null}>ยกเลิก</Button>
+                <Button type="submit" icon={Check} loading={pendingAction !== null} disabled={pendingAction !== null || !paymentVerified}>
+                  ยืนยันรับเงิน {paymentTarget.amountThb.toLocaleString("th-TH")} บาท
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
       <style>{`
         .kru-admin-shell { display: flex; min-height: 100dvh; max-width: 100%; }
         .kru-admin-sidebar { display: none; flex-direction: column; width: 256px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100dvh; }
@@ -1979,6 +2118,28 @@ export default function AdminConsolePage() {
         .kru-admin-card-actions > .kru-btn { flex: 1 1 auto; }
         .kru-admin-request-card, .kru-admin-moderation-card, .kru-admin-benefit-card { padding: var(--sp-5); display: grid; gap: var(--sp-4); min-width: 0; }
         .kru-admin-card-list { display: grid; gap: var(--sp-4); max-width: 920px; }
+        .kru-admin-payment-summary { margin: var(--sp-3) 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-2) var(--sp-5); }
+        .kru-admin-payment-summary div { min-width: 0; }
+        .kru-admin-payment-summary dt { color: var(--text-faint); font-size: var(--fs-12); }
+        .kru-admin-payment-summary dd { margin: 2px 0 0; color: var(--text-body); font-size: var(--fs-13); overflow-wrap: anywhere; }
+        .kru-admin-reference { font-family: var(--font-mono); font-weight: var(--fw-semibold); letter-spacing: .03em; }
+        .kru-admin-dialog-layer { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: max(var(--sp-4), env(safe-area-inset-top)) max(var(--sp-4), env(safe-area-inset-right)) max(var(--sp-4), env(safe-area-inset-bottom)) max(var(--sp-4), env(safe-area-inset-left)); }
+        .kru-admin-dialog-scrim { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(18, 12, 29, .58); }
+        .kru-admin-payment-dialog { position: relative; width: min(100%, 560px); max-height: calc(100dvh - 32px); overflow-y: auto; padding: clamp(20px, 5vw, 32px); }
+        .kru-admin-payment-dialog form { display: grid; gap: var(--sp-5); }
+        .kru-admin-payment-dialog h2 { margin-top: var(--sp-2); font-size: var(--fs-24); }
+        .kru-admin-payment-dialog p { margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-14); }
+        .kru-admin-dialog-eyebrow { color: var(--purple-700); font-size: var(--fs-13); font-weight: var(--fw-bold); }
+        .kru-admin-payment-dialog__summary { margin: 0; padding: var(--sp-4); display: grid; gap: var(--sp-3); border-radius: var(--r-md); background: var(--surface-sunken); }
+        .kru-admin-payment-dialog__summary div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-4); }
+        .kru-admin-payment-dialog__summary dt { color: var(--text-muted); font-size: var(--fs-13); }
+        .kru-admin-payment-dialog__summary dd { min-width: 0; margin: 0; text-align: right; overflow-wrap: anywhere; }
+        .kru-admin-payment-check { min-height: 48px; padding: var(--sp-3); display: flex; align-items: flex-start; gap: var(--sp-3); border: 1px solid var(--border-brand); border-radius: var(--r-md); background: var(--purple-50); cursor: pointer; }
+        .kru-admin-payment-check input { width: 20px; height: 20px; margin-top: 2px; flex: 0 0 auto; accent-color: var(--brand); }
+        .kru-admin-payment-check span { font-size: var(--fs-14); line-height: 1.55; }
+        .kru-admin-payment-error { margin: 0 !important; padding: var(--sp-3); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg) !important; }
+        .kru-admin-dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+        .kru-admin-dialog-actions .kru-btn { flex: 1 1 180px; }
         .kru-admin-pagination { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); padding: var(--sp-3) 0; color: var(--text-muted); font-size: var(--fs-14); flex-wrap: wrap; }
         .kru-admin-review-stars { color: #b76b00; font-size: var(--fs-20); letter-spacing: 2px; }
         .kru-admin-review-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }

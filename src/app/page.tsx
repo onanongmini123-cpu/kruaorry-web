@@ -9,7 +9,6 @@ import {
   FolderOpen,
   Gift,
   Lock,
-  MessageCircle,
   Search,
   Sparkles,
   Timer,
@@ -20,7 +19,6 @@ import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, t
 import { createClient } from "@/lib/supabase/client";
 import { filterDiscoveredResources, resourceDiscoveryHref } from "@/lib/resourceDiscovery";
 import { publicCoverUrl } from "@/lib/resourceVisibility";
-import { LINE_OA_URL } from "@/lib/config";
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import { FeaturedResourceCarousel, featuredAccessLabel } from "@/app/landing/FeaturedResourceCarousel";
@@ -341,7 +339,7 @@ export default function LandingPage() {
           )}
           <div className="kru-landing-plans__grid">
             {plans.map((plan) => {
-              const intervalLabel = billingIntervalLabel(plan.billingInterval);
+              const intervalLabel = plan.id === "founder" ? null : billingIntervalLabel(plan.billingInterval);
               return (
                 <article key={plan.id} className={`kru-card kru-landing-plan ${plan.isPopular ? "kru-landing-plan--popular" : ""}`}>
                   <div className="kru-landing-plan__heading">
@@ -357,7 +355,7 @@ export default function LandingPage() {
                     <div role="status" className="kru-landing-plan__capacity">
                       {founderCapacity ? (
                         <>
-                          <strong>สมัครแล้ว {founderCapacity.used} คนจาก {founderCapacity.capacity}</strong>
+                          <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
                           <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
                         </>
                       ) : (
@@ -367,19 +365,9 @@ export default function LandingPage() {
                   )}
                   <PlanBenefits benefits={plan.benefits ?? []} />
                   {plan.id !== "free" && (
-                    plan.id === "founder" && founderCapacity?.isFull ? (
-                      <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
-                        Founder 100 เต็มแล้ว
-                      </button>
-                    ) : plan.id === "founder" && founderCapacity === null ? (
-                      <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
-                        กำลังตรวจสอบสิทธิ์ Founder
-                      </button>
-                    ) : (
-                      <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
-                        <MessageCircle size={18} aria-hidden="true" /> สนใจอัปเกรด
-                      </a>
-                    )
+                    <Link href="/membership" className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
+                      {plan.id === "founder" && founderCapacity?.isFull ? "ดูแพ็ก 599 บาท/ปี" : "สมัครหรือดูสถานะ"}
+                    </Link>
                   )}
                 </article>
               );
