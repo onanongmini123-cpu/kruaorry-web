@@ -233,6 +233,17 @@ protected catalogue metadata conflicts. It was applied and recorded on the
 live project on 2026-10-01; a post-apply ledger check confirmed that local and
 remote both contain version `20260929110000`.
 
+Migration `20261001150000_045_public_ar_phonics_quest_resource.sql` publishes
+**AR Phonics Quest — ภารกิจล่าเสียงตัวอักษร** as a free public English
+resource for Kindergarten–Grade 3. It records the reviewed 78-word A–Z bank,
+bundled audio, printable QR cards, camera and no-camera modes,
+solo/2–12-player/2–4-team/whole-class play, fair turn totals, deterministic
+100/50/0 scoring, local-only results, and the camera privacy lifecycle,
+together with the production Site URL and its distinct cover. The migration is
+idempotent, grants no paid plan, and fails closed when its title, normalized
+target URL, or protected catalogue metadata conflicts. Apply it only after the
+Site and cover are live, then record the verified remote ledger here.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 

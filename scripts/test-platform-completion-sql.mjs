@@ -21,6 +21,7 @@ const migrations = [
   "20260929090000_042_public_sentence_train_grammar_resource.sql",
   "20260929100000_043_public_grammar_boss_battle_resource.sql",
   "20260929110000_044_public_kaokham_resource.sql",
+  "20261001150000_045_public_ar_phonics_quest_resource.sql",
 ];
 
 const USERS = {
@@ -51,6 +52,7 @@ const RESOURCES = {
   sentenceTrainGrammar: "86afb9c3-20f2-4ab6-9ebc-9a454b36692b",
   grammarBossBattle: "f14855b7-3a39-4f59-85b9-06dde698d4d4",
   kaokham: "18e463f4-0117-4f0e-9fbf-921be97e5c14",
+  arPhonicsQuest: "898fa4ab-4db0-4ec0-9c9b-1ba1d4150972",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -1053,6 +1055,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000055",
     duplicateUrlId: "90000000-0000-4000-8000-000000000056",
     alternateTitle: "แบบฝึกภาษาไทยชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.arPhonicsQuest,
+    migration: "20261001150000_045_public_ar_phonics_quest_resource.sql",
+    label: "AR Phonics Quest",
+    title: "AR Phonics Quest — ภารกิจล่าเสียงตัวอักษร",
+    meta: "เว็บเกมภาษาอังกฤษ · 78 คำ A–Z · สแกนบัตร/ไม่ใช้กล้อง · เดี่ยว/2–12 คน/2–4 ทีม/ทั้งห้อง · อนุบาล–ป.3",
+    description: "เกมฝึกโฟนิกส์ธีมนักสำรวจสำหรับอนุบาล–ป.3 เชื่อมเสียงต้นคำกับตัวอักษรพิมพ์ใหญ่–เล็ก มีคำศัพท์ที่ตรวจแล้ว 78 คำครบ A–Z พร้อมไฟล์เสียงในเว็บ เล่นได้ทั้งคนเดียว ผลัดกัน 2–12 คน 2–4 ทีม หรือทั้งห้อง ระบบจัดตาให้เท่ากันและไม่จบกลางรอบ ครูเลือกตัวอักษร จำนวนภารกิจ และเวลา 20/30/40 วินาทีได้ เด็กฟังคำแล้วสแกนบัตร QR A–Z ที่พิมพ์จากเว็บ หรือใช้โหมดแตะ 3 ตัวเลือกโดยไม่ใช้กล้อง ตอบถูกครั้งแรกได้ 100 คะแนน ครั้งที่สอง 50 คะแนน ผิดหรือหมดเวลาได้ 0 คะแนน พร้อมคำใบ้ คำถามเสริม และสรุปเสียงที่ควรฝึก กล้องขอสิทธิ์เมื่อกดเปิด ไม่บันทึกหรืออัปโหลดภาพ ปิดเมื่อออกหรือซ่อนหน้าเว็บ และเก็บผลเฉพาะในอุปกรณ์",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["kindergarten", "p1", "p2", "p3"],
+    ctaUrl: "https://ar-phonics-quest-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/ar-phonics-quest.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "โฟนิกส์", "Phonics", "A–Z", "ตัวอักษร", "คำศัพท์", "สแกน QR", "กิจกรรมทีม"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000057",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000058",
+    alternateTitle: "เกมโฟนิกส์ชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.
