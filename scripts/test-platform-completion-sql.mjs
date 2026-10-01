@@ -23,6 +23,7 @@ const migrations = [
   "20260929110000_044_public_kaokham_resource.sql",
   "20261001150000_045_public_ar_phonics_quest_resource.sql",
   "20261001165640_046_authenticated_electric_circuit_lab_resource.sql",
+  "20261001180000_047_authenticated_ecosystem_guardians_resource.sql",
 ];
 
 const USERS = {
@@ -55,6 +56,7 @@ const RESOURCES = {
   kaokham: "18e463f4-0117-4f0e-9fbf-921be97e5c14",
   arPhonicsQuest: "898fa4ab-4db0-4ec0-9c9b-1ba1d4150972",
   electricCircuitLab: "c3a21758-8338-4f8f-a77e-42e7a6cf3eca",
+  ecosystemGuardians: "a7b13975-7244-4a8a-8b33-efc8f04bca89",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -1093,6 +1095,24 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000059",
     duplicateUrlId: "90000000-0000-4000-8000-000000000060",
     alternateTitle: "สื่อทดลองไฟฟ้าชื่ออื่น",
+    accessMode: "authenticated",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.ecosystemGuardians,
+    migration: "20261001180000_047_authenticated_ecosystem_guardians_resource.sql",
+    label: "Ecosystem Guardians",
+    title: "ผู้พิทักษ์ระบบนิเวศ — Ecosystem Guardians",
+    meta: "สื่อวิทยาศาสตร์โต้ตอบ · 4 ระบบนิเวศ · โซ่อาหาร–สายใยอาหาร · 8 ขั้น · ป.4–6",
+    description: "สื่อการสอนวิทยาศาสตร์แบบโต้ตอบสำหรับ ป.4–ป.6 ใช้เวลา 40–50 นาที พาผู้เรียนทำภารกิจ 8 ขั้นในป่า บ่อน้ำจืด ทุ่งหญ้า และพื้นที่เกษตร ตั้งแต่สำรวจและจำแนกผู้ผลิต ผู้บริโภค และผู้ย่อยสลาย ต่อโซ่อาหารและสายใยอาหารด้วยลูกศรจากอาหารไปยังผู้บริโภค ทดลองปรับตัวแปรเพื่อดูแนวโน้มประชากร วิเคราะห์สาเหตุ และเลือกแผนฟื้นฟูภายใต้งบประมาณ ก่อนทำแบบทบทวน 5/8/10 ข้อ ครูปรับระดับ จำนวนสิ่งมีชีวิต เวลา คำใบ้ คำบรรยาย เสียงธรรมชาติ กราฟ และคำอธิบายได้ มีทั้งโหมดเรียนรู้และโหมดท้าทาย รองรับการลากและการแตะ คีย์บอร์ด และการลดการเคลื่อนไหว พร้อมคู่มือครูและแผนย่อ 25–30 นาที โดยเก็บความคืบหน้าเฉพาะในอุปกรณ์และไม่เก็บชื่อเด็ก",
+    category: "วิทยาศาสตร์",
+    gradeLevels: ["p4", "p5", "p6"],
+    ctaUrl: "https://kru-ecosystem-guardians-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/ecosystem-guardians.jpg",
+    tags: ["สื่อการสอน", "ภาพจำลอง", "มีภารกิจ", "มีแบบทบทวน", "โซ่อาหาร", "สายใยอาหาร", "ระบบนิเวศ"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000061",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000062",
+    alternateTitle: "สื่อระบบนิเวศชื่ออื่น",
     accessMode: "authenticated",
   });
 

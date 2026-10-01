@@ -257,17 +257,31 @@ conflicts. It was applied and recorded on the live project on 2026-10-01; a
 post-apply ledger check confirmed that local and remote both contain version
 `20261001165640`.
 
-Migration `20261001180000_047_founder_payment_confirmation.sql` is **pending**.
+Migration `20261001180000_047_authenticated_ecosystem_guardians_resource.sql`
+prepares **ผู้พิทักษ์ระบบนิเวศ — Ecosystem Guardians** as a
+free-after-sign-in science teaching resource for Grades 4–6. It records four
+ecosystems, the eight-step explore/classify/build/simulate/analyze/restore/
+review journey, food-chain and food-web arrow conventions, configurable
+review lengths, accessible drag-and-tap interaction, a 40–50-minute teacher
+guide with a shorter lesson path, the production Site URL, and its distinct
+cover. The migration is idempotent, requires a permanent KruAorry account,
+grants no paid plan, and fails closed when its title, normalized target URL,
+or protected catalogue metadata conflicts. The Site and cover were verified,
+the dry-run named only this migration, and it was applied on 2026-10-01; a
+post-apply ledger check confirmed local and remote version `20261001180000`.
+
+Migration `20261001190000_048_founder_payment_confirmation.sql` is **pending**.
 It makes 299 THB a first-year Founder offer for only the first 100 payments
 confirmed by an admin, sets Founder and Teacher renewal to 599 THB/year, and
 adds idempotent application, activation and renewal RPCs. Pending applications
 do not reserve a place, and a member can have only one pending application
 across all plans; switching from Founder to Teacher uses the explicit conversion
-RPC. The permanent Founder ledger receives a structurally
-bounded slot 1–100 only inside successful activation, cannot be deleted or
-reassigned, and remains consumed after expiry, cancellation or account
-deletion. The migration also adds an admin-readable, browser-append-only
-payment-confirmation audit containing reference metadata only, never a slip.
+RPC. The permanent Founder ledger receives a structurally bounded slot 1–100
+only inside successful activation, cannot be deleted or reassigned, and remains
+consumed after expiry, cancellation or account deletion. The migration also
+adds an admin-readable, browser-append-only payment-confirmation audit
+containing reference metadata only, never a slip.
+
 Members first call an authenticated idempotent reporting RPC. Its
 `payment_reported_at` marker separates awaiting-payment from awaiting-review
 without granting access or reserving a Founder place. A retry returns the
@@ -276,13 +290,16 @@ is full, a new report or admin confirmation for a pending Founder quote is
 blocked; the request can only proceed through the explicit conversion RPC,
 which preserves its reference, requotes canonical Teacher at 599 THB and clears
 any report made against the old quote.
-It fails closed before DDL if the historical ledger contains any legacy grant,
-because migrations 019–025 did not record explicit payment-confirmation
-provenance. Those rows require a separate reviewed audit/reconciliation before
-047 can truthfully expose a confirmed-paid counter; 047 never guesses that an
-older grant was paid.
 
-Before applying `047`, confirm no unexpected direct clients still call the now
+Migration 048 is intentionally fail-closed until the two known owner test
+applications have been reconciled using their exact reviewed request IDs and
+resolver UUID. It never guesses rows by email, role, or a broad user predicate.
+It also fails before membership DDL if the historical Founder ledger contains
+any legacy grant, because migrations 019–025 did not record explicit
+payment-confirmation provenance. Those rows require a separate reviewed audit
+and reconciliation; 048 never guesses that an older grant was paid.
+
+Before applying `048`, confirm no unexpected direct clients still call the now
 disabled `approve_upgrade_request` or `renew_subscription` RPCs. Run
 `npm run test:membership-sql`, the migration-focused Vitest, a CLI dry-run and
 real-role staging checks. The PGlite suite verifies transaction rollback and
@@ -299,7 +316,7 @@ order and exact-file Storage policy; `020` adds Free favorites enforcement and
 reasserts the same request, renewal, and Storage rules as defense in depth;
 `021` exposes only a guarded aggregate of historical Founder grants to admins.
 Migration `025` temporarily superseded the display/counting behavior with
-current entitled Founder usage. Pending migration `047` restores the durable
+current entitled Founder usage. Pending migration `048` restores the durable
 ledger as the cumulative source of truth only after any unproven legacy grants
 have been separately audited and reconciled, then hardens it as an irreversible
-first-100 promotion record; once `047` is applied, places are never recycled.
+first-100 promotion record; once `048` is applied, places are never recycled.
