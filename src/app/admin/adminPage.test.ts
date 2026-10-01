@@ -68,4 +68,42 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).not.toContain("minWidth: 720");
     expect(pageSource).not.toContain("minWidth: 560");
   });
+
+  it("searches upgrade requests by reference, name, or email and displays payment workflow status", () => {
+    expect(pageSource).toContain('const [upgradeSearch, setUpgradeSearch]');
+    expect(pageSource).toContain("request.reference_code");
+    expect(pageSource).toContain("request.profiles?.full_name");
+    expect(pageSource).toContain("request.profiles?.email");
+    expect(pageSource).toContain("filteredUpgradeRequests.map");
+    expect(pageSource).toContain("payment_reported_at");
+    expect(pageSource).toContain("รอแจ้งชำระ");
+    expect(pageSource).toContain("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
+    expect(pageSource).toContain("const loadUpgradeRequests = async () =>");
+    expect(pageSource).toContain("profiles!upgrade_requests_user_id_fkey(full_name, email)");
+    expect(pageSource).toContain("profiles!resource_reviews_user_id_fkey(full_name, email)");
+    expect(pageSource).toContain("loadUpgradeRequests(),");
+    expect(pageSource).toContain(".range(offset, offset + pageSize - 1)");
+    expect(pageSource).toContain('.order("id", { ascending: false })');
+  });
+
+  it("shows Founder capacity before confirmation and blocks an over-capacity approval", () => {
+    expect(pageSource).toContain("Founder ปัจจุบัน");
+    expect(pageSource).toContain("หลังยืนยันรายการนี้");
+    expect(pageSource).toContain("projectedFounderSeats");
+    expect(pageSource).toContain("founderCapacityFull");
+    expect(pageSource).toContain("founderConfirmationBlocked");
+    expect(pageSource).toContain('disabled={pendingAction !== null || !paymentVerified || founderConfirmationBlocked}');
+    expect(pageSource).toContain("await fetchFounderCapacity(supabase)");
+    expect(pageSource).toContain("ลองตรวจสอบอีกครั้ง");
+  });
+
+  it("keeps the manual payment dialog keyboard-contained and restores the opener", () => {
+    expect(pageSource).toContain("ref={paymentDialogRef}");
+    expect(pageSource).toContain("tabIndex={-1}");
+    expect(pageSource).toContain('event.key === "Escape"');
+    expect(pageSource).toContain('event.key !== "Tab"');
+    expect(pageSource).toContain('document.body.style.overflow = "hidden"');
+    expect(pageSource).toContain("paymentTriggerRef.current.focus()");
+    expect(pageSource).toContain("if (pendingActionRef.current) return");
+  });
 });

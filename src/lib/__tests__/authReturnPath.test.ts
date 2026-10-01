@@ -12,6 +12,8 @@ describe("safeAuthNext", () => {
       .toBe(`/download/${id}?name=${encodeURIComponent("ใบงานภาษาไทย.pdf")}&autoclose=1`);
     expect(safeAuthNext("/app?view=favorites")).toBe("/app?view=favorites");
     expect(safeAuthNext("/membership")).toBe("/membership");
+    expect(safeAuthNext("/membership?plan=founder")).toBe("/membership?plan=founder");
+    expect(safeAuthNext("/membership?plan=teacher")).toBe("/membership?plan=teacher");
     expect(safeAuthNext("/app?view=library&q=%E0%B8%A0%E0%B8%B2%E0%B8%A9%E0%B8%B2%E0%B9%84%E0%B8%97%E0%B8%A2&category=%E0%B9%83%E0%B8%9A%E0%B8%87%E0%B8%B2%E0%B8%99&grade=p2"))
       .toBe("/app?view=library&q=%E0%B8%A0%E0%B8%B2%E0%B8%A9%E0%B8%B2%E0%B9%84%E0%B8%97%E0%B8%A2&category=%E0%B9%83%E0%B8%9A%E0%B8%87%E0%B8%B2%E0%B8%99&grade=p2");
   });
@@ -37,6 +39,9 @@ describe("safeAuthNext", () => {
     "/app?view=library&unknown=value",
     "/app#fragment",
     "/membership?redirect=https%3A%2F%2Fevil.example",
+    "/membership?plan=free",
+    "/membership?plan=founder&plan=teacher",
+    "/membership?plan=teacher&redirect=https%3A%2F%2Fevil.example",
     "/membership#how-to-pay",
   ])("falls back to /app for an unsafe destination: %s", (raw) => {
     expect(safeAuthNext(raw)).toBe("/app");

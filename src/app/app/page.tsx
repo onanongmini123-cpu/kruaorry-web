@@ -38,6 +38,7 @@ import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from 
 import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
 import { persistFavoriteOptimistically } from "@/lib/favoriteState";
+import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,8 @@ export default function TeacherAppPage() {
   const [requestError, setRequestError] = useState<string | null>(null);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -264,8 +267,24 @@ export default function TeacherAppPage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
+    if (signingOut) return;
+    setSigningOut(true);
+    setSignOutError(null);
+    const logoutError = await signOutCurrentSession(supabase.auth);
+    if (logoutError) {
+      setSignOutError(logoutError);
+      setSigningOut(false);
+      return;
+    }
+    setProfile(null);
+    setUserId(null);
+    setResources([]);
+    setPlans([]);
+    setRequests([]);
+    setSaved([]);
+    setEntitlements(EMPTY_ENTITLEMENTS);
+    setLoading(true);
+    router.replace("/login");
     router.refresh();
   };
 
@@ -349,7 +368,7 @@ export default function TeacherAppPage() {
               ไปที่หลังบ้านแอดมิน
             </Button>
           )}
-          <Button size="sm" block variant="ghost" icon={LogOut} onClick={handleSignOut} style={{ marginTop: "var(--sp-4)" }}>
+          <Button size="sm" block variant="ghost" icon={LogOut} onClick={() => void handleSignOut()} loading={signingOut} style={{ marginTop: "var(--sp-4)" }}>
             ออกจากระบบ
           </Button>
         </aside>
@@ -396,6 +415,12 @@ export default function TeacherAppPage() {
               <div role="alert" className="kru-save-alert">
                 <span>{saveError}</span>
                 <button type="button" onClick={() => setSaveError(null)} aria-label="ปิดข้อความแจ้งเตือน">×</button>
+              </div>
+            )}
+            {signOutError && (
+              <div role="alert" className="kru-save-alert">
+                <span>{signOutError}</span>
+                <button type="button" onClick={() => setSignOutError(null)} aria-label="ปิดข้อความแจ้งเตือนการออกจากระบบ">×</button>
               </div>
             )}
             {view === "home" && (
@@ -628,7 +653,10 @@ export default function TeacherAppPage() {
                           {isCurrent ? (
                             <Badge tone="success">แพ็กปัจจุบันของคุณ</Badge>
                           ) : plan.id === "free" ? null : (
-                            <Link className="kru-btn kru-btn--primary kru-btn--block" href="/membership">
+                            <Link
+                              className="kru-btn kru-btn--primary kru-btn--block"
+                              href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}
+                            >
                               สมัครหรือดูสถานะ
                             </Link>
                           )}
@@ -644,7 +672,13 @@ export default function TeacherAppPage() {
             )}
 
             {view === "account" && profile && (
-              <ProfileSettings supabase={supabase} profile={profile} onUpdated={setProfile} />
+              <ProfileSettings
+                supabase={supabase}
+                profile={profile}
+                onUpdated={setProfile}
+                onSignOut={() => void handleSignOut()}
+                signingOut={signingOut}
+              />
             )}
           </main>
         </div>

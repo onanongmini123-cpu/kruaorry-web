@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 
 // Executes the actual pending SQL against an isolated Postgres-compatible
 // engine. The small baseline below only supplies objects introduced by older
 // migrations; this is not a substitute for staging against a live DB copy.
-const db = new PGlite();
+const db = new PGlite({ extensions: { pgcrypto } });
 const files = [
   "20260901090000_017b_membership_catalog_and_capabilities.sql",
   "20260901090100_018_subscriptions_and_legacy_backfill.sql",
@@ -270,6 +271,20 @@ try {
     { id: "teacher", price_amount_thb: 599, renewal_price_amount_thb: 599 },
   ]);
 
+  const memberMutationPrivileges = await db.query(`
+    select
+      has_function_privilege('anon', 'public.report_membership_payment(uuid)', 'execute') as anon_report,
+      has_function_privilege('authenticated', 'public.report_membership_payment(uuid)', 'execute') as member_report,
+      has_function_privilege('anon', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as anon_convert,
+      has_function_privilege('authenticated', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as member_convert
+  `);
+  assert.deepEqual(memberMutationPrivileges.rows[0], {
+    anon_report: false,
+    member_report: true,
+    anon_convert: false,
+    member_convert: true,
+  }, "membership mutation RPC execute grants are not restricted to authenticated users");
+
   const admin = randomUUID();
   await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [admin]);
 
@@ -279,6 +294,19 @@ try {
   const createApplication = async (userId, planId) => {
     await setActor(userId);
     const result = await db.query("select * from public.create_membership_application($1)", [planId]);
+    return result.rows[0];
+  };
+  const reportApplication = async (userId, requestId) => {
+    await setActor(userId);
+    const result = await db.query("select * from public.report_membership_payment($1)", [requestId]);
+    return result.rows[0];
+  };
+  const convertFounderApplication = async (userId, requestId) => {
+    await setActor(userId);
+    const result = await db.query(
+      "select * from public.convert_founder_application_to_teacher($1)",
+      [requestId],
+    );
     return result.rows[0];
   };
   const confirmApplication = async (
@@ -316,11 +344,47 @@ try {
   assert.match(firstApplication.reference_code, /^KA-\d{8,}$/);
   assert.equal(firstApplication.quoted_amount_thb, 299);
   assert.equal(firstApplication.status, "pending");
+  assert.equal(firstApplication.payment_reported_at, null);
+  assert.equal("user_id" in firstApplication, false, "application RPC leaked a member identifier");
 
   const repeatedApplication = await createApplication(firstFounderUser, "founder");
   assert.equal(repeatedApplication.id, firstApplication.id, "a pending application must be idempotent per member and plan");
+  await rejectsWith(
+    () => createApplication(firstFounderUser, "teacher"),
+    "มีใบสมัครแพ็กเกจอื่นที่รอดำเนินการอยู่",
+  );
+  await rejectsWith(
+    () => db.query(`
+      insert into public.upgrade_requests (
+        user_id, plan_id, status, quoted_amount_thb
+      ) values ($1, 'teacher', 'pending', 599)
+    `, [firstFounderUser]),
+    "upgrade_requests_one_pending_per_user",
+  );
   assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 0,
     "a pending application reserved a Founder place");
+
+  await setActor(admin);
+  await rejectsWith(
+    () => db.query(
+      "select public.confirm_membership_payment($1, 299, 'not-yet-reported', now(), $2)",
+      [firstApplication.id, randomUUID()],
+    ),
+    "Member has not reported payment",
+  );
+
+  const otherMember = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [otherMember]);
+  await rejectsWith(
+    () => reportApplication(otherMember, firstApplication.id),
+    "Pending membership application not found",
+  );
+  const firstReport = await reportApplication(firstFounderUser, firstApplication.id);
+  const repeatedReport = await reportApplication(firstFounderUser, firstApplication.id);
+  assert.equal(firstReport.payment_reported_at.toISOString(), repeatedReport.payment_reported_at.toISOString(),
+    "reporting payment twice changed the self-attested timestamp");
+  assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 0,
+    "reporting payment reserved a Founder place");
 
   await setActor(admin);
   await rejectsWith(
@@ -397,6 +461,15 @@ try {
     "select count(*)::integer as count from public.membership_payment_confirmations where request_id = $1",
     [firstApplication.id],
   )).rows[0].count, 1, "activation retry duplicated its payment audit");
+  const firstPaymentFingerprint = createHash("sha256")
+    .update("founder-payment-001")
+    .digest("hex");
+  assert.equal((await db.query(`
+    select payment_reference_fingerprint
+    from public.membership_payment_confirmations
+    where request_id = $1
+  `, [firstApplication.id])).rows[0].payment_reference_fingerprint, firstPaymentFingerprint,
+  "payment-reference fingerprint did not match the normalized reference");
   await rejectsWith(
     () => db.query(
       "delete from public.membership_payment_confirmations where request_id = $1",
@@ -412,6 +485,46 @@ try {
     "Membership payment confirmation facts cannot be changed",
   );
 
+  const explicitConversionUser = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [explicitConversionUser]);
+  const founderApplicationToConvert = await createApplication(explicitConversionUser, "founder");
+  const preConversionReport = await reportApplication(
+    explicitConversionUser,
+    founderApplicationToConvert.id,
+  );
+  assert.ok(preConversionReport.payment_reported_at);
+  const explicitConversion = await convertFounderApplication(
+    explicitConversionUser,
+    founderApplicationToConvert.id,
+  );
+  assert.equal(explicitConversion.id, founderApplicationToConvert.id);
+  assert.equal(explicitConversion.reference_code, founderApplicationToConvert.reference_code);
+  assert.equal(explicitConversion.plan_id, "teacher");
+  assert.equal(explicitConversion.quoted_amount_thb, 599);
+  assert.equal(explicitConversion.payment_reported_at, null,
+    "conversion retained a self-attested report made against the old Founder quote");
+  const conversionRetry = await convertFounderApplication(
+    explicitConversionUser,
+    founderApplicationToConvert.id,
+  );
+  assert.equal(conversionRetry.reference_code, explicitConversion.reference_code);
+  assert.equal(conversionRetry.plan_id, "teacher");
+  const convertedPaymentReport = await reportApplication(
+    explicitConversionUser,
+    founderApplicationToConvert.id,
+  );
+  const conversionRetryAfterReport = await convertFounderApplication(
+    explicitConversionUser,
+    founderApplicationToConvert.id,
+  );
+  assert.equal(
+    conversionRetryAfterReport.payment_reported_at.toISOString(),
+    convertedPaymentReport.payment_reported_at.toISOString(),
+    "an idempotent conversion retry cleared a later Teacher payment report",
+  );
+  assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 1,
+    "conversion reserved or consumed a Founder place");
+
   const founderUsers = [firstFounderUser];
   // Reach 99 permanent grants. Every application is created before its own
   // confirmation and therefore never changes the public capacity by itself.
@@ -420,39 +533,107 @@ try {
     founderUsers.push(userId);
     await db.query("insert into public.profiles(id) values ($1)", [userId]);
     const application = await createApplication(userId, "founder");
+    await reportApplication(userId, application.id);
     await confirmApplication(application.id, 299, `founder-payment-${String(n).padStart(3, "0")}`, randomUUID());
   }
 
   const hundredthFounderUser = randomUUID();
   const overCapacityFounderUser = randomUUID();
-  await db.query("insert into public.profiles(id) values ($1), ($2)", [hundredthFounderUser, overCapacityFounderUser]);
+  const firstReportAtFullFounderUser = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1), ($2), ($3)", [
+    hundredthFounderUser,
+    overCapacityFounderUser,
+    firstReportAtFullFounderUser,
+  ]);
   const hundredthApplication = await createApplication(hundredthFounderUser, "founder");
   const overCapacityApplication = await createApplication(overCapacityFounderUser, "founder");
+  const firstReportAtFullApplication = await createApplication(firstReportAtFullFounderUser, "founder");
   assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 99,
     "pending applications changed Founder capacity");
 
+  const reportBeforeCapacityFilled = await reportApplication(
+    overCapacityFounderUser,
+    overCapacityApplication.id,
+  );
+  await reportApplication(hundredthFounderUser, hundredthApplication.id);
   await confirmApplication(hundredthApplication.id, 299, "founder-payment-100", randomUUID());
+  const retryAfterCapacityFilled = await reportApplication(
+    overCapacityFounderUser,
+    overCapacityApplication.id,
+  );
+  assert.equal(
+    retryAfterCapacityFilled.payment_reported_at.toISOString(),
+    reportBeforeCapacityFilled.payment_reported_at.toISOString(),
+    "a report retry stopped being idempotent after another member filled Founder capacity",
+  );
   await rejectsWith(
     () => confirmApplication(overCapacityApplication.id, 299, "founder-payment-101", randomUUID()),
     "Founder 100 is full",
   );
+  await rejectsWith(
+    () => reportApplication(firstReportAtFullFounderUser, firstReportAtFullApplication.id),
+    "Founder 100 is full",
+  );
 
   const overCapacityState = await db.query(`
-    select request.status, request.payment_confirmed_at,
+    select request.status, request.payment_reported_at is not null as payment_reported,
+      request.payment_confirmed_at,
       count(confirmation.id)::integer as confirmations,
       count(subscription.id)::integer as subscriptions
     from public.upgrade_requests request
     left join public.membership_payment_confirmations confirmation on confirmation.request_id = request.id
     left join public.subscriptions subscription on subscription.approved_from_request_id = request.id
     where request.id = $1
-    group by request.status, request.payment_confirmed_at
+    group by request.status, request.payment_reported_at, request.payment_confirmed_at
   `, [overCapacityApplication.id]);
   assert.deepEqual(overCapacityState.rows[0], {
     status: "pending",
+    payment_reported: true,
     payment_confirmed_at: null,
     confirmations: 0,
     subscriptions: 0,
   }, "the 101st confirmation did not roll back atomically");
+
+  const originalOverCapacityReference = overCapacityApplication.reference_code;
+  const convertedTeacher = await convertFounderApplication(
+    overCapacityFounderUser,
+    overCapacityApplication.id,
+  );
+  assert.equal(convertedTeacher.id, overCapacityApplication.id);
+  assert.equal(convertedTeacher.reference_code, originalOverCapacityReference,
+    "conversion replaced the member's application reference");
+  assert.equal(convertedTeacher.plan_id, "teacher");
+  assert.equal(convertedTeacher.quoted_amount_thb, 599);
+  assert.equal(convertedTeacher.payment_reported_at, null);
+  const repeatedConversion = await convertFounderApplication(
+    overCapacityFounderUser,
+    overCapacityApplication.id,
+  );
+  assert.equal(repeatedConversion.id, convertedTeacher.id);
+  assert.equal(repeatedConversion.reference_code, originalOverCapacityReference);
+  const convertedReport = await reportApplication(overCapacityFounderUser, overCapacityApplication.id);
+  const repeatedConvertedReport = await reportApplication(overCapacityFounderUser, overCapacityApplication.id);
+  assert.equal(convertedReport.payment_reported_at.toISOString(), repeatedConvertedReport.payment_reported_at.toISOString(),
+    "Teacher payment report retry changed the original timestamp");
+  const convertedTeacherSubscription = await confirmApplication(
+    overCapacityApplication.id,
+    599,
+    "teacher-conversion-payment-001",
+    randomUUID(),
+  );
+  const convertedState = await db.query(`
+    select request.reference_code, request.plan_id, request.status,
+      subscription.plan_id as subscription_plan
+    from public.upgrade_requests request
+    join public.subscriptions subscription on subscription.id = $2
+    where request.id = $1
+  `, [overCapacityApplication.id, convertedTeacherSubscription]);
+  assert.deepEqual(convertedState.rows[0], {
+    reference_code: originalOverCapacityReference,
+    plan_id: "teacher",
+    status: "approved",
+    subscription_plan: "teacher",
+  });
 
   await setActor(admin);
   const seatCount = await db.query("select public.get_founder_seat_count() as seats");
@@ -626,6 +807,29 @@ try {
   await db.query("insert into public.profiles(id) values ($1)", [teacherUser]);
   const teacherApplication = await createApplication(teacherUser, "teacher");
   assert.equal(teacherApplication.quoted_amount_thb, 599);
+  await reportApplication(teacherUser, teacherApplication.id);
+  let duplicateReferenceError;
+  try {
+    await confirmApplication(
+      teacherApplication.id,
+      599,
+      "  FOUNDER-PAYMENT-001  ",
+      randomUUID(),
+    );
+  } catch (error) {
+    duplicateReferenceError = error;
+  }
+  assert.ok(duplicateReferenceError, "a normalized duplicate payment reference was accepted");
+  const duplicateDiagnostic = [
+    String(duplicateReferenceError),
+    duplicateReferenceError?.detail,
+    duplicateReferenceError?.where,
+  ].filter(Boolean).join("\n");
+  assert.match(duplicateDiagnostic, /membership_payment_reference_unique|payment_reference_fingerprint/);
+  assert.ok(!duplicateDiagnostic.toLowerCase().includes("founder-payment-001"),
+    "duplicate-reference diagnostics exposed the raw payment reference");
+  assert.ok(duplicateDiagnostic.includes(firstPaymentFingerprint),
+    "duplicate-reference diagnostics did not identify the one-way fingerprint");
   const teacherSubscription = await confirmApplication(
     teacherApplication.id,
     599,

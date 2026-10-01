@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
@@ -74,16 +74,17 @@ describe("getSignedFileUrl", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("on failure, logs only the file path and a generic message — never a URL or token", async () => {
+  it("on failure, logs no object path, URL, token, or original filename", async () => {
     const errors: unknown[][] = [];
     vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
       errors.push(args);
     });
     const supabase = fakeSupabase(async () => ({ data: null, error: { message: "row-level security violation" } }));
-    await getSignedFileUrl(supabase, "some-resource-id/file.pdf", "file.pdf");
+    await getSignedFileUrl(supabase, "some-resource-id/ชื่อ-นามสกุล.pdf", "ชื่อ-นามสกุล.pdf");
     expect(errors.length).toBeGreaterThan(0);
     const joined = errors.map((a) => a.join(" ")).join("\n");
-    expect(joined).toMatch(/some-resource-id\/file\.pdf/);
+    expect(joined).not.toMatch(/some-resource-id/);
+    expect(joined).not.toMatch(/ชื่อ-นามสกุล/);
     expect(joined).not.toMatch(/token=/i);
     expect(joined).not.toMatch(/https?:\/\//);
   });
@@ -211,6 +212,7 @@ describe("manual membership payment RPC wrappers", () => {
         planId: "founder",
         status: "pending",
         quotedAmountThb: 299,
+        paymentReportedAt: null,
         paymentPaidAt: null,
         paymentConfirmedAt: null,
         paymentConfirmedAmountThb: null,
@@ -220,6 +222,62 @@ describe("manual membership payment RPC wrappers", () => {
       error: null,
     });
     expect(rpc).toHaveBeenCalledWith("create_membership_application", { p_plan_id: "founder" });
+  });
+
+  it("reports payment and converts a Founder application through narrow authenticated RPCs", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{
+          id: "request-1",
+          reference_code: "KA-260001",
+          plan_id: "founder",
+          status: "pending",
+          quoted_amount_thb: 299,
+          payment_reported_at: "2026-10-01T02:30:00.000Z",
+          created_at: "2026-10-01T02:00:00.000Z",
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{
+          id: "request-1",
+          reference_code: "KA-260001",
+          plan_id: "teacher",
+          status: "pending",
+          quoted_amount_thb: 599,
+          payment_reported_at: null,
+          created_at: "2026-10-01T02:00:00.000Z",
+        }],
+        error: null,
+      });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toMatchObject({
+      application: {
+        id: "request-1",
+        planId: "founder",
+        quotedAmountThb: 299,
+        paymentReportedAt: "2026-10-01T02:30:00.000Z",
+      },
+      error: null,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(1, "report_membership_payment", {
+      p_request_id: "request-1",
+    });
+
+    await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toMatchObject({
+      application: {
+        id: "request-1",
+        referenceCode: "KA-260001",
+        planId: "teacher",
+        quotedAmountThb: 599,
+        paymentReportedAt: null,
+      },
+      error: null,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "convert_founder_application_to_teacher", {
+      p_request_id: "request-1",
+    });
   });
 
   it("passes the exact guarded confirmation contract for applications and renewals", async () => {
@@ -249,6 +307,34 @@ describe("manual membership payment RPC wrappers", () => {
       p_paid_at: "2026-10-01T03:00:00.000Z",
       p_idempotency_key: "admin-action-1",
     });
+  });
+
+  it("never logs a payment reference echoed by PostgREST error details", async () => {
+    const logged: unknown[][] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => logged.push(args));
+    const paymentReference = "PRIVATE-BANK-REFERENCE-9988";
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        message: `duplicate payment reference ${paymentReference}`,
+        code: "23505",
+        details: `Key (payment_reference)=(${paymentReference}) already exists.`,
+        hint: paymentReference,
+      },
+    });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await confirmMembershipPayment(supabase, "request-1", {
+      amountThb: 599,
+      paymentReference,
+      paidAt: "2026-10-01T03:00:00.000Z",
+      idempotencyKey: "admin-action-2",
+    });
+
+    const output = logged.flat().join(" ");
+    expect(output).toContain("code=23505");
+    expect(output).not.toContain(paymentReference);
+    expect(output).not.toContain("payment_reference");
   });
 });
 

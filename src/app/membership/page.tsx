@@ -1,15 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Check, Clipboard, ExternalLink, Home, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Badge, Button } from "@/components/ui";
+import { PlanBenefits } from "@/app/landing/PlanBenefits";
 import { LINE_OA_URL } from "@/lib/config";
 import {
+  convertFounderApplicationToTeacher,
   createMembershipApplication,
   fetchFounderCapacity,
+  fetchPlans,
   fetchUpgradeRequests,
+  reportMembershipPayment,
+  type Plan,
   type UpgradeRequest,
 } from "@/lib/data";
 import type { FounderCapacity } from "@/lib/founderCapacity";
@@ -17,12 +23,9 @@ import { createClient } from "@/lib/supabase/client";
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-const STATUS_COPY: Record<UpgradeRequest["status"], { label: string; tone: "warning" | "success" | "neutral"; detail: string }> = {
-  pending: {
-    label: "รอส่ง/ตรวจสอบการชำระ",
-    tone: "warning",
-    detail: "ใบสมัครนี้ยังไม่จองสิทธิ์ กรุณาส่งเลขอ้างอิงทาง LINE และรอครูอรรี่ตรวจสอบยอดจริง",
-  },
+type MembershipPlanId = "founder" | "teacher";
+
+const STATUS_COPY: Record<Exclude<UpgradeRequest["status"], "pending">, { label: string; tone: "success" | "neutral"; detail: string }> = {
   approved: {
     label: "ยืนยันชำระแล้ว",
     tone: "success",
@@ -35,6 +38,20 @@ const STATUS_COPY: Record<UpgradeRequest["status"], { label: string; tone: "warn
   },
 };
 
+function pendingStatusCopy(application: UpgradeRequest) {
+  return application.paymentReportedAt
+    ? {
+        label: "แจ้งหลักฐานแล้ว · รอตรวจสอบ",
+        tone: "info" as const,
+        detail: "ครูอรรี่ได้รับสถานะการแจ้งชำระแล้ว และกำลังตรวจยอดจริงก่อนออกสิทธิ์สมาชิก",
+      }
+    : {
+        label: "รอแจ้งชำระ",
+        tone: "warning" as const,
+        detail: "ใบสมัครนี้ยังไม่จองสิทธิ์ กรุณาส่งเลขอ้างอิงและหลักฐานทาง LINE แล้วกดแจ้งทีมงานบนหน้านี้",
+      };
+}
+
 function formatThaiDate(value: string): string {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
@@ -43,32 +60,64 @@ function formatThaiDate(value: string): string {
 }
 
 export default function MembershipPage() {
+  return (
+    <Suspense fallback={<div className="kru-membership-page" aria-busy="true" />}>
+      <MembershipContent />
+    </Suspense>
+  );
+}
+
+function MembershipContent() {
+  const searchParams = useSearchParams();
+  const requestedPlan = searchParams.get("plan");
   const supabase = useMemo(() => createClient(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(!isSupabaseConfigured);
   const [capacity, setCapacity] = useState<FounderCapacity | null>(null);
   const [capacityLoaded, setCapacityLoaded] = useState(!isSupabaseConfigured);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<MembershipPlanId>(
+    requestedPlan === "teacher" || requestedPlan === "founder" ? requestedPlan : "founder",
+  );
   const [applications, setApplications] = useState<UpgradeRequest[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const latestApplication = applications[0] ?? null;
+  // A legacy account can legitimately have an older pending application and a
+  // newer resolved record. Keep the still-actionable request visible instead
+  // of hiding it behind history; migration 047 prevents more than one pending
+  // request per member going forward.
+  const latestApplication = applications.find((application) => application.status === "pending")
+    ?? applications[0]
+    ?? null;
   const hasOpenApplication = latestApplication?.status === "pending" || latestApplication?.status === "approved";
-  const applicationPlanId = capacity?.isFull ? "teacher" : "founder";
+  const applicationPlanId: MembershipPlanId = hasOpenApplication && latestApplication && ["founder", "teacher"].includes(latestApplication.planId)
+    ? latestApplication.planId as MembershipPlanId
+    : selectedPlanId;
   const applicationAmount = applicationPlanId === "founder" ? 299 : 599;
+  const selectedPlan = plans.find((plan) => plan.id === applicationPlanId) ?? null;
+  const planChoices = plans.filter((plan): plan is Plan & { id: MembershipPlanId } => plan.id === "founder" || plan.id === "teacher");
+  const pendingFounderFull = latestApplication?.status === "pending"
+    && latestApplication.planId === "founder"
+    && capacity?.isFull === true;
+  const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?plan=${applicationPlanId}`)}`;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     let active = true;
     const load = async () => {
-      const [founderCapacity, authResult] = await Promise.all([
+      const [founderCapacity, authResult, publicPlans] = await Promise.all([
         fetchFounderCapacity(supabase),
         supabase.auth.getUser(),
+        fetchPlans(supabase),
       ]);
       if (!active) return;
       setCapacity(founderCapacity);
       setCapacityLoaded(true);
+      setPlans(publicPlans);
       const user = authResult.data.user;
       setUserId(user?.id ?? null);
       if (user) {
@@ -104,8 +153,24 @@ export default function MembershipPage() {
     };
   }, [supabase, userId]);
 
+  const selectPlan = (planId: MembershipPlanId) => {
+    if (hasOpenApplication) return;
+    setSelectedPlanId(planId);
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("plan", planId);
+    window.history.replaceState(window.history.state, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+  };
+
   const handleCreateApplication = async () => {
-    if (!userId || submitting || !capacity) return;
+    if (!userId || submitting) return;
+    if (applicationPlanId === "founder" && !capacity) {
+      setError("ยังตรวจสอบจำนวนสิทธิ์ Founder ไม่ได้ จึงปิดการส่งใบสมัครชั่วคราว");
+      return;
+    }
+    if (applicationPlanId === "founder" && capacity?.isFull) {
+      setError("สิทธิ์ Founder ครบแล้ว กรุณาเลือกแพ็ก Teacher 599 บาท/ปี");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const result = await createMembershipApplication(supabase, applicationPlanId);
@@ -118,6 +183,41 @@ export default function MembershipPage() {
     const application = result.application;
     setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
     setCapacity(await fetchFounderCapacity(supabase));
+  };
+
+  const handleReportPayment = async () => {
+    if (!latestApplication || latestApplication.status !== "pending" || reporting || pendingFounderFull) return;
+    setReporting(true);
+    setError(null);
+    const result = await reportMembershipPayment(supabase, latestApplication.id);
+    if (result.error || !result.application) {
+      const nextCapacity = await fetchFounderCapacity(supabase);
+      setCapacity(nextCapacity);
+      setError(latestApplication.planId === "founder" && nextCapacity?.isFull
+        ? "Founder ครบ 100 สิทธิ์แล้ว กรุณาเปลี่ยนใบสมัครเป็น Teacher ก่อนแจ้งชำระ"
+        : `แจ้งทีมงานไม่สำเร็จ: ${result.error ?? "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา"}`);
+    } else if (userId) {
+      const application = result.application;
+      setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
+    }
+    setReporting(false);
+  };
+
+  const handleConvertToTeacher = async () => {
+    if (!latestApplication || latestApplication.status !== "pending" || latestApplication.planId !== "founder" || converting) return;
+    if (!window.confirm("เปลี่ยนใบสมัครนี้เป็นแพ็ก Teacher ราคา 599 บาท/ปีใช่หรือไม่? เลขอ้างอิงเดิมจะใช้ต่อได้")) return;
+    setConverting(true);
+    setError(null);
+    const result = await convertFounderApplicationToTeacher(supabase, latestApplication.id);
+    if (result.error || !result.application) {
+      setError(`เปลี่ยนแพ็กไม่สำเร็จ: ${result.error ?? "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา"}`);
+    } else if (userId) {
+      const application = result.application;
+      setSelectedPlanId("teacher");
+      setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
+      setCapacity(await fetchFounderCapacity(supabase));
+    }
+    setConverting(false);
   };
 
   const handleCopyReference = async (referenceCode: string) => {
@@ -143,7 +243,7 @@ export default function MembershipPage() {
           {authLoaded && userId ? (
             <Link href="/app" className="kru-btn kru-btn--soft">พื้นที่สมาชิก</Link>
           ) : (
-            <Link href="/login?mode=signup&next=%2Fmembership" className="kru-btn kru-btn--soft">เข้าสู่ระบบ / สมัครบัญชี</Link>
+            <Link href={signupHref} className="kru-btn kru-btn--soft">เข้าสู่ระบบ / สมัครบัญชี</Link>
           )}
         </nav>
       </header>
@@ -151,11 +251,15 @@ export default function MembershipPage() {
       <main>
         <section className="kru-membership-hero">
           <div className="kru-membership-hero__copy">
-            <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> สิทธิ์เปิดตัว Founder 100</span>
-            <h1>299 บาทเฉพาะปีแรก</h1>
-            <p className="kru-membership-hero__lead">สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง</p>
-            <div className="kru-membership-renewal"><ShieldCheck size={20} aria-hidden="true" /><strong>ต่ออายุปีถัดไป 599 บาท/ปี</strong></div>
-            <p className="kru-membership-rule">กรอกใบสมัครยังไม่นับสิทธิ์และยังไม่จองสิทธิ์</p>
+            <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> {applicationPlanId === "founder" ? "สิทธิ์เปิดตัว Founder 100" : "แพ็ก Teacher"}</span>
+            <h1>{selectedPlan?.priceLabel ?? (applicationPlanId === "founder" ? "299 บาทเฉพาะปีแรก" : "599 บาท/ปี")}</h1>
+            <p className="kru-membership-hero__lead">
+              {applicationPlanId === "founder"
+                ? "สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง"
+                : "แพ็กสมาชิกรายปีสำหรับเข้าถึงคลังสื่อพรีเมียม"}
+            </p>
+            <div className="kru-membership-renewal"><ShieldCheck size={20} aria-hidden="true" /><strong>{applicationPlanId === "founder" ? "ต่ออายุปีถัดไป 599 บาท/ปี" : "ต่ออายุ 599 บาท/ปี"}</strong></div>
+            <p className="kru-membership-rule">กรอกใบสมัครยังไม่นับสิทธิ์และยังไม่จองสิทธิ์ การแจ้งหลักฐานก็ยังต้องรอทีมงานยืนยันยอดจริง</p>
           </div>
 
           <aside className="kru-membership-capacity" aria-live="polite" aria-busy={!capacityLoaded}>
@@ -182,6 +286,41 @@ export default function MembershipPage() {
               <p>ระบบจะสร้างเลขอ้างอิงที่ใช้จับคู่บัญชีเว็บไซต์กับหลักฐานการชำระใน LINE</p>
             </div>
 
+            <section className="kru-membership-plan" aria-labelledby="membership-plan-title">
+              <div className="kru-membership-plan__heading">
+                <h3 id="membership-plan-title">แพ็กที่ต้องการสมัคร</h3>
+                {hasOpenApplication && <Badge tone="neutral">ยึดตามใบสมัครล่าสุด</Badge>}
+              </div>
+              {planChoices.length > 0 && (
+                <div className="kru-membership-plan__choices" role="group" aria-label="เลือกแพ็กสมาชิก">
+                  {planChoices.map((plan) => {
+                    const active = applicationPlanId === plan.id;
+                    const unavailable = plan.id === "founder" && capacity?.isFull === true && !hasOpenApplication;
+                    return (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        className={active ? "is-active" : ""}
+                        aria-pressed={active}
+                        disabled={hasOpenApplication || unavailable}
+                        onClick={() => selectPlan(plan.id)}
+                      >
+                        <strong>{plan.name}</strong>
+                        <span>{plan.priceLabel}</span>
+                        {unavailable && <small>ครบ 100 สิทธิ์แล้ว</small>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedPlan && (
+                <div className="kru-membership-plan__details">
+                  {selectedPlan.note && <p>{selectedPlan.note}</p>}
+                  <PlanBenefits benefits={selectedPlan.benefits ?? []} />
+                </div>
+              )}
+            </section>
+
             {!isSupabaseConfigured ? (
               <p role="status" className="kru-membership-alert kru-membership-alert--warning">ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณากลับมาใหม่ภายหลัง</p>
             ) : !authLoaded ? (
@@ -189,29 +328,45 @@ export default function MembershipPage() {
             ) : !userId ? (
               <div className="kru-membership-action-block">
                 <p>เข้าสู่ระบบหรือสมัครบัญชีฟรีก่อน ระบบจะพากลับมายังหน้านี้หลังยืนยันอีเมล</p>
-                <Link href="/login?mode=signup&next=%2Fmembership" className="kru-btn kru-btn--primary kru-btn--lg">เข้าสู่ระบบเพื่อกรอกใบสมัคร</Link>
+                <Link href={signupHref} className="kru-btn kru-btn--primary kru-btn--lg">เข้าสู่ระบบเพื่อกรอกใบสมัคร</Link>
               </div>
             ) : latestApplication && hasOpenApplication ? (
-              <ApplicationStatus
-                application={latestApplication}
-                copied={copied === latestApplication.referenceCode}
-                onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
-              />
-            ) : !capacity ? (
+              <>
+                <ApplicationStatus
+                  application={latestApplication}
+                  copied={copied === latestApplication.referenceCode}
+                  onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
+                />
+                {pendingFounderFull && (
+                  <div role="alert" className="kru-membership-conversion">
+                    <strong>Founder ครบ 100 สิทธิ์ก่อนการยืนยันยอด</strong>
+                    <p>ใบสมัคร Founder นี้ไม่สามารถส่งต่อเพื่อยืนยันได้ เปลี่ยนเป็น Teacher 599 บาท/ปีโดยใช้เลขอ้างอิงเดิมได้</p>
+                    <Button size="lg" block loading={converting} onClick={() => void handleConvertToTeacher()}>
+                      ยืนยันเปลี่ยนเป็น Teacher 599 บาท/ปี
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : applicationPlanId === "founder" && !capacity ? (
               <p role="status" className="kru-membership-alert kru-membership-alert--warning">ยังตรวจสอบจำนวนสิทธิ์ไม่ได้ จึงปิดการส่งใบสมัครชั่วคราวเพื่อป้องกันสิทธิ์เกินจำนวน</p>
             ) : (
               <div className="kru-membership-action-block">
                 {latestApplication?.status === "declined" && (
                   <p className="kru-membership-alert">ใบสมัครก่อนหน้าไม่ผ่านการตรวจสอบ คุณสามารถส่งใบสมัครใหม่ได้</p>
                 )}
-                <p>
-                  {applicationPlanId === "founder"
-                    ? "เมื่อส่งสำเร็จ คุณจะได้รับเลขอ้างอิงสำหรับสิทธิ์ปีแรก 299 บาท"
-                    : "สิทธิ์ราคาเปิดตัวครบแล้ว คุณยังสมัครแพ็ก Teacher ราคา 599 บาท/ปีได้"}
-                </p>
-                <Button size="lg" block loading={submitting} onClick={() => void handleCreateApplication()}>
-                  {submitting ? "กำลังสร้างเลขอ้างอิง…" : `ส่งใบสมัคร ${applicationAmount.toLocaleString("th-TH")} บาท`}
-                </Button>
+                {applicationPlanId === "founder" && capacity?.isFull ? (
+                  <>
+                    <p className="kru-membership-alert kru-membership-alert--warning">Founder ครบ 100 สิทธิ์แล้ว กรุณาเลือก Teacher เพื่อสร้างใบสมัครใหม่</p>
+                    <Button size="lg" block onClick={() => selectPlan("teacher")}>เลือก Teacher 599 บาท/ปี</Button>
+                  </>
+                ) : (
+                  <>
+                    <p>{applicationPlanId === "founder" ? "เมื่อส่งสำเร็จ คุณจะได้รับเลขอ้างอิงสำหรับสิทธิ์ปีแรก 299 บาท" : "เมื่อส่งสำเร็จ คุณจะได้รับเลขอ้างอิงสำหรับแพ็ก Teacher 599 บาท/ปี"}</p>
+                    <Button size="lg" block loading={submitting} onClick={() => void handleCreateApplication()}>
+                      {submitting ? "กำลังสร้างเลขอ้างอิง…" : `ส่งใบสมัคร ${applicationAmount.toLocaleString("th-TH")} บาท`}
+                    </Button>
+                  </>
+                )}
               </div>
             )}
 
@@ -225,13 +380,35 @@ export default function MembershipPage() {
               <li>ส่งเลขอ้างอิงจากเว็บไซต์ให้ครูอรรี่ทาง LINE</li>
               <li>รอรับรายละเอียดการชำระจากครูอรรี่ก่อนโอน</li>
               <li>หลังชำระแล้ว ส่งเลขอ้างอิงพร้อมสลิปในแชตเดิม</li>
-              <li>รอครูอรรี่ตรวจสอบและกดยืนยันในระบบ</li>
+              <li>กลับมากด “ฉันส่งหลักฐานแล้ว” แล้วรอครูอรรี่ตรวจสอบยอดจริง</li>
             </ol>
             <p className="kru-membership-payment__notice">การส่งสลิปหรือกรอกใบสมัครยังไม่นับสิทธิ์ จนกว่าระบบจะแสดงสถานะ “ยืนยันชำระแล้ว”</p>
-            {latestApplication?.status === "pending" ? (
-              <a className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
-                <MessageCircle size={19} aria-hidden="true" /> เปิด LINE OA เพื่อแจ้งชำระ
-              </a>
+            {pendingFounderFull ? (
+              <p role="alert" className="kru-membership-alert kru-membership-alert--danger">Founder ครบแล้ว จึงปิดปุ่ม LINE และการแจ้งหลักฐานสำหรับใบสมัครนี้ กรุณาเปลี่ยนเป็น Teacher ก่อน</p>
+            ) : latestApplication?.status === "pending" ? (
+              <>
+                <a className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                  <MessageCircle size={19} aria-hidden="true" /> เปิด LINE OA เพื่อแจ้งชำระ
+                </a>
+                {latestApplication.paymentReportedAt ? (
+                  <p role="status" className="kru-membership-alert">แจ้งหลักฐานแล้วเมื่อ {formatThaiDate(latestApplication.paymentReportedAt)} · อยู่ระหว่างรอตรวจสอบยอดจริง</p>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      size="lg"
+                      block
+                      loading={reporting}
+                      aria-describedby="membership-payment-report-help"
+                      onClick={() => void handleReportPayment()}
+                    >
+                      ฉันส่งเลขอ้างอิงและหลักฐานแล้ว
+                    </Button>
+                    <p id="membership-payment-report-help" className="kru-membership-payment__help">กดหลังส่งใน LINE แล้ว เพื่อย้ายรายการจาก “รอแจ้งชำระ” ไปเป็น “รอตรวจสอบ”</p>
+                  </>
+                )}
+              </>
             ) : (
               <button type="button" className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" disabled>
                 สร้างเลขอ้างอิงก่อนเปิด LINE
@@ -277,14 +454,28 @@ export default function MembershipPage() {
         .kru-membership-application, .kru-membership-payment { min-width: 0; padding: clamp(20px, 4vw, 32px); display: grid; gap: var(--sp-5); }
         .kru-membership-application h2, .kru-membership-payment h2 { margin-top: var(--sp-2); font-size: var(--fs-24); }
         .kru-membership-application > div > p, .kru-membership-payment > p { margin-top: var(--sp-3); color: var(--text-muted); }
+        .kru-membership-plan { padding: var(--sp-4); display: grid; gap: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-sunken); }
+        .kru-membership-plan__heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+        .kru-membership-plan__heading h3 { font-size: var(--fs-18); }
+        .kru-membership-plan__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+        .kru-membership-plan__choices button { min-height: 84px; padding: var(--sp-4); display: grid; gap: 3px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-card); color: var(--text-body); text-align: left; cursor: pointer; }
+        .kru-membership-plan__choices button.is-active { border-color: var(--border-brand); background: var(--purple-50); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent); }
+        .kru-membership-plan__choices button:disabled { cursor: not-allowed; opacity: .62; }
+        .kru-membership-plan__choices strong { color: var(--text-strong); }
+        .kru-membership-plan__choices small { color: var(--status-danger-fg); }
+        .kru-membership-plan__details { padding-top: var(--sp-2); border-top: 1px solid var(--border-subtle); }
+        .kru-membership-plan__details > p { color: var(--text-muted); font-size: var(--fs-14); }
         .kru-membership-action-block { display: grid; gap: var(--sp-4); }
         .kru-membership-action-block > a { width: fit-content; }
         .kru-membership-alert { padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-info-bg); color: var(--status-info-fg); overflow-wrap: anywhere; }
         .kru-membership-alert--warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
         .kru-membership-alert--danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+        .kru-membership-conversion { padding: var(--sp-5); display: grid; gap: var(--sp-3); border: 1px solid color-mix(in srgb, var(--status-danger-fg) 28%, transparent); border-radius: var(--r-card); background: var(--status-danger-bg); color: var(--status-danger-fg); }
+        .kru-membership-conversion p { line-height: var(--lh-loose); }
         .kru-membership-payment { scroll-margin-top: 88px; }
         .kru-membership-payment ol { margin: 0; padding-left: 1.3rem; display: grid; gap: var(--sp-3); color: var(--text-body); }
         .kru-membership-payment__notice { padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg) !important; font-size: var(--fs-14); font-weight: var(--fw-semibold); }
+        .kru-membership-payment__help { margin-top: calc(var(--sp-2) * -1) !important; color: var(--text-muted) !important; font-size: var(--fs-13); text-align: center; }
         .kru-membership-payment > small { color: var(--text-muted); text-align: center; }
         .kru-membership-payment :global(a.kru-btn:hover) { color: var(--white); text-decoration: none; }
         .kru-membership-facts { margin-top: var(--sp-8); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
@@ -304,6 +495,7 @@ export default function MembershipPage() {
           .kru-membership-hero { padding: var(--sp-7); }
           .kru-membership-renewal { width: 100%; align-items: flex-start; border-radius: var(--r-md); }
           .kru-membership-action-block > a { width: 100%; }
+          .kru-membership-plan__choices { grid-template-columns: minmax(0, 1fr); }
         }
       `}</style>
     </div>
@@ -311,7 +503,7 @@ export default function MembershipPage() {
 }
 
 function ApplicationStatus({ application, copied, onCopy }: { application: UpgradeRequest; copied: boolean; onCopy: () => void }) {
-  const copy = STATUS_COPY[application.status];
+  const copy = application.status === "pending" ? pendingStatusCopy(application) : STATUS_COPY[application.status];
   return (
     <section className="kru-membership-status" aria-live="polite">
       <div className="kru-membership-status__heading">
@@ -332,6 +524,9 @@ function ApplicationStatus({ application, copied, onCopy }: { application: Upgra
       <small>ยอดตามใบสมัคร {application.quotedAmountThb.toLocaleString("th-TH")} บาท</small>
       {application.status === "approved" && application.paymentConfirmedAt && (
         <small>ยืนยันในระบบเมื่อ {formatThaiDate(application.paymentConfirmedAt)}</small>
+      )}
+      {application.status === "pending" && application.paymentReportedAt && (
+        <small>แจ้งหลักฐานเมื่อ {formatThaiDate(application.paymentReportedAt)}</small>
       )}
       {application.status === "pending" && (
         <a href="#how-to-pay">ดูวิธีแจ้งชำระ <ExternalLink size={15} aria-hidden="true" /></a>

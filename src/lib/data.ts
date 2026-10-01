@@ -8,7 +8,10 @@ import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot, type ResourceAccessMode }
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
 
 function logError(label: string, error: PostgrestError) {
-  console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
+  // PostgREST details/messages can echo submitted values (for example a
+  // payment reference in a unique-constraint error). Keep diagnostics useful
+  // without writing member or payment data to the browser console.
+  console.error(`${label} (code=${error.code || "unknown"})`);
 }
 
 export interface Resource {
@@ -179,20 +182,20 @@ export interface SignedFileUrlResult {
 // stuck forever with no feedback) — see the route handler for the fix.
 //
 // Never throws (withTimeout bounds and catches the underlying call), and
-// never logs or returns the resulting signed URL itself, or any part of an
-// underlying error that might embed it — only the input path and a
-// redacted, generic error description (see redact.ts).
+// never logs or returns the resulting signed URL itself. The object path is
+// also omitted from logs because an uploaded filename can contain personal
+// data; underlying error text is redacted before it can reach the caller.
 export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<SignedFileUrlResult> {
   const result = await withTimeout(supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true }), "createSignedUrl");
 
   if (!result.ok) {
-    console.error(`getSignedFileUrl failed for path=${filePath}: ${result.reason}`);
+    console.error("getSignedFileUrl failed before Supabase returned a result");
     return { url: null, error: result.reason };
   }
   const { data, error } = result.value;
   if (error || !data) {
     const message = redactSensitive(error?.message ?? "no data returned");
-    console.error(`getSignedFileUrl failed for path=${filePath}: ${message}`);
+    console.error("getSignedFileUrl failed after Supabase returned an error");
     return { url: null, error: message };
   }
   return { url: data.signedUrl, error: null };
@@ -364,6 +367,7 @@ export interface UpgradeRequest {
   planId: string;
   status: "pending" | "approved" | "declined";
   quotedAmountThb: number;
+  paymentReportedAt: string | null;
   paymentPaidAt: string | null;
   paymentConfirmedAt: string | null;
   paymentConfirmedAmountThb: number | null;
@@ -377,6 +381,7 @@ interface UpgradeRequestRow {
   plan_id: string;
   status: "pending" | "approved" | "declined";
   quoted_amount_thb: number;
+  payment_reported_at: string | null;
   payment_paid_at: string | null;
   payment_confirmed_at: string | null;
   payment_confirmed_amount_thb: number | null;
@@ -390,6 +395,7 @@ interface CreatedMembershipApplicationRow {
   plan_id: string;
   status: "pending" | "approved" | "declined";
   quoted_amount_thb: number;
+  payment_reported_at: string | null;
   created_at: string;
 }
 
@@ -417,6 +423,7 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
     planId: row.plan_id,
     status: row.status,
     quotedAmountThb,
+    paymentReportedAt: persisted.payment_reported_at ?? null,
     paymentPaidAt: persisted.payment_paid_at ?? null,
     paymentConfirmedAt: persisted.payment_confirmed_at ?? null,
     paymentConfirmedAmountThb: persisted.payment_confirmed_amount_thb === null || persisted.payment_confirmed_amount_thb === undefined
@@ -430,7 +437,7 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
 export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
   const { data, error } = await supabase
     .from("upgrade_requests")
-    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, created_at")
+    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -457,6 +464,48 @@ export async function createMembershipApplication(supabase: SupabaseClient, plan
   return application
     ? { application, error: null }
     : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
+}
+
+async function mutateMembershipApplication(
+  supabase: SupabaseClient,
+  rpcName: "report_membership_payment" | "convert_founder_application_to_teacher",
+  requestId: string,
+  operationLabel: string,
+): Promise<MembershipApplicationMutationResult> {
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc(rpcName, {
+    p_request_id: requestId,
+  })), operationLabel);
+  if (!outcome.ok) return { application: null, error: outcome.reason };
+
+  const { data, error } = outcome.value;
+  if (error) {
+    logError(`${rpcName} failed`, error);
+    return { application: null, error: error.message };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as CreatedMembershipApplicationRow | null;
+  const application = row ? membershipApplicationFromRow(row) : null;
+  return application
+    ? { application, error: null }
+    : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
+}
+
+export async function reportMembershipPayment(
+  supabase: SupabaseClient,
+  requestId: string,
+): Promise<MembershipApplicationMutationResult> {
+  return mutateMembershipApplication(supabase, "report_membership_payment", requestId, "report membership payment");
+}
+
+export async function convertFounderApplicationToTeacher(
+  supabase: SupabaseClient,
+  requestId: string,
+): Promise<MembershipApplicationMutationResult> {
+  return mutateMembershipApplication(
+    supabase,
+    "convert_founder_application_to_teacher",
+    requestId,
+    "convert Founder application to Teacher",
+  );
 }
 
 export async function confirmMembershipPayment(

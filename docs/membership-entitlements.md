@@ -71,15 +71,29 @@ preserved if a member was already over that limit; only new inserts are denied.
 ## Manual operations
 
 - `create_membership_application(plan_id)` creates a server-quoted pending
-  application and reference code. Calling it again returns the same pending
-  application for that member and plan. A pending application does not reserve
-  a Founder place.
+  application and reference code. Each member can have only one pending
+  application across all plans: calling it again for the same plan returns that
+  application, while changing plans must use the explicit conversion workflow.
+  A pending application does not reserve a Founder place.
+- `report_membership_payment(request_id)` lets the authenticated owner mark a
+  pending application as paid. The idempotent `payment_reported_at` timestamp
+  is self-attested workflow state only: it does not confirm payment, grant
+  access or reserve a Founder place. A pending application with no timestamp is
+  `awaiting payment`; one with a timestamp is `awaiting admin review`. Retrying
+  an existing report always returns its original timestamp, even if another
+  confirmation filled the final Founder place in the meantime; admin
+  confirmation is still blocked once capacity is full.
+- `convert_founder_application_to_teacher(request_id)` is the explicit escape
+  path when Founder is full. It keeps the same application reference, replaces
+  the quote with the active canonical Teacher price of 599 THB and clears a
+  report made against the old Founder quote. It never converts silently and
+  never activates membership.
 - `confirm_membership_payment(request_id, amount_thb, payment_reference,
-  paid_at, idempotency_key)` is the only Founder activation path. It records
-  confirmation facts, activates access, consumes a Founder place when
-  applicable, appends the payment audit and resolves the request in one
-  transaction. A retry with the same facts and idempotency key returns the
-  original subscription.
+  paid_at, idempotency_key)` is the only Founder activation path. It requires
+  the member-reported marker, records confirmation facts, activates access,
+  consumes a Founder place when applicable, appends the payment audit and
+  resolves the request in one transaction. A retry with the same facts and
+  idempotency key returns the original subscription.
 - `decline_upgrade_request(request_id)` resolves a pending request without
   changing membership.
 - `confirm_subscription_renewal(subscription_id, amount_thb,
@@ -107,12 +121,19 @@ updates on `upgrade_requests` are blocked for browser roles.
 The offer is cumulative, not concurrent. Only a successful 299 THB admin
 confirmation consumes a place. The durable `founder_seat_ledger` is the
 capacity source of truth and each grant receives one unique `slot_number` in
-the structural range 1–100. A migration preflight fails closed if existing
-history already exceeds 100.
+the structural range 1–100. Because older migrations did not record explicit
+payment-confirmation evidence, migration 047 fails closed when it finds any
+legacy ledger rows. Those rows must be audited and reconciled in a separately
+reviewed data migration before the live schema change may proceed; migration
+047 never guesses that an older grant was paid.
 
-Application creation does not write the ledger. Activation obtains the shared
-transaction advisory lock, verifies the request's confirmed-payment fields and
-allocates an unused slot. The 101st confirmation raises an error and the whole
+Application creation and member payment reporting do not write the ledger.
+Reporting and activation obtain the same shared transaction advisory lock.
+A first report and every activation reject a still-pending 299 THB Founder
+quote once the durable capacity is full; retrying an earlier report remains a
+read of its original marker. Activation verifies the member report and
+confirmed-payment fields before allocating an unused slot. The 101st
+confirmation raises an error and the whole
 transaction rolls back, including request payment fields, subscription and
 audit row. Expiry, cancellation, revocation or account deletion never removes
 or recycles the historical place. Renewal updates the existing subscription
@@ -148,6 +169,7 @@ The two older migrations executed manually (016d and 017) were verified
 against the live schema and recorded with `supabase migration repair` on
 2026-09-18 without rerunning their SQL. Later applied state is recorded in the
 migration README. Migration 047 is additive and pending; immediately before
-release, recheck with `supabase migration list` and
+release, audit the live `founder_seat_ledger` provenance, recheck with
+`supabase migration list` and
 `supabase db push --dry-run`, then test RLS and payment-confirmation flows as
 real member and admin roles against a staging copy.

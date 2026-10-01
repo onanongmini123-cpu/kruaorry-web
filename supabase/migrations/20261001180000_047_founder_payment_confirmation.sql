@@ -3,27 +3,66 @@
 -- a place. Founder paid activation and every paid renewal go through
 -- idempotent, audited RPCs; no payment slip image is stored in KruAorry.
 
--- Migration 025 temporarily treated the limit as 100 concurrent active
--- memberships. Stop rather than silently choosing winners if that behavior has
--- already admitted more than 100 historical Founder grants on the live project.
+-- Older migrations could add Founder grants without recording explicit payment
+-- confirmation evidence. The new public counter is labelled as confirmed-paid,
+-- so fail closed instead of silently treating those legacy grants as verified.
+-- Production must first audit and reconcile any such rows in a dedicated,
+-- reviewed data migration; this schema migration never guesses payment history.
 do $$
 declare
   v_grants integer;
+  v_duplicate_pending_users integer;
 begin
   perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
 
   select count(*)::integer into v_grants
   from public.founder_seat_ledger;
 
-  if v_grants > 100 then
-    raise exception 'Founder payment migration blocked: founder_seat_ledger already contains % grants (maximum 100)', v_grants;
+  if v_grants > 0 then
+    raise exception 'Founder payment migration blocked: founder_seat_ledger contains % legacy grants without explicit payment-confirmation provenance; audit them before applying this migration', v_grants;
+  end if;
+
+  select count(*)::integer into v_duplicate_pending_users
+  from (
+    select request.user_id
+    from public.upgrade_requests request
+    where request.status = 'pending'
+    group by request.user_id
+    having count(*) > 1
+  ) duplicates;
+
+  if v_duplicate_pending_users > 0 then
+    raise exception 'Founder payment migration blocked: % members have multiple pending membership applications; reconcile them before applying this migration', v_duplicate_pending_users;
+  end if;
+end;
+$$;
+
+-- Payment references remain readable only in the protected audit table. The
+-- uniqueness key below uses a one-way fingerprint so PostgreSQL duplicate-key
+-- DETAIL cannot echo a bank reference into server logs. Install prerequisites
+-- only after the legacy-data preflight above has passed, so that check remains
+-- side-effect free even under a migration runner that does not wrap the file in
+-- a transaction.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_extension extension
+    join pg_catalog.pg_namespace namespace on namespace.oid = extension.extnamespace
+    where extension.extname = 'pgcrypto'
+      and namespace.nspname = 'extensions'
+  ) or pg_catalog.to_regprocedure('extensions.digest(text,text)') is null then
+    raise exception 'pgcrypto digest(text,text) must be installed in the extensions schema';
   end if;
 end;
 $$;
 
 -- A structural slot invariant makes it impossible for the durable promotion
 -- ledger to contain more than 100 rows, even if a later code path forgets to
--- count first. Existing grants keep deterministic slots ordered by grant time.
+-- count first. A successfully audited production dataset reaches this point
+-- with no unproven grants; new paid grants receive deterministic slots.
 alter table public.founder_seat_ledger
   add column slot_number smallint;
 
@@ -67,7 +106,9 @@ set
 where id = 'founder';
 
 update public.plans
-set renewal_price_amount_thb = 599
+set
+  price_amount_thb = 599,
+  renewal_price_amount_thb = 599
 where id = 'teacher';
 
 alter table public.plans
@@ -83,6 +124,11 @@ alter table public.plans
     check (
       id not in ('founder', 'teacher')
       or renewal_price_amount_thb is not distinct from 599
+    ),
+  add constraint plans_teacher_offer_price
+    check (
+      id <> 'teacher'
+      or price_amount_thb is not distinct from 599
     );
 
 -- User-visible references are generated server-side. The full sequence value
@@ -90,6 +136,7 @@ alter table public.plans
 alter table public.upgrade_requests
   add column reference_code text,
   add column quoted_amount_thb integer,
+  add column payment_reported_at timestamptz,
   add column payment_paid_at timestamptz,
   add column payment_confirmed_at timestamptz,
   add column payment_confirmed_by uuid references public.profiles(id) on delete set null,
@@ -149,6 +196,13 @@ create unique index upgrade_requests_reference_code_unique
 create index upgrade_requests_status_created
   on public.upgrade_requests(status, created_at desc);
 
+-- The member UI and payment workflow intentionally operate on one open
+-- application at a time. This invariant prevents a Founder and Teacher request
+-- from being confirmed independently after a multi-tab or direct-API race.
+create unique index upgrade_requests_one_pending_per_user
+  on public.upgrade_requests(user_id)
+  where status = 'pending';
+
 -- This is the durable financial-operation audit. It stores only confirmation
 -- metadata, never a slip image or bank credentials. Foreign keys become null
 -- on account/application deletion while the non-identifying audit facts and
@@ -164,6 +218,15 @@ create table public.membership_payment_confirmations (
   plan_id text not null references public.plans(id),
   amount_thb integer not null check (amount_thb > 0),
   payment_reference text not null check (btrim(payment_reference) <> '' and char_length(payment_reference) <= 200),
+  payment_reference_fingerprint text generated always as (
+    pg_catalog.encode(
+      extensions.digest(
+        pg_catalog.lower(pg_catalog.btrim(payment_reference)),
+        'sha256'
+      ),
+      'hex'
+    )
+  ) stored,
   paid_at timestamptz not null,
   confirmed_at timestamptz not null default now(),
   confirmed_by uuid references public.profiles(id) on delete set null,
@@ -174,7 +237,7 @@ create table public.membership_payment_confirmations (
 );
 
 create unique index membership_payment_reference_unique
-  on public.membership_payment_confirmations(lower(btrim(payment_reference)));
+  on public.membership_payment_confirmations(payment_reference_fingerprint);
 
 create unique index membership_payment_activation_request_once
   on public.membership_payment_confirmations(request_id)
@@ -464,6 +527,7 @@ returns table (
   plan_id text,
   status text,
   quoted_amount_thb integer,
+  payment_reported_at timestamptz,
   created_at timestamptz
 )
 language plpgsql
@@ -498,19 +562,20 @@ begin
   end if;
 
   perform pg_advisory_xact_lock(
-    hashtextextended('membership-application:' || v_user_id::text || ':' || p_plan_id, 0)
+    hashtextextended('membership-application:' || v_user_id::text, 0)
   );
 
   select * into v_request
   from public.upgrade_requests request
   where request.user_id = v_user_id
-    and request.plan_id = p_plan_id
     and request.status = 'pending'
   order by request.created_at desc
   limit 1
   for update;
 
-  if not found then
+  if found and v_request.plan_id <> p_plan_id then
+    raise exception 'มีใบสมัครแพ็กเกจอื่นที่รอดำเนินการอยู่ กรุณาใช้ขั้นตอนเปลี่ยนแพ็กเกจจากใบสมัครเดิม';
+  elsif not found then
     if p_plan_id = 'founder'
       and (select capacity.is_full from public.get_founder_capacity() capacity)
     then
@@ -530,6 +595,7 @@ begin
   plan_id := v_request.plan_id;
   status := v_request.status;
   quoted_amount_thb := v_request.quoted_amount_thb;
+  payment_reported_at := v_request.payment_reported_at;
   created_at := v_request.created_at;
   return next;
 end;
@@ -537,6 +603,180 @@ $$;
 
 revoke execute on function public.create_membership_application(text) from public, anon;
 grant execute on function public.create_membership_application(text) to authenticated;
+
+-- A member can report that they have paid only for their own still-pending
+-- application. This timestamp is self-attested workflow state, not payment
+-- evidence: it neither reserves a Founder slot nor grants access. Repeating
+-- the call returns the original timestamp without creating another event.
+create function public.report_membership_payment(p_request_id uuid)
+returns table (
+  id uuid,
+  reference_code text,
+  plan_id text,
+  status text,
+  quoted_amount_thb integer,
+  payment_reported_at timestamptz,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := (select auth.uid());
+  v_request public.upgrade_requests%rowtype;
+begin
+  if v_user_id is null then
+    raise exception 'Authenticated member required' using errcode = '42501';
+  end if;
+
+  -- Keep the same global lock order as payment confirmation so a Founder
+  -- application cannot cross the capacity boundary while it is reported.
+  perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
+
+  select * into v_request
+  from public.upgrade_requests request
+  where request.id = p_request_id
+    and request.user_id = v_user_id
+    and request.status = 'pending'
+  for update;
+
+  if not found then
+    raise exception 'Pending membership application not found' using errcode = '42501';
+  end if;
+
+  if v_request.payment_reported_at is null then
+    if v_request.plan_id = 'founder'
+      and (select capacity.is_full from public.get_founder_capacity() capacity)
+    then
+      raise exception 'Founder 100 is full; convert this application to Teacher before reporting payment';
+    end if;
+
+    update public.upgrade_requests request
+    set payment_reported_at = now()
+    where request.id = v_request.id
+    returning * into v_request;
+  end if;
+
+  id := v_request.id;
+  reference_code := v_request.reference_code;
+  plan_id := v_request.plan_id;
+  status := v_request.status;
+  quoted_amount_thb := v_request.quoted_amount_thb;
+  payment_reported_at := v_request.payment_reported_at;
+  created_at := v_request.created_at;
+  return next;
+end;
+$$;
+
+revoke execute on function public.report_membership_payment(uuid) from public, anon;
+grant execute on function public.report_membership_payment(uuid) to authenticated;
+
+-- Conversion is an explicit member action. It preserves the application's
+-- reference code, replaces the stale Founder quote with the live canonical
+-- Teacher quote, and never grants access. A retry after conversion returns the
+-- same pending Teacher application without clearing a later payment report.
+create function public.convert_founder_application_to_teacher(p_request_id uuid)
+returns table (
+  id uuid,
+  reference_code text,
+  plan_id text,
+  status text,
+  quoted_amount_thb integer,
+  payment_reported_at timestamptz,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := (select auth.uid());
+  v_request public.upgrade_requests%rowtype;
+  v_teacher public.plans%rowtype;
+begin
+  if v_user_id is null then
+    raise exception 'Authenticated member required' using errcode = '42501';
+  end if;
+
+  -- Match the Founder allocation/confirmation lock order first, then use the
+  -- existing per-member/plan lock to serialize against a new Teacher request.
+  perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
+  perform pg_advisory_xact_lock(
+    hashtextextended('membership-application:' || v_user_id::text, 0)
+  );
+
+  select * into v_request
+  from public.upgrade_requests request
+  where request.id = p_request_id
+    and request.user_id = v_user_id
+    and request.status = 'pending'
+  for update;
+
+  if not found then
+    raise exception 'Pending membership application not found' using errcode = '42501';
+  end if;
+
+  select * into v_teacher
+  from public.plans plan
+  where plan.id = 'teacher'
+    and plan.lifecycle_status = 'active'
+    and plan.is_public
+    and plan.is_upgradeable
+    and plan.price_amount_thb = 599;
+
+  if not found then
+    raise exception 'Teacher membership is not available at the canonical 599 THB price';
+  end if;
+
+  if v_request.plan_id = 'teacher' then
+    id := v_request.id;
+    reference_code := v_request.reference_code;
+    plan_id := v_request.plan_id;
+    status := v_request.status;
+    quoted_amount_thb := v_request.quoted_amount_thb;
+    payment_reported_at := v_request.payment_reported_at;
+    created_at := v_request.created_at;
+    return next;
+    return;
+  end if;
+
+  if v_request.plan_id <> 'founder' then
+    raise exception 'Only a pending Founder application can be converted to Teacher';
+  end if;
+
+  if exists (
+    select 1
+    from public.upgrade_requests request
+    where request.user_id = v_user_id
+      and request.plan_id = 'teacher'
+      and request.status = 'pending'
+      and request.id <> v_request.id
+  ) then
+    raise exception 'A pending Teacher application already exists';
+  end if;
+
+  update public.upgrade_requests request
+  set
+    plan_id = 'teacher',
+    quoted_amount_thb = v_teacher.price_amount_thb,
+    payment_reported_at = null
+  where request.id = v_request.id
+  returning * into v_request;
+
+  id := v_request.id;
+  reference_code := v_request.reference_code;
+  plan_id := v_request.plan_id;
+  status := v_request.status;
+  quoted_amount_thb := v_request.quoted_amount_thb;
+  payment_reported_at := v_request.payment_reported_at;
+  created_at := v_request.created_at;
+  return next;
+end;
+$$;
+
+revoke execute on function public.convert_founder_application_to_teacher(uuid) from public, anon;
+grant execute on function public.convert_founder_application_to_teacher(uuid) to authenticated;
 
 -- Old RPCs must not remain as payment-free back doors, including for callers
 -- that cached their PostgREST signatures.
@@ -720,6 +960,14 @@ begin
   end if;
   if v_request.status <> 'pending' then
     raise exception 'Membership application is no longer pending';
+  end if;
+  if v_request.plan_id = 'founder'
+    and (select capacity.is_full from public.get_founder_capacity() capacity)
+  then
+    raise exception 'Founder 100 is full; convert this application to Teacher before payment confirmation';
+  end if;
+  if v_request.payment_reported_at is null then
+    raise exception 'Member has not reported payment for this application';
   end if;
   if p_amount_thb <> v_request.quoted_amount_thb then
     raise exception 'Confirmed amount % does not match quoted amount %', p_amount_thb, v_request.quoted_amount_thb;

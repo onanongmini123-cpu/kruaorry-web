@@ -261,12 +261,26 @@ Migration `20261001180000_047_founder_payment_confirmation.sql` is **pending**.
 It makes 299 THB a first-year Founder offer for only the first 100 payments
 confirmed by an admin, sets Founder and Teacher renewal to 599 THB/year, and
 adds idempotent application, activation and renewal RPCs. Pending applications
-do not reserve a place. The permanent Founder ledger receives a structurally
+do not reserve a place, and a member can have only one pending application
+across all plans; switching from Founder to Teacher uses the explicit conversion
+RPC. The permanent Founder ledger receives a structurally
 bounded slot 1–100 only inside successful activation, cannot be deleted or
 reassigned, and remains consumed after expiry, cancellation or account
 deletion. The migration also adds an admin-readable, browser-append-only
 payment-confirmation audit containing reference metadata only, never a slip.
-It fails closed before DDL if the historical ledger already exceeds 100.
+Members first call an authenticated idempotent reporting RPC. Its
+`payment_reported_at` marker separates awaiting-payment from awaiting-review
+without granting access or reserving a Founder place. A retry returns the
+original marker even if capacity filled after that first report. Once Founder
+is full, a new report or admin confirmation for a pending Founder quote is
+blocked; the request can only proceed through the explicit conversion RPC,
+which preserves its reference, requotes canonical Teacher at 599 THB and clears
+any report made against the old quote.
+It fails closed before DDL if the historical ledger contains any legacy grant,
+because migrations 019–025 did not record explicit payment-confirmation
+provenance. Those rows require a separate reviewed audit/reconciliation before
+047 can truthfully expose a confirmed-paid counter; 047 never guesses that an
+older grant was paid.
 
 Before applying `047`, confirm no unexpected direct clients still call the now
 disabled `approve_upgrade_request` or `renew_subscription` RPCs. Run
@@ -286,5 +300,6 @@ reasserts the same request, renewal, and Storage rules as defense in depth;
 `021` exposes only a guarded aggregate of historical Founder grants to admins.
 Migration `025` temporarily superseded the display/counting behavior with
 current entitled Founder usage. Pending migration `047` restores the durable
-ledger as the cumulative source of truth and hardens it as an irreversible
+ledger as the cumulative source of truth only after any unproven legacy grants
+have been separately audited and reconciled, then hardens it as an irreversible
 first-100 promotion record; once `047` is applied, places are never recycled.

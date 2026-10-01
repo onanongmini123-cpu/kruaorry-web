@@ -38,8 +38,10 @@ export function safeAuthNext(raw: string | null | undefined): string {
       return url.pathname + url.search;
     }
 
-    if (url.pathname === "/membership" && hasOnlyParams(url.searchParams, [])) {
-      return "/membership";
+    if (url.pathname === "/membership" && hasOnlyParams(url.searchParams, ["plan"])) {
+      const plan = url.searchParams.get("plan");
+      if (plan !== null && plan !== "founder" && plan !== "teacher") return "/app";
+      return url.pathname + url.search;
     }
 
     const match = /^\/download\/([^/]+)$/.exec(url.pathname);

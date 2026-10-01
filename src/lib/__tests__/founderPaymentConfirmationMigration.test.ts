@@ -21,12 +21,15 @@ describe("Founder payment-confirmation migration", () => {
     expect(sql).toMatch(/when id in \('founder', 'teacher'\) then 599/);
     expect(sql).toContain("price_amount_thb = 299");
     expect(sql).toContain("renewal_price_amount_thb = 599");
+    expect(sql).toContain("add constraint plans_teacher_offer_price");
+    expect(sql).toMatch(/id <> 'teacher'\s+or price_amount_thb is not distinct from 599/);
   });
 
   it("adds the exact application and payment-confirmation contract", () => {
     for (const column of [
       "reference_code",
       "quoted_amount_thb",
+      "payment_reported_at",
       "payment_paid_at",
       "payment_confirmed_at",
       "payment_confirmed_by",
@@ -43,10 +46,61 @@ describe("Founder payment-confirmation migration", () => {
     expect(createApplication).toContain("returns table (");
     expect(createApplication).toContain("reference_code text");
     expect(createApplication).toContain("quoted_amount_thb integer");
+    expect(createApplication).toContain("payment_reported_at timestamptz");
     expect(createApplication).toContain("request.status = 'pending'");
-    expect(createApplication).toContain("membership-application:");
+    expect(createApplication).toContain("hashtextextended('membership-application:' || v_user_id::text, 0)");
+    expect(createApplication).not.toContain("v_user_id::text || ':' || p_plan_id");
+    expect(createApplication).not.toContain("request.plan_id = p_plan_id");
+    expect(createApplication).toContain("v_request.plan_id <> p_plan_id");
+    expect(createApplication).toContain("มีใบสมัครแพ็กเกจอื่นที่รอดำเนินการอยู่");
     expect(createApplication).toContain("v_plan.price_amount_thb");
     expect(sql).toContain("revoke insert on table public.upgrade_requests from anon, authenticated");
+    expect(sql).toContain("create unique index upgrade_requests_one_pending_per_user");
+    expect(sql).toMatch(/on public\.upgrade_requests\(user_id\)\s+where status = 'pending'/);
+    expect(sql).toContain("v_duplicate_pending_users > 0");
+    expect(sql).toContain("members have multiple pending membership applications");
+  });
+
+  it("separates member-reported payment from admin-confirmed payment", () => {
+    const report = section(
+      "create function public.report_membership_payment(p_request_id uuid)",
+      "revoke execute on function public.report_membership_payment(uuid)",
+    );
+    expect(report).toContain("v_user_id uuid := (select auth.uid())");
+    expect(report).toContain("request.user_id = v_user_id");
+    expect(report).toContain("request.status = 'pending'");
+    expect(report).toContain("pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0))");
+    expect(report).toContain("Founder 100 is full; convert this application to Teacher");
+    expect(report).toContain("if v_request.payment_reported_at is null then");
+    expect(report.indexOf("if v_request.payment_reported_at is null then")).toBeLessThan(
+      report.indexOf("Founder 100 is full; convert this application to Teacher"),
+    );
+    expect(report).toContain("set payment_reported_at = now()");
+    expect(report).not.toContain("activate_membership_internal");
+    expect(report).not.toContain("founder_seat_ledger");
+    expect(sql).toContain("grant execute on function public.report_membership_payment(uuid) to authenticated");
+    expect(sql).toContain("revoke execute on function public.report_membership_payment(uuid) from public, anon");
+  });
+
+  it("requires an explicit, reference-preserving conversion to canonical Teacher", () => {
+    const convert = section(
+      "create function public.convert_founder_application_to_teacher(p_request_id uuid)",
+      "revoke execute on function public.convert_founder_application_to_teacher(uuid)",
+    );
+    expect(convert).toContain("request.user_id = v_user_id");
+    expect(convert).toContain("request.status = 'pending'");
+    expect(convert).toContain("plan.id = 'teacher'");
+    expect(convert).toContain("plan.price_amount_thb = 599");
+    expect(convert).toContain("v_request.plan_id <> 'founder'");
+    expect(convert).toContain("plan_id = 'teacher'");
+    expect(convert).toContain("quoted_amount_thb = v_teacher.price_amount_thb");
+    expect(convert).toContain("payment_reported_at = null");
+    expect(convert).toContain("hashtextextended('membership-application:' || v_user_id::text, 0)");
+    expect(convert).not.toContain("v_user_id::text || ':teacher'");
+    expect(convert).not.toContain("reference_code =");
+    expect(convert).not.toContain("activate_membership_internal");
+    expect(sql).toContain("grant execute on function public.convert_founder_application_to_teacher(uuid) to authenticated");
+    expect(sql).toContain("revoke execute on function public.convert_founder_application_to_teacher(uuid) from public, anon");
   });
 
   it("makes confirmation admin-only, atomic, and safely idempotent", () => {
@@ -59,6 +113,8 @@ describe("Founder payment-confirmation migration", () => {
     expect(confirm).toContain("where confirmation.idempotency_key = p_idempotency_key");
     expect(confirm).toContain("return v_existing.subscription_id");
     expect(confirm).toContain("v_request.status <> 'pending'");
+    expect(confirm).toContain("Founder 100 is full; convert this application to Teacher");
+    expect(confirm).toContain("v_request.payment_reported_at is null");
     expect(confirm).toContain("p_amount_thb <> v_request.quoted_amount_thb");
     expect(confirm).toContain("payment_confirmed_amount_thb = p_amount_thb");
     expect(confirm).toContain("public.activate_membership_internal");
@@ -67,7 +123,8 @@ describe("Founder payment-confirmation migration", () => {
   });
 
   it("uses a permanent, structurally bounded Founder ledger", () => {
-    expect(sql).toContain("if v_grants > 100 then");
+    expect(sql).toContain("if v_grants > 0 then");
+    expect(sql).toContain("legacy grants without explicit payment-confirmation provenance");
     expect(sql).toContain("check (slot_number between 1 and 100)");
     expect(sql).toContain("unique (slot_number)");
 
@@ -97,6 +154,15 @@ describe("Founder payment-confirmation migration", () => {
     expect(auditTable).toContain("idempotency_key uuid not null unique");
     expect(auditTable).toContain("amount_thb integer not null");
     expect(auditTable).toContain("payment_reference text not null");
+    expect(auditTable).toContain("payment_reference_fingerprint text generated always as");
+    expect(auditTable).toContain("extensions.digest(");
+    expect(auditTable).toContain("'sha256'");
+    expect(auditTable).toContain(
+      "on public.membership_payment_confirmations(payment_reference_fingerprint)",
+    );
+    expect(auditTable).not.toContain(
+      "on public.membership_payment_confirmations(lower(btrim(payment_reference)))",
+    );
     expect(auditTable).not.toMatch(/slip|image|storage/i);
     expect(auditTable).toContain("enable row level security");
     expect(auditTable).toContain("using (public.is_admin())");
