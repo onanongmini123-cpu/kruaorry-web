@@ -22,7 +22,7 @@ const migrations = [
   "20260929100000_043_public_grammar_boss_battle_resource.sql",
   "20260929110000_044_public_kaokham_resource.sql",
   "20261001150000_045_public_ar_phonics_quest_resource.sql",
-  "20261001160000_046_public_number_listening_line_resource.sql",
+  "20261001170000_047_public_number_listening_line_resource.sql",
 ];
 
 const USERS = {
@@ -1093,7 +1093,7 @@ try {
 
   await assertPublicGameSeed({
     resourceId: RESOURCES.numberListeningLine,
-    migration: "20261001160000_046_public_number_listening_line_resource.sql",
+    migration: "20261001170000_047_public_number_listening_line_resource.sql",
     label: "Number Listening Line",
     title: "Listening Line Challenge — ฟังเสียงแล้วเลือกคำตอบ",
     meta: "เว็บเกมภาษาอังกฤษ · ฟังตัวเลข 5 ระดับ + คำศัพท์ 45 คำ · 2–12 คน · อนุบาล–ม.6",

@@ -245,7 +245,7 @@ target URL, or protected catalogue metadata conflicts. It was applied and
 recorded on the live project on 2026-10-01; a post-apply ledger check confirmed
 that local and remote both contain version `20261001150000`.
 
-Migration `20261001160000_046_public_number_listening_line_resource.sql`
+Migration `20261001170000_047_public_number_listening_line_resource.sql`
 publishes **Listening Line Challenge — ฟังเสียงแล้วเลือกคำตอบ** as a free
 public English listening game for Kindergarten–Grade 12. It records the two
 live modes (adaptive number-and-math listening plus a 45-word vocabulary
