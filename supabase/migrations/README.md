@@ -257,6 +257,18 @@ conflicts. It was applied and recorded on the live project on 2026-10-01; a
 post-apply ledger check confirmed that local and remote both contain version
 `20261001165640`.
 
+Migration `20261001180000_047_authenticated_ecosystem_guardians_resource.sql`
+prepares **ผู้พิทักษ์ระบบนิเวศ — Ecosystem Guardians** as a
+free-after-sign-in science teaching resource for Grades 4–6. It records four
+ecosystems, the eight-step explore/classify/build/simulate/analyze/restore/
+review journey, food-chain and food-web arrow conventions, configurable
+review lengths, accessible drag-and-tap interaction, a 40–50-minute teacher
+guide with a shorter lesson path, the production Site URL, and its distinct
+cover. The migration is idempotent, requires a permanent KruAorry account,
+grants no paid plan, and fails closed when its title, normalized target URL,
+or protected catalogue metadata conflicts. It remains pending until the Site
+and cover are verified and the live migration ledger plus dry-run are checked.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
