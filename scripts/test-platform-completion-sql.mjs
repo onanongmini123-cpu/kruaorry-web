@@ -20,6 +20,7 @@ const migrations = [
   "20260928140000_041_public_listening_detective_resource.sql",
   "20260929090000_042_public_sentence_train_grammar_resource.sql",
   "20260929100000_043_public_grammar_boss_battle_resource.sql",
+  "20260929110000_044_public_kaokham_resource.sql",
 ];
 
 const USERS = {
@@ -49,6 +50,7 @@ const RESOURCES = {
   listeningDetective: "df55f95a-b307-4aec-8b42-e6b9a1244a6e",
   sentenceTrainGrammar: "86afb9c3-20f2-4ab6-9ebc-9a454b36692b",
   grammarBossBattle: "f14855b7-3a39-4f59-85b9-06dde698d4d4",
+  kaokham: "18e463f4-0117-4f0e-9fbf-921be97e5c14",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -1034,6 +1036,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000053",
     duplicateUrlId: "90000000-0000-4000-8000-000000000054",
     alternateTitle: "เกมบอสไวยากรณ์ชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.kaokham,
+    migration: "20260929110000_044_public_kaokham_resource.sql",
+    label: "KaoKham",
+    title: "ก้าวคำ — ฟัง อ่าน สะกด เขียน",
+    meta: "เว็บเรียนรู้ภาษาไทย · 6 ขั้น · ฟัง–อ่าน–สะกด–เขียน · ผู้มาเยือน/รหัสกิจกรรม · ป.1–ป.6",
+    description: "เว็บฝึกอ่านและสะกดคำไทยด้วยตนเอง 6 ขั้นสำหรับ ป.1–ป.6 ตั้งแต่ฟัง เลือกคำ ประกอบคำ อ่าน สะกดหรือเขียน และใช้คำในประโยค มีคำใบ้ทีละขั้น ไม่หักคะแนน และแยกผลการทำได้เองจากการทำหลังลองใหม่หรือใช้คำใบ้ ผู้มาเยือนเก็บผลเฉพาะในเครื่อง ส่วนนักเรียนเข้าร่วมด้วยรหัสกิจกรรมของครูได้โดยไม่ต้องมีบัญชี ไม่มีการจัดอันดับ และเปรียบเทียบเฉพาะพัฒนาการของตนเอง",
+    category: "ภาษาไทย",
+    gradeLevels: ["p1", "p2", "p3", "p4", "p5", "p6"],
+    ctaUrl: "https://kaokham-learning-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/kaokham.jpg",
+    tags: ["ภาษาไทย", "การอ่าน", "สะกดคำ", "เขียนคำ", "เรียนรู้ด้วยตนเอง", "ก้าวคำ", "รหัสกิจกรรม", "ประถมศึกษา"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000055",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000056",
+    alternateTitle: "แบบฝึกภาษาไทยชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.

@@ -222,6 +222,16 @@ metadata conflicts. It was applied and recorded on the live project on
 2026-09-29; a post-apply ledger check confirmed that local and remote both
 contain version `20260929100000`.
 
+Migration `20260929110000_044_public_kaokham_resource.sql` publishes
+**ก้าวคำ — ฟัง อ่าน สะกด เขียน** as a free public Thai literacy resource for
+Grades 1–6. It records the six-step listen/read/spell/write journey, local-only
+guest mode, teacher activity-code access without a student account, progressive
+hints, mastery-separated scoring, and the no-ranking policy, together with the
+production Site URL and its distinct cover. The migration is idempotent, grants
+no paid plan, and fails closed when its title, normalized target URL, or
+protected catalogue metadata conflicts. Apply it only after the Site and cover
+are live, then record the verified remote ledger here.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
