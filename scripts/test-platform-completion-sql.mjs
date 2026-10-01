@@ -22,6 +22,7 @@ const migrations = [
   "20260929100000_043_public_grammar_boss_battle_resource.sql",
   "20260929110000_044_public_kaokham_resource.sql",
   "20261001150000_045_public_ar_phonics_quest_resource.sql",
+  "20261001160000_046_public_number_listening_line_resource.sql",
 ];
 
 const USERS = {
@@ -53,6 +54,7 @@ const RESOURCES = {
   grammarBossBattle: "f14855b7-3a39-4f59-85b9-06dde698d4d4",
   kaokham: "18e463f4-0117-4f0e-9fbf-921be97e5c14",
   arPhonicsQuest: "898fa4ab-4db0-4ec0-9c9b-1ba1d4150972",
+  numberListeningLine: "a2dbb83c-33c0-4303-abfd-b9c8ed7799af",
 };
 
 async function asRole(role, userId, run, anonymous = role === "anon") {
@@ -183,6 +185,21 @@ async function assertPublicGameSeed({
       () => db.exec(sql),
       new RegExp(`Existing ${label} resource does not match the protected catalogue contract`),
       `the ${label} seed must fail closed when its existing ID has mismatched protected metadata`,
+    );
+  } finally {
+    await db.exec("rollback");
+  }
+
+  await db.exec("begin");
+  try {
+    await db.query(
+      "insert into public.resource_plan_access(resource_id, plan_id) values ($1, 'teacher')",
+      [resourceId],
+    );
+    await rejectsWith(
+      () => db.exec(sql),
+      new RegExp(`Public ${label} must not have plan-specific grants`),
+      `the public ${label} seed must fail closed when a paid-plan grant exists`,
     );
   } finally {
     await db.exec("rollback");
@@ -1072,6 +1089,23 @@ try {
     duplicateTitleId: "90000000-0000-4000-8000-000000000057",
     duplicateUrlId: "90000000-0000-4000-8000-000000000058",
     alternateTitle: "เกมโฟนิกส์ชื่ออื่น",
+  });
+
+  await assertPublicGameSeed({
+    resourceId: RESOURCES.numberListeningLine,
+    migration: "20261001160000_046_public_number_listening_line_resource.sql",
+    label: "Number Listening Line",
+    title: "Listening Line Challenge — ฟังเสียงแล้วเลือกคำตอบ",
+    meta: "เว็บเกมภาษาอังกฤษ · ฟังตัวเลข 5 ระดับ + คำศัพท์ 45 คำ · 2–12 คน · อนุบาล–ม.6",
+    description: "เกมฝึกฟังภาษาอังกฤษแบบผลัดกันตอบสำหรับผู้เรียนอนุบาล–ม.6 บนอุปกรณ์เดียว เลือกได้ 2 โหมด ได้แก่ ฟังตัวเลขและโจทย์คณิตศาสตร์ หรือฟังคำศัพท์พื้นฐาน 45 คำแล้วเลือกคำตอบ a/b/c โหมดตัวเลขปรับตาม 5 ระดับ ตั้งแต่ 0–20 ไปจนถึงจำนวนหลักล้าน จำนวนลบ ทศนิยม เศษส่วน ร้อยละ และบวก–ลบ–คูณ–หาร พร้อมจัดจำนวนรอบให้ผู้เล่นเท่ากัน ระบบปรับจำนวนตัวเลือก เวลา และความเร็วเสียงตามระดับ เล่นได้ 2–12 คน มีนับถอยหลังก่อนแต่ละตา ส่งตาต่ออัตโนมัติ คะแนนรายคน ความแม่นยำรวม และคำแนะนำระดับถัดไป ใช้เสียงสังเคราะห์ภาษาอังกฤษแบบ US จากอุปกรณ์และไม่ต้องใช้บัญชีผู้เรียน",
+    category: "ภาษาอังกฤษ",
+    gradeLevels: ["kindergarten", "p1", "p2", "p3", "p4", "p5", "p6", "m1", "m2", "m3", "m4", "m5", "m6"],
+    ctaUrl: "https://kruaorry-web.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.onanongmini123.chatgpt.site/images/resources/number-listening-line.jpg",
+    tags: ["เกม", "ภาษาอังกฤษ", "การฟัง", "ตัวเลข", "คณิตศาสตร์", "คำศัพท์", "Listening Line", "กิจกรรมกลุ่ม"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000059",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000060",
+    alternateTitle: "เกมฟังตัวเลขชื่ออื่น",
   });
 
   // Existing semantics are preserved by the backfill.

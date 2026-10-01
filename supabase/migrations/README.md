@@ -245,6 +245,17 @@ target URL, or protected catalogue metadata conflicts. It was applied and
 recorded on the live project on 2026-10-01; a post-apply ledger check confirmed
 that local and remote both contain version `20261001150000`.
 
+Migration `20261001160000_046_public_number_listening_line_resource.sql`
+publishes **Listening Line Challenge — ฟังเสียงแล้วเลือกคำตอบ** as a free
+public English listening game for Kindergarten–Grade 12. It records the two
+live modes (adaptive number-and-math listening plus a 45-word vocabulary
+bank), five number level profiles, 2–12-player turn-taking, US English device
+speech, the verified public Site URL, and its distinct production-hosted
+cover. The migration is idempotent, grants no paid plan, and fails closed when
+its title, normalized target URL, or protected catalogue metadata conflicts.
+It remains pending until the production ledger is checked and the migration is
+applied; do not mark it live from repository state alone.
+
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
