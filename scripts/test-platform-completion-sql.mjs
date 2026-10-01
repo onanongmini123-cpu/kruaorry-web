@@ -22,6 +22,7 @@ const migrations = [
   "20260929100000_043_public_grammar_boss_battle_resource.sql",
   "20260929110000_044_public_kaokham_resource.sql",
   "20261001150000_045_public_ar_phonics_quest_resource.sql",
+  "20261001165640_046_authenticated_electric_circuit_lab_resource.sql",
   "20261001170000_047_public_number_listening_line_resource.sql",
 ];
 
@@ -54,6 +55,7 @@ const RESOURCES = {
   grammarBossBattle: "f14855b7-3a39-4f59-85b9-06dde698d4d4",
   kaokham: "18e463f4-0117-4f0e-9fbf-921be97e5c14",
   arPhonicsQuest: "898fa4ab-4db0-4ec0-9c9b-1ba1d4150972",
+  electricCircuitLab: "c3a21758-8338-4f8f-a77e-42e7a6cf3eca",
   numberListeningLine: "a2dbb83c-33c0-4303-abfd-b9c8ed7799af",
 };
 
@@ -93,6 +95,7 @@ async function assertPublicGameSeed({
   duplicateTitleId,
   duplicateUrlId,
   alternateTitle,
+  accessMode = "public",
 }) {
   const beforeReplay = (await db.query(`
     select id::text, title, meta, description, category, grade_levels,
@@ -113,7 +116,7 @@ async function assertPublicGameSeed({
   assert.deepEqual(beforeReplay.tags, tags);
   assert.equal(beforeReplay.is_free, true);
   assert.equal(beforeReplay.status, "published");
-  assert.equal(beforeReplay.access_mode, "public");
+  assert.equal(beforeReplay.access_mode, accessMode);
   assert.equal(beforeReplay.file_path, null);
   assert.equal(beforeReplay.file_name, null);
   assert.equal(beforeReplay.file_size, null);
@@ -138,11 +141,12 @@ async function assertPublicGameSeed({
     [resourceId],
   )).rows[0].count, 0);
   assert.equal((await db.query(
-    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = 'public'",
-    [resourceId],
+    "select count(*)::integer as count from public.resource_catalog where id = $1 and access_mode = $2",
+    [resourceId, accessMode],
   )).rows[0].count, 1);
-  assert.equal((await resolveAs("anon", null, resourceId, true)).length, 1);
-  assert.equal((await resolveAs("authenticated", USERS.free, resourceId, true)).length, 1);
+  const signedOutResolutionCount = accessMode === "public" ? 1 : 0;
+  assert.equal((await resolveAs("anon", null, resourceId, true)).length, signedOutResolutionCount);
+  assert.equal((await resolveAs("authenticated", USERS.free, resourceId, true)).length, signedOutResolutionCount);
   assert.equal((await resolveAs("authenticated", USERS.free, resourceId, false)).length, 1);
   assert.equal((await resolveAs("authenticated", USERS.teacher, resourceId, false)).length, 1);
 
@@ -192,14 +196,15 @@ async function assertPublicGameSeed({
 
   await db.exec("begin");
   try {
+    const accessLabel = accessMode === "public" ? "Public" : "Authenticated";
     await db.query(
       "insert into public.resource_plan_access(resource_id, plan_id) values ($1, 'teacher')",
       [resourceId],
     );
     await rejectsWith(
       () => db.exec(sql),
-      new RegExp(`Public ${label} must not have plan-specific grants`),
-      `the public ${label} seed must fail closed when a paid-plan grant exists`,
+      new RegExp(`${accessLabel} ${label} must not have plan-specific grants`),
+      `the ${accessMode} ${label} seed must fail closed when a paid-plan grant exists`,
     );
   } finally {
     await db.exec("rollback");
@@ -1092,6 +1097,24 @@ try {
   });
 
   await assertPublicGameSeed({
+    resourceId: RESOURCES.electricCircuitLab,
+    migration: "20261001165640_046_authenticated_electric_circuit_lab_resource.sql",
+    label: "Electric Circuit Lab",
+    title: "ห้องทดลองวงจรไฟฟ้า",
+    meta: "สื่อวิทยาศาสตร์โต้ตอบ · วงจรพื้นฐาน/อนุกรม/ขนาน · ตัวนำ–ฉนวน · 6 ภารกิจ · ป.4–ม.3",
+    description: "ห้องทดลองวิทยาศาสตร์แบบโต้ตอบสำหรับ ป.4–ม.3 ให้นักเรียนประกอบวงจรพื้นฐาน วงจรอนุกรม และวงจรขนานจากแบตเตอรี่ 3 โวลต์ สวิตช์ หลอดไฟ และสายไฟ แล้วเปิด–ปิดหน้าสัมผัสเพื่อสังเกตทิศทางกระแส ค่ากระแส และความสว่างของหลอด เปรียบเทียบวัสดุ 8 ชนิดเพื่อจำแนกตัวนำกับฉนวน มีระดับการแสดงผลสำหรับประถมและมัธยม ภารกิจซ่อมและคำถาม 6 ด่าน คำใบ้ทีละขั้น และคู่มือครูสำหรับกิจกรรม 30–45 นาที ใช้เป็นแบบจำลองแนวคิด ไม่เก็บชื่อหรือข้อมูลเด็ก และย้ำให้การทดลองจริงใช้ถ่านแรงดันต่ำเท่านั้น ไม่ใช้ไฟบ้าน",
+    category: "วิทยาศาสตร์",
+    gradeLevels: ["p4", "p5", "p6", "m1", "m2", "m3"],
+    ctaUrl: "https://kru-electric-circuit-lab-2026.onanongmini123.chatgpt.site",
+    coverImageUrl: "https://kruaorry-web.vercel.app/images/resources/electric-circuit-lab.jpg",
+    tags: ["วิทยาศาสตร์", "วงจรไฟฟ้า", "การทดลอง", "อนุกรม", "ขนาน", "ตัวนำและฉนวน", "กิจกรรมโต้ตอบ", "ป.4–ม.3"],
+    duplicateTitleId: "90000000-0000-4000-8000-000000000059",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000060",
+    alternateTitle: "สื่อทดลองไฟฟ้าชื่ออื่น",
+    accessMode: "authenticated",
+  });
+
+  await assertPublicGameSeed({
     resourceId: RESOURCES.numberListeningLine,
     migration: "20261001170000_047_public_number_listening_line_resource.sql",
     label: "Number Listening Line",
@@ -1103,8 +1126,8 @@ try {
     ctaUrl: "https://kruaorry-web.onanongmini123.chatgpt.site",
     coverImageUrl: "https://kruaorry-web.onanongmini123.chatgpt.site/images/resources/number-listening-line.jpg",
     tags: ["เกม", "ภาษาอังกฤษ", "การฟัง", "ตัวเลข", "คณิตศาสตร์", "คำศัพท์", "Listening Line", "กิจกรรมกลุ่ม"],
-    duplicateTitleId: "90000000-0000-4000-8000-000000000059",
-    duplicateUrlId: "90000000-0000-4000-8000-000000000060",
+    duplicateTitleId: "90000000-0000-4000-8000-000000000061",
+    duplicateUrlId: "90000000-0000-4000-8000-000000000062",
     alternateTitle: "เกมฟังตัวเลขชื่ออื่น",
   });
 

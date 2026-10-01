@@ -245,6 +245,17 @@ target URL, or protected catalogue metadata conflicts. It was applied and
 recorded on the live project on 2026-10-01; a post-apply ledger check confirmed
 that local and remote both contain version `20261001150000`.
 
+Migration `20261001165640_046_authenticated_electric_circuit_lab_resource.sql`
+prepares **ห้องทดลองวงจรไฟฟ้า** as a free-after-sign-in science resource for
+Grades 4–9. It records the three basic, series, and parallel circuit models,
+primary and secondary display levels, eight conductor/insulator materials, six
+guided repair and reasoning missions, the 30–45-minute teacher guide, the
+production Site URL, and its distinct cover. The migration is idempotent,
+requires a permanent KruAorry account, grants no paid plan, and fails closed
+when its title, normalized target URL, or protected catalogue metadata
+conflicts. **Pending:** apply it only after the production Site and cover are
+live, then record the verified remote ledger here.
+
 Migration `20261001170000_047_public_number_listening_line_resource.sql`
 publishes **Listening Line Challenge — ฟังเสียงแล้วเลือกคำตอบ** as a free
 public English listening game for Kindergarten–Grade 12. It records the two
