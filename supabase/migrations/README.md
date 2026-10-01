@@ -229,8 +229,9 @@ guest mode, teacher activity-code access without a student account, progressive
 hints, mastery-separated scoring, and the no-ranking policy, together with the
 production Site URL and its distinct cover. The migration is idempotent, grants
 no paid plan, and fails closed when its title, normalized target URL, or
-protected catalogue metadata conflicts. Apply it only after the Site and cover
-are live, then record the verified remote ledger here.
+protected catalogue metadata conflicts. It was applied and recorded on the
+live project on 2026-10-01; a post-apply ledger check confirmed that local and
+remote both contain version `20260929110000`.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
