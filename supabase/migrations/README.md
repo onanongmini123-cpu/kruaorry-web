@@ -241,8 +241,9 @@ solo/2–12-player/2–4-team/whole-class play, fair turn totals, deterministic
 100/50/0 scoring, local-only results, and the camera privacy lifecycle,
 together with the production Site URL and its distinct cover. The migration is
 idempotent, grants no paid plan, and fails closed when its title, normalized
-target URL, or protected catalogue metadata conflicts. Apply it only after the
-Site and cover are live, then record the verified remote ledger here.
+target URL, or protected catalogue metadata conflicts. It was applied and
+recorded on the live project on 2026-10-01; a post-apply ledger check confirmed
+that local and remote both contain version `20261001150000`.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
