@@ -23,6 +23,9 @@ const ownerTestUser = randomUUID();
 const ownerTestFounderCreatedAt = "2026-10-01T12:48:53.40514+00:00";
 const ownerTestTeacherCreatedAt = "2026-10-01T12:49:04.996398+00:00";
 const mismatchedTeacherCreatedAt = "2026-10-01T12:49:04.996399+00:00";
+const ownerTestFounderResolvedAt = "2026-10-02T02:30:47.860132+00:00";
+const ownerTestTeacherResolvedAt = "2026-10-02T02:30:48.6291+00:00";
+const mismatchedFounderResolvedAt = "2026-10-02T02:30:47.860133+00:00";
 
 async function rejectsWith(run, message) {
   await assert.rejects(run, (error) => String(error).includes(message));
@@ -199,14 +202,30 @@ try {
         preservedPlusSubscription.rows[0].id,
       );
 
-      const pendingOwnerTestRequests = await db.query(`
-        insert into public.upgrade_requests (user_id, plan_id, status, created_at)
+      const ownerTestRequests = await db.query(`
+        insert into public.upgrade_requests (
+          user_id, plan_id, status, created_at, resolved_at
+        )
         values
-          ($1, 'founder', 'pending', $2::timestamptz),
-          ($1, 'teacher', 'pending', $3::timestamptz)
+          ($1, 'founder', 'declined', $2::timestamptz, $4::timestamptz),
+          ($1, 'teacher', 'declined', $3::timestamptz, $5::timestamptz)
         returning id, plan_id
-      `, [ownerTestUser, ownerTestFounderCreatedAt, mismatchedTeacherCreatedAt]);
-      assert.equal(pendingOwnerTestRequests.rows.length, 2);
+      `, [
+        ownerTestUser,
+        ownerTestFounderCreatedAt,
+        mismatchedTeacherCreatedAt,
+        ownerTestFounderResolvedAt,
+        ownerTestTeacherResolvedAt,
+      ]);
+      assert.equal(ownerTestRequests.rows.length, 2);
+      const founderOwnerTestRequest = ownerTestRequests.rows.find(
+        (request) => request.plan_id === "founder",
+      );
+      const teacherOwnerTestRequest = ownerTestRequests.rows.find(
+        (request) => request.plan_id === "teacher",
+      );
+      assert.ok(founderOwnerTestRequest);
+      assert.ok(teacherOwnerTestRequest);
 
       await rejectsWith(
         () => runMigrationTransactionally(db, migrationSql),
@@ -229,8 +248,8 @@ try {
           (
             select count(*)::integer
             from public.upgrade_requests
-            where user_id = $1 and status = 'pending'
-          ) as pending_owner_test_requests,
+            where user_id = $1 and status = 'declined' and resolved_at is not null
+          ) as declined_owner_test_requests,
           (
             select count(*)::integer
             from public.upgrade_requests
@@ -253,7 +272,7 @@ try {
         renewal_column_exists: false,
         payment_audit_exists: false,
         readiness_marker_exists: false,
-        pending_owner_test_requests: 2,
+        declined_owner_test_requests: 2,
         approved_plus_requests: 1,
         active_plus_subscriptions: 1,
         profile_plan: "plus",
@@ -266,7 +285,7 @@ try {
       await db.query(`
         update public.upgrade_requests
         set created_at = $2::timestamptz
-        where user_id = $1 and plan_id = 'teacher' and status = 'pending'
+        where user_id = $1 and plan_id = 'teacher' and status = 'declined'
       `, [ownerTestUser, ownerTestTeacherCreatedAt]);
 
       const assertPre048Rollback = async (label) => {
@@ -291,8 +310,8 @@ try {
             (
               select count(*)::integer
               from public.upgrade_requests
-              where user_id = $1 and status = 'pending' and resolved_at is null
-            ) as pending_owner_test_requests,
+              where user_id = $1 and status = 'declined' and resolved_at is not null
+            ) as declined_owner_test_requests,
             (select count(*)::integer from public.founder_seat_ledger) as founder_seats
         `, [ownerTestUser]);
         assert.deepEqual(state.rows[0], {
@@ -301,7 +320,7 @@ try {
           resolution_audit_exists: false,
           pending_index_exists: false,
           readiness_markers: 0,
-          pending_owner_test_requests: 2,
+          declined_owner_test_requests: 2,
           founder_seats: 0,
         }, `${label} left partial 048 schema or reconciled data behind`);
         assert.deepEqual(
@@ -317,6 +336,42 @@ try {
       };
 
       const failClosedCases = [
+        {
+          label: "target reopened after reviewed cleanup",
+          error: "both reviewed applications must remain declined and resolved as audited",
+          arrange: () => db.query(
+            "update public.upgrade_requests set status = 'pending', resolved_at = null where id = $1",
+            [founderOwnerTestRequest.id],
+          ),
+          restore: () => db.query(
+            "update public.upgrade_requests set status = 'declined', resolved_at = $2::timestamptz where id = $1",
+            [founderOwnerTestRequest.id, ownerTestFounderResolvedAt],
+          ),
+        },
+        {
+          label: "declined target missing resolution instant",
+          error: "both reviewed applications must remain declined and resolved as audited",
+          arrange: () => db.query(
+            "update public.upgrade_requests set resolved_at = null where id = $1",
+            [teacherOwnerTestRequest.id],
+          ),
+          restore: () => db.query(
+            "update public.upgrade_requests set resolved_at = $2::timestamptz where id = $1",
+            [teacherOwnerTestRequest.id, ownerTestTeacherResolvedAt],
+          ),
+        },
+        {
+          label: "reviewed resolution instant changed by one microsecond",
+          error: "both reviewed applications must remain declined and resolved as audited",
+          arrange: () => db.query(
+            "update public.upgrade_requests set resolved_at = $2::timestamptz where id = $1",
+            [founderOwnerTestRequest.id, mismatchedFounderResolvedAt],
+          ),
+          restore: () => db.query(
+            "update public.upgrade_requests set resolved_at = $2::timestamptz where id = $1",
+            [founderOwnerTestRequest.id, ownerTestFounderResolvedAt],
+          ),
+        },
         {
           label: "non-owner target",
           error: "reviewed owner profile or Plus plan changed",
@@ -345,10 +400,6 @@ try {
           label: "target linked to an entitlement",
           error: "reviewed application is already linked to a subscription",
           arrange: async () => {
-            const founderRequest = pendingOwnerTestRequests.rows.find(
-              (request) => request.plan_id === "founder",
-            );
-            assert.ok(founderRequest);
             await db.query(`
               insert into public.subscriptions (
                 user_id, plan_id, status, source, approved_from_request_id,
@@ -360,7 +411,7 @@ try {
                 timestamptz '2025-01-01 00:00:00+00',
                 timestamptz '2026-01-01 00:00:00+00'
               )
-            `, [ownerTestUser, founderRequest.id]);
+            `, [ownerTestUser, founderOwnerTestRequest.id]);
           },
           restore: () => db.query(`
             update public.subscriptions
@@ -370,7 +421,7 @@ try {
         },
         {
           label: "additional duplicate-pending owner",
-          error: "expected exactly one reviewed duplicate-pending owner",
+          error: "expected no duplicate-pending member after the reviewed cleanup",
           arrange: async () => {
             const extraDuplicateUser = randomUUID();
             await db.query("insert into public.profiles(id) values ($1)", [extraDuplicateUser]);
@@ -424,9 +475,9 @@ try {
       );
       await assertPre048Rollback("payment-evidence mismatch");
 
-      // Force the last readiness-marker insert to fail after cleanup DML and
-      // both immutable audits have executed. The outer migration transaction
-      // must restore the original pending rows and remove every 048 object.
+      // Force the last readiness-marker insert to fail after metadata backfill
+      // and both immutable audits have executed. The outer migration transaction
+      // must restore the original declined rows and remove every 048 object.
       await db.exec(`
         create function public.reject_test_readiness_marker()
         returns trigger language plpgsql as $$
@@ -477,7 +528,15 @@ try {
           min(audit.new_status) as new_status,
           min(audit.reason_code) as audit_reason_code,
           min(audit.resolved_by::text)::uuid as audit_resolved_by,
-          bool_and(audit.resolved_at = request.resolved_at) as matching_resolved_at
+          bool_and(audit.resolved_at = request.resolved_at) as matching_resolved_at,
+          request.resolved_at = case request.plan_id
+            when 'founder' then $4::timestamptz
+            when 'teacher' then $5::timestamptz
+          end as exact_resolved_at,
+          bool_and(audit.resolved_at = case request.plan_id
+            when 'founder' then $4::timestamptz
+            when 'teacher' then $5::timestamptz
+          end) as exact_audit_resolved_at
         from public.upgrade_requests request
         left join public.membership_application_resolution_audit audit
           on audit.request_id = request.id
@@ -487,20 +546,30 @@ try {
         group by request.id, request.plan_id, request.status,
           request.resolution_reason_code, request.resolved_at, request.resolved_by
         order by request.plan_id
-      `, [ownerTestUser, ownerTestFounderCreatedAt, ownerTestTeacherCreatedAt]);
+      `, [
+        ownerTestUser,
+        ownerTestFounderCreatedAt,
+        ownerTestTeacherCreatedAt,
+        ownerTestFounderResolvedAt,
+        ownerTestTeacherResolvedAt,
+      ]);
       assert.equal(reconciledRequests.rows.length, 2,
         "048 deleted or failed to retain one of the reviewed owner-test requests");
       for (const request of reconciledRequests.rows) {
         assert.equal(request.status, "declined");
         assert.equal(request.resolution_reason_code, "owner_test_cleanup");
         assert.ok(request.resolved_at);
-        assert.equal(request.resolved_by, ownerTestUser);
+        assert.equal(request.exact_resolved_at, true,
+          "048 changed a reviewed legacy resolution instant");
+        assert.equal(request.resolved_by, null);
         assert.equal(request.audit_rows, 1);
         assert.equal(request.previous_status, "pending");
         assert.equal(request.new_status, "declined");
         assert.equal(request.audit_reason_code, "owner_test_cleanup");
-        assert.equal(request.audit_resolved_by, ownerTestUser);
+        assert.equal(request.audit_resolved_by, null);
         assert.equal(request.matching_resolved_at, true);
+        assert.equal(request.exact_audit_resolved_at, true,
+          "048 audit did not retain the exact microsecond resolution instant");
       }
 
       const preservedState = await db.query(`

@@ -293,19 +293,21 @@ any report made against the old quote.
 
 Migration 048 contains one narrowly scoped, fail-closed reconciliation for the
 two owner test applications confirmed by the production read-only audit. It
-matches the exact non-identifying `created_at` instants plus the Founder/Teacher
-plan IDs; no production request, account or payment identifier is committed.
-Before writing, it proves that exactly two rows match, both belong to the same
-owner, both remain pending and unresolved, no payment or subscription evidence
-is linked to either request, no other duplicate-pending owner exists, and the
-separate active Plus subscription/profile still matches the audited state. It
-then declines exactly those two rows with
-`resolution_reason_code = 'owner_test_cleanup'`, derives `resolved_by` from the
-validated owner profile and appends two immutable resolution audit rows before
-creating the one-pending-request index. Any mismatch, short write or failed
-postcondition rolls the entire transaction back. The cleanup never grants a
-plan, changes the existing Plus entitlement, consumes a Founder slot, or invents
-payment evidence.
+matches the exact non-identifying `created_at` and `resolved_at` instants plus
+the Founder/Teacher plan IDs; no production request, account or payment
+identifier is committed. Before writing, it proves that exactly two rows match,
+both belong to the same owner, both are already declined and resolved at the
+reviewed instants, every resolution occurs at or after creation, no payment or
+subscription evidence is linked to either request, no duplicate-pending member
+exists, and the separate active Plus subscription/profile still matches the
+audited state. It preserves each existing status and resolution instant,
+backfills only `resolution_reason_code = 'owner_test_cleanup'`, leaves
+`resolved_by` null because the pre-048 schema did not record an actor, and
+appends two immutable resolution audit rows before creating the
+one-pending-request index. Any mismatch, short write or failed postcondition
+rolls the entire transaction back. The cleanup never grants a plan, changes the
+existing Plus entitlement, consumes a Founder slot, invents a resolver, or
+invents payment evidence.
 
 For migration replay on a pristine database, 048 skips this production-only
 cleanup only when `upgrade_requests` contains exactly zero rows (and therefore

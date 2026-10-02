@@ -38,7 +38,8 @@ declare
   v_target_teacher_count integer;
   v_target_owner_count integer;
   v_target_owner_id uuid;
-  v_target_pending_count integer;
+  v_target_declined_count integer;
+  v_target_owner_pending_count integer;
   v_target_subscription_links integer;
   v_owner_active_plus_subscriptions integer;
   v_partial_objects text[] := array[]::text[];
@@ -211,31 +212,37 @@ begin
     raise exception 'Owner test reconciliation blocked: the reviewed owner profile or Plus plan changed';
   end if;
 
-  select count(*)::integer into v_target_pending_count
+  -- The reviewed owner-only test rows were already declined before 048. Preserve
+  -- that completed state and its original resolution instants; do not reopen or
+  -- resolve the rows again.
+  select count(*)::integer into v_target_declined_count
   from public.upgrade_requests request
   where (
       (
         request.plan_id = 'founder'
         and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+        and request.resolved_at = timestamptz '2026-10-02 02:30:47.860132+00'
       ) or (
         request.plan_id = 'teacher'
         and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+        and request.resolved_at = timestamptz '2026-10-02 02:30:48.6291+00'
       )
     )
     and request.user_id = v_target_owner_id
-    and request.status = 'pending'
-    and request.resolved_at is null;
+    and request.status = 'declined'
+    and request.resolved_at is not null
+    and request.resolved_at >= request.created_at;
 
-  if v_target_pending_count <> 2 then
-    raise exception 'Owner test reconciliation blocked: both reviewed applications must remain pending and unresolved';
+  if v_target_declined_count <> 2 then
+    raise exception 'Owner test reconciliation blocked: both reviewed applications must remain declined and resolved as audited';
   end if;
 
-  select count(*)::integer into v_target_pending_count
+  select count(*)::integer into v_target_owner_pending_count
   from public.upgrade_requests request
   where request.user_id = v_target_owner_id
     and request.status = 'pending';
 
-  if v_target_pending_count <> 2 then
+  if v_target_owner_pending_count <> 0 then
     raise exception 'Owner test reconciliation blocked: the reviewed owner has an unexpected pending application';
   end if;
 
@@ -248,8 +255,8 @@ begin
     having count(*) > 1
   ) duplicates;
 
-  if v_duplicate_pending_users <> 1 then
-    raise exception 'Owner test reconciliation blocked: expected exactly one reviewed duplicate-pending owner, found %', v_duplicate_pending_users;
+  if v_duplicate_pending_users <> 0 then
+    raise exception 'Owner test reconciliation blocked: expected no duplicate-pending member after the reviewed cleanup, found %', v_duplicate_pending_users;
   end if;
 
   select count(*)::integer into v_target_subscription_links
@@ -576,6 +583,8 @@ revoke execute on function public.protect_membership_payment_confirmation()
   from public, anon, authenticated;
 
 -- Every post-048 application resolution has a durable, append-only audit row.
+-- The exact reviewed pre-048 owner-test cleanup is also backfilled below while
+-- preserving its original resolved_at and leaving its unknown actor NULL.
 -- `request_id` intentionally has no foreign key: the non-identifying request
 -- UUID, reference and resolution facts survive later account/application
 -- deletion. User and actor links may only be anonymized by their FK actions.
@@ -665,11 +674,10 @@ declare
   v_target_teacher_count integer;
   v_target_owner_count integer;
   v_target_owner_id uuid;
-  v_target_clean_payment_count integer;
+  v_target_reviewed_count integer;
   v_target_subscription_links integer;
   v_plus_subscription_id uuid;
-  v_resolved_at timestamptz := now();
-  v_resolved_count integer;
+  v_reconciled_count integer;
   v_audit_count integer;
 begin
   select count(*)::integer into v_all_request_count
@@ -701,8 +709,8 @@ begin
     )::integer,
     count(distinct request.user_id)::integer,
     count(*) filter (
-      where request.status = 'pending'
-        and request.resolved_at is null
+      where request.status = 'declined'
+        and request.resolved_at is not null
         and request.resolved_by is null
         and request.resolution_reason_code is null
         and request.payment_reported_at is null
@@ -717,21 +725,26 @@ begin
     v_target_founder_count,
     v_target_teacher_count,
     v_target_owner_count,
-    v_target_clean_payment_count
+    v_target_reviewed_count
   from public.upgrade_requests request
   where (
-      request.plan_id = 'founder'
-      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
-    ) or (
-      request.plan_id = 'teacher'
-      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
-    );
+      (
+        request.plan_id = 'founder'
+        and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+        and request.resolved_at = timestamptz '2026-10-02 02:30:47.860132+00'
+      ) or (
+        request.plan_id = 'teacher'
+        and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+        and request.resolved_at = timestamptz '2026-10-02 02:30:48.6291+00'
+      )
+    )
+    and request.resolved_at >= request.created_at;
 
   if v_target_count <> 2
     or v_target_founder_count <> 1
     or v_target_teacher_count <> 1
     or v_target_owner_count <> 1
-    or v_target_clean_payment_count <> 2
+    or v_target_reviewed_count <> 2
   then
     raise exception 'Owner test reconciliation blocked: reviewed applications changed before cleanup';
   end if;
@@ -830,16 +843,17 @@ begin
     raise exception 'Owner test reconciliation blocked: a reviewed application gained payment or entitlement evidence';
   end if;
 
-  with resolved as (
+  -- The pre-048 schema recorded status and resolved_at but had no actor/reason
+  -- columns or immutable audit table. Backfill only the reviewed cleanup reason,
+  -- retain each original resolved_at, and leave resolved_by NULL rather than
+  -- inventing an actor that the legacy schema did not record.
+  with reconciled as (
     update public.upgrade_requests request
     set
-      status = 'declined',
-      resolved_at = v_resolved_at,
-      resolved_by = request.user_id,
       resolution_reason_code = 'owner_test_cleanup'
     where request.user_id = v_target_owner_id
-      and request.status = 'pending'
-      and request.resolved_at is null
+      and request.status = 'declined'
+      and request.resolved_at is not null
       and request.resolved_by is null
       and request.resolution_reason_code is null
       and request.payment_reported_at is null
@@ -852,11 +866,14 @@ begin
         (
           request.plan_id = 'founder'
           and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+          and request.resolved_at = timestamptz '2026-10-02 02:30:47.860132+00'
         ) or (
           request.plan_id = 'teacher'
           and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+          and request.resolved_at = timestamptz '2026-10-02 02:30:48.6291+00'
         )
       )
+      and request.resolved_at >= request.created_at
     returning
       request.id,
       request.reference_code,
@@ -870,20 +887,20 @@ begin
     previous_status, new_status, reason_code, resolved_at, resolved_by
   )
   select
-    resolved.id,
-    resolved.reference_code,
-    resolved.user_id,
-    resolved.plan_id,
+    reconciled.id,
+    reconciled.reference_code,
+    reconciled.user_id,
+    reconciled.plan_id,
     'pending',
     'declined',
     'owner_test_cleanup',
-    resolved.resolved_at,
-    resolved.resolved_by
-  from resolved;
+    reconciled.resolved_at,
+    reconciled.resolved_by
+  from reconciled;
 
-  get diagnostics v_resolved_count = row_count;
-  if v_resolved_count <> 2 then
-    raise exception 'Owner test reconciliation blocked: expected to resolve exactly two reviewed applications, resolved %', v_resolved_count;
+  get diagnostics v_reconciled_count = row_count;
+  if v_reconciled_count <> 2 then
+    raise exception 'Owner test reconciliation blocked: expected to audit exactly two reviewed applications, audited %', v_reconciled_count;
   end if;
 
   select count(*)::integer into v_audit_count
@@ -893,21 +910,23 @@ begin
     and audit.previous_status = 'pending'
     and audit.new_status = 'declined'
     and audit.reason_code = 'owner_test_cleanup'
-    and audit.resolved_at = v_resolved_at
-    and audit.resolved_by = v_target_owner_id
+    and audit.resolved_by is null
     and request.status = 'declined'
-    and request.resolved_at = v_resolved_at
-    and request.resolved_by = v_target_owner_id
+    and request.resolved_at = audit.resolved_at
+    and request.resolved_by is null
     and request.resolution_reason_code = 'owner_test_cleanup'
     and (
       (
         request.plan_id = 'founder'
         and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+        and request.resolved_at = timestamptz '2026-10-02 02:30:47.860132+00'
       ) or (
         request.plan_id = 'teacher'
         and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+        and request.resolved_at = timestamptz '2026-10-02 02:30:48.6291+00'
       )
-    );
+    )
+    and request.resolved_at >= request.created_at;
 
   if v_audit_count <> 2 then
     raise exception 'Owner test reconciliation blocked: immutable cleanup audit is incomplete';

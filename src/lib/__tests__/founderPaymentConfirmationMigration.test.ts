@@ -65,8 +65,8 @@ describe("Founder payment-confirmation migration", () => {
     expect(sql).toContain("revoke insert on table public.upgrade_requests from anon, authenticated");
     expect(sql).toContain("create unique index upgrade_requests_one_pending_per_user");
     expect(sql).toMatch(/on public\.upgrade_requests\(user_id\)\s+where status = 'pending'/);
-    expect(sql).toContain("v_duplicate_pending_users <> 1");
-    expect(sql).toContain("expected exactly one reviewed duplicate-pending owner");
+    expect(sql).toContain("v_duplicate_pending_users <> 0");
+    expect(sql).toContain("expected no duplicate-pending member after the reviewed cleanup");
     expect(sql).toContain("Never embed account, request or payment IDs in");
   });
 
@@ -194,11 +194,21 @@ describe("Founder payment-confirmation migration", () => {
       expect(reconciliation).toContain(timestamp);
     }
 
+    for (const timestamp of [
+      "2026-10-02 02:30:47.860132+00",
+      "2026-10-02 02:30:48.6291+00",
+    ]) {
+      expect(preflight).toContain(timestamp);
+      expect(reconciliation).toContain(timestamp);
+    }
+
     expect(preflight).toContain("'founder'");
     expect(preflight).toContain("'teacher'");
     expect(preflight).toContain("'owner'");
-    expect(preflight).toContain("status = 'pending'");
-    expect(preflight).toContain("resolved_at is null");
+    expect(preflight).toContain("status = 'declined'");
+    expect(preflight).toContain("resolved_at is not null");
+    expect(preflight).toContain("request.resolved_at >= request.created_at");
+    expect(preflight).toContain("v_target_owner_pending_count <> 0");
     expect(preflight).toContain("public.subscriptions");
     expect(preflight).toContain("plan_id = 'plus'");
     expect(preflight).toContain("raise exception");
@@ -207,10 +217,13 @@ describe("Founder payment-confirmation migration", () => {
     expect(reconciliation).toContain("resolution_reason_code = 'owner_test_cleanup'");
     expect(reconciliation).toContain("insert into public.membership_application_resolution_audit");
     expect(reconciliation).toMatch(/'pending',\s*'declined',\s*'owner_test_cleanup'/);
-    expect(reconciliation).toContain("v_target_clean_payment_count <> 2");
-    expect(reconciliation).toContain("v_resolved_count <> 2");
+    expect(reconciliation).toContain("v_target_reviewed_count <> 2");
+    expect(reconciliation).toContain("v_reconciled_count <> 2");
     expect(reconciliation).toContain("v_audit_count <> 2");
-    expect(reconciliation).toContain("resolved_by = request.user_id");
+    expect(reconciliation).toContain("audit.resolved_by is null");
+    expect(reconciliation).toContain("request.resolved_by is null");
+    expect(reconciliation).toContain("request.resolved_at = audit.resolved_at");
+    expect(reconciliation).toContain("request.resolved_at >= request.created_at");
     expect(reconciliation).toContain("resolved_at");
     expect(reconciliation).toContain("resolved_by");
     expect(reconciliation).toContain("payment_reported_at is null");
@@ -227,6 +240,9 @@ describe("Founder payment-confirmation migration", () => {
       .join("\n");
     expect(executableReconciliation).not.toMatch(
       /\b(?:update|insert\s+into|delete\s+from)\s+public\.(?:profiles|subscriptions|founder_seat_ledger)\b/i,
+    );
+    expect(executableReconciliation).not.toMatch(
+      /set\s+(?:status|resolved_at|resolved_by)\s*=/i,
     );
 
   });
@@ -302,7 +318,7 @@ describe("Founder payment-confirmation migration", () => {
     expect(reconciliation.indexOf("else")).toBeLessThan(
       reconciliation.indexOf("v_target_count <> 2"),
     );
-    expect(reconciliation).toContain("v_target_clean_payment_count <> 2");
+    expect(reconciliation).toContain("v_target_reviewed_count <> 2");
     expect(reconciliation).toContain("reviewed applications changed before cleanup");
   });
 

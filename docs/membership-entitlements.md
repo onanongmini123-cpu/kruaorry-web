@@ -68,11 +68,13 @@ these rows, and only admins may read them through RLS.
 of application outcomes. Payment-confirmed approvals use the reason code
 `payment_confirmed`; ordinary admin declines use `admin_declined`. A reviewed
 owner test cleanup may use `owner_test_cleanup`, but only for the exact
-non-identifying creation instants and Founder/Teacher plan tuple approved before
-migration 048 is applied. The migration proves both rows belong to the same
-owner and derives the resolver from that validated owner profile; no production
-request or account UUID is committed. The member-facing application row retains
-the same machine-readable `resolution_reason_code`, `resolved_at`, and
+non-identifying creation and resolution instants and Founder/Teacher plan tuple
+reviewed before migration 048 is applied. The migration proves both rows belong
+to the same owner and were already declined, preserves each original
+`resolved_at`, and leaves `resolved_by` null because the pre-048 schema did not
+record an actor; no production request or account UUID is committed. The
+member-facing application row and immutable audit retain the same
+machine-readable `resolution_reason_code`, `resolved_at`, and null
 `resolved_by` facts.
 
 Free members may save at most 10 resources. A database trigger checks the
@@ -188,13 +190,16 @@ real member and admin roles against a staging copy.
 
 Migration 048 contains one narrowly scoped reconciliation for the reviewed
 owner test pair. It matches the exact non-identifying `created_at` instants plus
-the Founder/Teacher plan IDs, then proves that exactly two rows match, both
-belong to the same owner, both remain pending and unresolved, neither produced
-subscription or payment evidence, the unrelated active Plus entitlement is
-unchanged, and there are no other duplicate-pending users. Any mismatch rolls
-back the whole migration. A pristine replay may skip this production-only
-cleanup only when `upgrade_requests` contains exactly zero rows; any nonempty
-database must satisfy the full reviewed tuple and surrounding assertions.
+the exact `resolved_at` instants and Founder/Teacher plan IDs, then proves that
+exactly two rows match, both belong to the same owner, both are already declined
+and resolved no earlier than creation, neither produced subscription or payment
+evidence, the unrelated active Plus entitlement is unchanged, and there are no
+duplicate-pending users. It preserves status and resolution times, backfills
+only the reviewed cleanup reason, leaves the unknown resolver null, and records
+matching immutable audit rows. Any mismatch rolls back the whole migration. A
+pristine replay may skip this production-only cleanup only when
+`upgrade_requests` contains exactly zero rows; any nonempty database must
+satisfy the full reviewed tuple and surrounding assertions.
 
 The migration acquires `ACCESS EXCLUSIVE` locks on the affected catalogue and
 membership tables before its advisory locks. Run it only during the planned
