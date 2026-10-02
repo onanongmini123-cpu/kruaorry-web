@@ -1,7 +1,11 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, getSignedFileUrl, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
+import {
+  MEMBERSHIP_SCHEMA_READINESS_MARKER,
+  MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+} from "../membershipSchemaReadiness";
 
 type CreateSignedUrlResult = { data: { signedUrl: string } | null; error: { message: string } | null };
 
@@ -11,6 +15,19 @@ function fakeSupabase(createSignedUrl: (path: string, expiresIn: number, options
       from: () => ({ createSignedUrl }),
     },
   } as unknown as SupabaseClient;
+}
+
+function readinessFrom(ready = true): ReturnType<typeof vi.fn> {
+  const maybeSingle = vi.fn().mockResolvedValue({
+    data: ready ? { id: MEMBERSHIP_SCHEMA_READINESS_MARKER } : null,
+    error: null,
+  });
+  const eq = vi.fn(() => ({ maybeSingle }));
+  const select = vi.fn(() => ({ eq }));
+  return vi.fn((table: string) => {
+    if (table !== "features") throw new Error(`Unexpected table in readiness probe: ${table}`);
+    return { select };
+  });
 }
 
 afterEach(() => {
@@ -74,16 +91,17 @@ describe("getSignedFileUrl", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("on failure, logs only the file path and a generic message — never a URL or token", async () => {
+  it("on failure, logs no object path, URL, token, or original filename", async () => {
     const errors: unknown[][] = [];
     vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
       errors.push(args);
     });
     const supabase = fakeSupabase(async () => ({ data: null, error: { message: "row-level security violation" } }));
-    await getSignedFileUrl(supabase, "some-resource-id/file.pdf", "file.pdf");
+    await getSignedFileUrl(supabase, "some-resource-id/ชื่อ-นามสกุล.pdf", "ชื่อ-นามสกุล.pdf");
     expect(errors.length).toBeGreaterThan(0);
     const joined = errors.map((a) => a.join(" ")).join("\n");
-    expect(joined).toMatch(/some-resource-id\/file\.pdf/);
+    expect(joined).not.toMatch(/some-resource-id/);
+    expect(joined).not.toMatch(/ชื่อ-นามสกุล/);
     expect(joined).not.toMatch(/token=/i);
     expect(joined).not.toMatch(/https?:\/\//);
   });
@@ -165,6 +183,7 @@ describe("fetchEntitlements", () => {
 describe("fetchFounderCapacity", () => {
   it("maps the aggregate RPC without exposing member data", async () => {
     const supabase = {
+      from: readinessFrom(),
       rpc: vi.fn().mockResolvedValue({
         data: [{ used: 24, capacity: 100, remaining: 76, is_full: false }],
         error: null,
@@ -182,10 +201,254 @@ describe("fetchFounderCapacity", () => {
 
   it("fails closed when the aggregate is malformed", async () => {
     const supabase = {
+      from: readinessFrom(),
       rpc: vi.fn().mockResolvedValue({ data: [{ user_id: "must-not-leak" }], error: null }),
     } as unknown as SupabaseClient;
 
     await expect(fetchFounderCapacity(supabase)).resolves.toBeNull();
+  });
+
+  it("does not call the capacity RPC before the schema marker exists", async () => {
+    const rpc = vi.fn();
+    const supabase = { from: readinessFrom(false), rpc } as unknown as SupabaseClient;
+
+    await expect(fetchFounderCapacity(supabase)).resolves.toBeNull();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("manual membership payment RPC wrappers", () => {
+  it("creates an application and normalizes the RETURNS TABLE array row", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{
+        id: "request-1",
+        reference_code: "KA-260001",
+        plan_id: "founder",
+        status: "pending",
+        quoted_amount_thb: 299,
+        created_at: "2026-10-01T02:00:00.000Z",
+      }],
+      error: null,
+    });
+    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
+
+    await expect(createMembershipApplication(supabase, "founder")).resolves.toEqual({
+      application: {
+        id: "request-1",
+        referenceCode: "KA-260001",
+        planId: "founder",
+        status: "pending",
+        quotedAmountThb: 299,
+        paymentReportedAt: null,
+        paymentPaidAt: null,
+        paymentConfirmedAt: null,
+        paymentConfirmedAmountThb: null,
+        paymentReference: null,
+        resolutionReasonCode: null,
+        createdAt: "2026-10-01T02:00:00.000Z",
+      },
+      error: null,
+    });
+    expect(rpc).toHaveBeenCalledWith("create_membership_application", { p_plan_id: "founder" });
+  });
+
+  it("reports payment and converts a Founder application through narrow authenticated RPCs", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{
+          id: "request-1",
+          reference_code: "KA-260001",
+          plan_id: "founder",
+          status: "pending",
+          quoted_amount_thb: 299,
+          payment_reported_at: "2026-10-01T02:30:00.000Z",
+          created_at: "2026-10-01T02:00:00.000Z",
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{
+          id: "request-1",
+          reference_code: "KA-260001",
+          plan_id: "teacher",
+          status: "pending",
+          quoted_amount_thb: 599,
+          payment_reported_at: null,
+          created_at: "2026-10-01T02:00:00.000Z",
+        }],
+        error: null,
+      });
+    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
+
+    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toMatchObject({
+      application: {
+        id: "request-1",
+        planId: "founder",
+        quotedAmountThb: 299,
+        paymentReportedAt: "2026-10-01T02:30:00.000Z",
+      },
+      error: null,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(1, "report_membership_payment", {
+      p_request_id: "request-1",
+    });
+
+    await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toMatchObject({
+      application: {
+        id: "request-1",
+        referenceCode: "KA-260001",
+        planId: "teacher",
+        quotedAmountThb: 599,
+        paymentReportedAt: null,
+      },
+      error: null,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "convert_founder_application_to_teacher", {
+      p_request_id: "request-1",
+    });
+  });
+
+  it("passes the exact guarded confirmation contract for applications and renewals", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: "result", error: null });
+    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
+    const confirmation = {
+      amountThb: 599,
+      paymentReference: "  BANK-9988  ",
+      paidAt: "2026-10-01T03:00:00.000Z",
+      idempotencyKey: "admin-action-1",
+    };
+
+    await expect(confirmMembershipPayment(supabase, "request-1", confirmation)).resolves.toBeNull();
+    expect(rpc).toHaveBeenNthCalledWith(1, "confirm_membership_payment", {
+      p_request_id: "request-1",
+      p_amount_thb: 599,
+      p_payment_reference: "BANK-9988",
+      p_paid_at: "2026-10-01T03:00:00.000Z",
+      p_idempotency_key: "admin-action-1",
+    });
+
+    await expect(confirmSubscriptionRenewal(supabase, "subscription-1", confirmation)).resolves.toBeNull();
+    expect(rpc).toHaveBeenNthCalledWith(2, "confirm_subscription_renewal", {
+      p_subscription_id: "subscription-1",
+      p_amount_thb: 599,
+      p_payment_reference: "BANK-9988",
+      p_paid_at: "2026-10-01T03:00:00.000Z",
+      p_idempotency_key: "admin-action-1",
+    });
+  });
+
+  it("never logs a payment reference echoed by PostgREST error details", async () => {
+    const logged: unknown[][] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => logged.push(args));
+    const paymentReference = "PRIVATE-BANK-REFERENCE-9988";
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        message: `duplicate payment reference ${paymentReference}`,
+        code: "23505",
+        details: `Key (payment_reference)=(${paymentReference}) already exists.`,
+        hint: paymentReference,
+      },
+    });
+    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
+
+    await confirmMembershipPayment(supabase, "request-1", {
+      amountThb: 599,
+      paymentReference,
+      paidAt: "2026-10-01T03:00:00.000Z",
+      idempotencyKey: "admin-action-2",
+    });
+
+    const output = logged.flat().join(" ");
+    expect(output).toContain("code=23505");
+    expect(output).not.toContain(paymentReference);
+    expect(output).not.toContain("payment_reference");
+  });
+
+  it("fails closed before touching any new membership table or RPC when the marker is absent", async () => {
+    const touchedTables: string[] = [];
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    const from = vi.fn((table: string) => {
+      touchedTables.push(table);
+      if (table !== "features") throw new Error(`Unsafe table access before readiness: ${table}`);
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      };
+    });
+    const rpc = vi.fn();
+    const supabase = { from, rpc } as unknown as SupabaseClient;
+
+    await expect(fetchUpgradeRequests(supabase, "user-1")).resolves.toEqual([]);
+    await expect(createMembershipApplication(supabase, "founder")).resolves.toEqual({
+      application: null,
+      error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+    });
+    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toEqual({
+      application: null,
+      error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+    });
+    await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toEqual({
+      application: null,
+      error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+    });
+    await expect(confirmMembershipPayment(supabase, "request-1", {
+      amountThb: 299,
+      paymentReference: "BANK-1",
+      paidAt: "2026-10-01T03:00:00.000Z",
+      idempotencyKey: "admin-action-1",
+    })).resolves.toBe(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+    await expect(confirmSubscriptionRenewal(supabase, "subscription-1", {
+      amountThb: 599,
+      paymentReference: "BANK-2",
+      paidAt: "2026-10-01T03:00:00.000Z",
+      idempotencyKey: "admin-action-2",
+    })).resolves.toBe(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+
+    expect(touchedTables).toEqual(Array(6).fill("features"));
+    expect(from).not.toHaveBeenCalledWith("upgrade_requests");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("maps the persisted resolution reason code only after readiness succeeds", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { id: MEMBERSHIP_SCHEMA_READINESS_MARKER },
+      error: null,
+    });
+    const order = vi.fn().mockResolvedValue({
+      data: [{
+        id: "request-test",
+        reference_code: "KA-TEST",
+        plan_id: "founder",
+        status: "declined",
+        quoted_amount_thb: 299,
+        payment_reported_at: null,
+        payment_paid_at: null,
+        payment_confirmed_at: null,
+        payment_confirmed_amount_thb: null,
+        payment_reference: null,
+        resolution_reason_code: "owner_test_cleanup",
+        created_at: "2026-10-01T02:00:00.000Z",
+      }],
+      error: null,
+    });
+    const upgradeSelect = vi.fn(() => ({
+      eq: vi.fn(() => ({ order })),
+    }));
+    const from = vi.fn((table: string) => table === "features"
+      ? { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) }
+      : { select: upgradeSelect });
+    const supabase = { from } as unknown as SupabaseClient;
+
+    await expect(fetchUpgradeRequests(supabase, "user-1")).resolves.toEqual([
+      expect.objectContaining({
+        id: "request-test",
+        status: "declined",
+        resolutionReasonCode: "owner_test_cleanup",
+      }),
+    ]);
+    expect(upgradeSelect).toHaveBeenCalledWith(expect.stringContaining("resolution_reason_code"));
   });
 });
 

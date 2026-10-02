@@ -7,6 +7,7 @@ import { Mascot } from "@/components/Mascot";
 import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { safeAuthNext } from "@/lib/authReturnPath";
+import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
 
 const POINTS = [
   "สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง",
@@ -37,7 +38,10 @@ function LoginForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordConfirmationError, setPasswordConfirmationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
     searchParams.get("error") === "confirmation" ? "ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบหรือสมัครใหม่" : null
@@ -58,6 +62,14 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setNotice(null);
+    setPasswordConfirmationError(null);
+    if (mode === "signup") {
+      const confirmationError = validateSignupPasswordConfirmation(password, confirmPassword);
+      if (confirmationError) {
+        setPasswordConfirmationError(confirmationError);
+        return;
+      }
+    }
     if (!isSupabaseConfigured) {
       setError("ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
       return;
@@ -81,6 +93,10 @@ function LoginForm() {
         if (!data.session) {
           setNotice("สมัครสำเร็จ กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตนก่อนเข้าสู่ระบบ");
           setMode("signin");
+          setPassword("");
+          setConfirmPassword("");
+          setShowPassword(false);
+          setShowConfirmPassword(false);
           return;
         }
         router.replace(next);
@@ -161,6 +177,11 @@ function LoginForm() {
                 setMode(mode === "signin" ? "signup" : "signin");
                 setError(null);
                 setNotice(null);
+                setPassword("");
+                setConfirmPassword("");
+                setShowPassword(false);
+                setShowConfirmPassword(false);
+                setPasswordConfirmationError(null);
               }}
               style={{ color: "var(--purple-600)", fontWeight: "var(--fw-semibold)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
             >
@@ -179,7 +200,7 @@ function LoginForm() {
             </p>
           )}
           {error && (
-            <p style={{ fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
+            <p role="alert" style={{ fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
               {error}
             </p>
           )}
@@ -195,12 +216,47 @@ function LoginForm() {
               icon={KeyRound}
               placeholder="อย่างน้อย 6 ตัวอักษร"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (passwordConfirmationError) setPasswordConfirmationError(null);
+              }}
               minLength={6}
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
               required
-              trailing={<IconButton icon={showPassword ? EyeOff : Eye} label="แสดงรหัสผ่าน" onClick={() => setShowPassword((v) => !v)} />}
+              trailing={<IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"} onClick={() => setShowPassword((v) => !v)} />}
             />
+            {mode === "signup" && (
+              <div>
+                <Input
+                  label="ยืนยันรหัสผ่าน"
+                  type={showConfirmPassword ? "text" : "password"}
+                  icon={KeyRound}
+                  placeholder="กรอกรหัสผ่านเดิมอีกครั้ง"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (passwordConfirmationError) setPasswordConfirmationError(null);
+                  }}
+                  minLength={6}
+                  autoComplete="new-password"
+                  required
+                  aria-invalid={passwordConfirmationError ? true : undefined}
+                  aria-describedby={passwordConfirmationError ? "signup-password-confirmation-error" : undefined}
+                  trailing={(
+                    <IconButton
+                      icon={showConfirmPassword ? EyeOff : Eye}
+                      label={showConfirmPassword ? "ซ่อนรหัสผ่านในช่องยืนยัน" : "แสดงรหัสผ่านในช่องยืนยัน"}
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                    />
+                  )}
+                />
+                {passwordConfirmationError && (
+                  <p id="signup-password-confirmation-error" role="alert" style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-13)", color: "var(--status-danger-fg)" }}>
+                    {passwordConfirmationError}
+                  </p>
+                )}
+              </div>
+            )}
             {mode === "signin" && (
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button

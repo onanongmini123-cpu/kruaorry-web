@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminMembershipApplicationStatusLabel,
   canOfferAdminPlan,
   canRenewMember,
   effectiveMemberPlan,
   memberPlanChangeConfirmation,
+  preferredAdminSubscription,
+  renewalAmountThb,
   type AdminPlan,
   type AdminSubscription,
 } from "../adminMembership";
+
+describe("admin membership application status", () => {
+  it("distinguishes owner test cleanup from a normal decline", () => {
+    expect(adminMembershipApplicationStatusLabel("declined", "owner_test_cleanup", null)).toBe("ยกเลิกรายการทดสอบ");
+    expect(adminMembershipApplicationStatusLabel("declined", "test_application_cleanup", null)).toBe("ยกเลิกรายการทดสอบ");
+    expect(adminMembershipApplicationStatusLabel("declined", "admin_declined", null)).toBe("ปฏิเสธแล้ว");
+    expect(adminMembershipApplicationStatusLabel("declined", null, null)).toBe("ปฏิเสธแล้ว");
+  });
+
+  it("preserves approved and pending workflow labels", () => {
+    expect(adminMembershipApplicationStatusLabel("approved", "payment_confirmed", null)).toBe("อนุมัติแล้ว");
+    expect(adminMembershipApplicationStatusLabel("pending", null, null)).toBe("รอแจ้งชำระ");
+    expect(adminMembershipApplicationStatusLabel("pending", null, "2026-10-01T00:00:00Z")).toBe("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
+  });
+});
 
 const member = (overrides: Partial<AdminSubscription> = {}): AdminSubscription => ({
   id: "subscription-1",
@@ -28,6 +46,7 @@ const plan = (overrides: Partial<AdminPlan> = {}): AdminPlan => ({
   name: "Teacher",
   lifecycle_status: "active",
   price_amount_thb: 599,
+  renewal_price_amount_thb: 599,
   is_upgradeable: true,
   ...overrides,
 });
@@ -42,6 +61,13 @@ describe("admin plan offers", () => {
     const teacherPro = plan({ id: "teacher_pro", name: "Teacher Pro", price_amount_thb: 990, is_upgradeable: false });
     expect(canOfferAdminPlan(teacherPro, "teacher_pro")).toBe(true);
     expect(canOfferAdminPlan(teacherPro, "teacher")).toBe(false);
+  });
+
+  it("never offers Founder through the generic plan selector", () => {
+    const founder = plan({ id: "founder", name: "Founder", price_amount_thb: 299 });
+    expect(canOfferAdminPlan(founder, "free")).toBe(false);
+    expect(canOfferAdminPlan(founder, "teacher")).toBe(false);
+    expect(canOfferAdminPlan(founder, "founder")).toBe(true);
   });
 
   it("keeps a current legacy or retired plan visible only until the member switches away", () => {
@@ -64,22 +90,39 @@ describe("admin membership display", () => {
   it("preserves non-expiring legacy access but never offers renewal", () => {
     const legacy = member({ plan_id: "plus", source: "legacy", current_period_end: null });
     expect(effectiveMemberPlan(legacy, now)).toBe("plus");
-    expect(canRenewMember(legacy, now)).toBe(false);
+    expect(canRenewMember(legacy)).toBe(false);
   });
 
-  it("allows late normal renewal but never restores a lapsed Founder price lock", () => {
-    expect(canRenewMember(member({ current_period_end: "2026-09-17T00:00:00.000Z" }), now)).toBe(true);
+  it("allows late annual renewals, including Founder at its regular renewal price", () => {
+    expect(canRenewMember(member({ current_period_end: "2026-09-17T00:00:00.000Z" }))).toBe(true);
     const founder = member({ plan_id: "founder", founder_status: "active", founder_price_lock: true });
-    expect(canRenewMember(founder, now)).toBe(true);
-    expect(canRenewMember({ ...founder, current_period_end: "2026-09-17T00:00:00.000Z" }, now)).toBe(false);
-    expect(canRenewMember({ ...founder, founder_price_lock: false }, now)).toBe(false);
+    expect(canRenewMember(founder)).toBe(true);
+    expect(canRenewMember({ ...founder, current_period_end: "2026-09-17T00:00:00.000Z" })).toBe(true);
+    expect(canRenewMember({ ...founder, founder_price_lock: false })).toBe(true);
+    expect(canRenewMember({ ...founder, status: "expired", founder_status: "expired", founder_price_lock: false })).toBe(true);
   });
 
-  it("blocks cancelled, revoked and expired subscriptions", () => {
-    for (const status of ["cancelled", "revoked", "expired"] as const) {
+  it("blocks cancelled and revoked subscriptions while displaying expired access as Free", () => {
+    for (const status of ["cancelled", "revoked"] as const) {
       expect(effectiveMemberPlan(member({ status }), now)).toBe("free");
-      expect(canRenewMember(member({ status }), now)).toBe(false);
+      expect(canRenewMember(member({ status }))).toBe(false);
     }
+    expect(effectiveMemberPlan(member({ status: "expired" }), now)).toBe("free");
+  });
+
+  it("renews Founder at 599 while normal plans use the configured renewal price", () => {
+    expect(renewalAmountThb(member({ plan_id: "founder" }), 299)).toBe(599);
+    expect(renewalAmountThb(member(), 749)).toBe(749);
+    expect(renewalAmountThb(member(), null)).toBeNull();
+  });
+
+  it("prefers a current subscription over expired history and the latest expired period otherwise", () => {
+    const expiredOlder = member({ id: "expired-old", status: "expired", current_period_end: "2025-10-01T00:00:00.000Z" });
+    const expiredNewer = member({ id: "expired-new", status: "expired", current_period_end: "2026-10-01T00:00:00.000Z" });
+    const active = member({ id: "active", status: "active", current_period_end: "2026-11-01T00:00:00.000Z" });
+    expect(preferredAdminSubscription(expiredNewer, active)).toBe(active);
+    expect(preferredAdminSubscription(active, expiredNewer)).toBe(active);
+    expect(preferredAdminSubscription(expiredOlder, expiredNewer)).toBe(expiredNewer);
   });
 });
 
@@ -103,6 +146,6 @@ describe("admin plan change confirmation", () => {
     const founder = member({ plan_id: "founder", founder_status: "active", founder_price_lock: true });
     const message = memberPlanChangeConfirmation("Founder", "Teacher", founder);
     expect(message).toContain("จาก Founder เป็น Teacher");
-    expect(message).toContain("สิทธิ์ราคาพิเศษ Founder จะสิ้นสุดและไม่สามารถกู้คืนได้");
+    expect(message).toContain("สิทธิ์ Founder ราคาปีแรก 299 บาทจะสิ้นสุดและไม่สามารถกู้คืนได้");
   });
 });

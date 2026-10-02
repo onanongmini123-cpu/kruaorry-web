@@ -6,9 +6,16 @@ import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+} from "@/lib/membershipSchemaReadiness";
 
 function logError(label: string, error: PostgrestError) {
-  console.error(`${label}: ${error.message} (code=${error.code}, details=${error.details}, hint=${error.hint})`);
+  // PostgREST details/messages can echo submitted values (for example a
+  // payment reference in a unique-constraint error). Keep diagnostics useful
+  // without writing member or payment data to the browser console.
+  console.error(`${label} (code=${error.code || "unknown"})`);
 }
 
 export interface Resource {
@@ -179,20 +186,20 @@ export interface SignedFileUrlResult {
 // stuck forever with no feedback) — see the route handler for the fix.
 //
 // Never throws (withTimeout bounds and catches the underlying call), and
-// never logs or returns the resulting signed URL itself, or any part of an
-// underlying error that might embed it — only the input path and a
-// redacted, generic error description (see redact.ts).
+// never logs or returns the resulting signed URL itself. The object path is
+// also omitted from logs because an uploaded filename can contain personal
+// data; underlying error text is redacted before it can reach the caller.
 export async function getSignedFileUrl(supabase: SupabaseClient, filePath: string, fileName?: string | null, expiresInSeconds = 60): Promise<SignedFileUrlResult> {
   const result = await withTimeout(supabase.storage.from(RESOURCE_FILES_BUCKET).createSignedUrl(filePath, expiresInSeconds, { download: fileName || true }), "createSignedUrl");
 
   if (!result.ok) {
-    console.error(`getSignedFileUrl failed for path=${filePath}: ${result.reason}`);
+    console.error("getSignedFileUrl failed before Supabase returned a result");
     return { url: null, error: result.reason };
   }
   const { data, error } = result.value;
   if (error || !data) {
     const message = redactSensitive(error?.message ?? "no data returned");
-    console.error(`getSignedFileUrl failed for path=${filePath}: ${message}`);
+    console.error("getSignedFileUrl failed after Supabase returned an error");
     return { url: null, error: message };
   }
   return { url: data.signedUrl, error: null };
@@ -257,6 +264,8 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
 }
 
 export async function fetchFounderCapacity(supabase: SupabaseClient): Promise<FounderCapacity | null> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return null;
+
   const outcome = await withTimeout(Promise.resolve(supabase.rpc("get_founder_capacity")), "Founder capacity");
   if (!outcome.ok) {
     console.error(`fetchFounderCapacity failed: ${outcome.reason}`);
@@ -360,27 +369,209 @@ export async function setResourceSaved(supabase: SupabaseClient, resourceId: str
 
 export interface UpgradeRequest {
   id: string;
+  referenceCode: string;
   planId: string;
   status: "pending" | "approved" | "declined";
+  quotedAmountThb: number;
+  paymentReportedAt: string | null;
+  paymentPaidAt: string | null;
+  paymentConfirmedAt: string | null;
+  paymentConfirmedAmountThb: number | null;
+  paymentReference: string | null;
+  resolutionReasonCode: string | null;
   createdAt: string;
 }
 
+interface UpgradeRequestRow {
+  id: string;
+  reference_code: string;
+  plan_id: string;
+  status: "pending" | "approved" | "declined";
+  quoted_amount_thb: number;
+  payment_reported_at: string | null;
+  payment_paid_at: string | null;
+  payment_confirmed_at: string | null;
+  payment_confirmed_amount_thb: number | null;
+  payment_reference: string | null;
+  resolution_reason_code: string | null;
+  created_at: string;
+}
+
+interface CreatedMembershipApplicationRow {
+  id: string;
+  reference_code: string;
+  plan_id: string;
+  status: "pending" | "approved" | "declined";
+  quoted_amount_thb: number;
+  payment_reported_at: string | null;
+  created_at: string;
+}
+
+export interface MembershipApplicationMutationResult {
+  application: UpgradeRequest | null;
+  error: string | null;
+}
+
+export interface ManualPaymentConfirmation {
+  amountThb: number;
+  paymentReference: string;
+  paidAt: string;
+  idempotencyKey: string;
+}
+
+function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | UpgradeRequestRow): UpgradeRequest | null {
+  const quotedAmountThb = Number(row.quoted_amount_thb);
+  if (!row.id || !row.reference_code || !row.plan_id || !["pending", "approved", "declined"].includes(row.status)) return null;
+  if (!Number.isInteger(quotedAmountThb) || quotedAmountThb < 0 || !row.created_at) return null;
+
+  const persisted = row as Partial<UpgradeRequestRow>;
+  return {
+    id: row.id,
+    referenceCode: row.reference_code,
+    planId: row.plan_id,
+    status: row.status,
+    quotedAmountThb,
+    paymentReportedAt: persisted.payment_reported_at ?? null,
+    paymentPaidAt: persisted.payment_paid_at ?? null,
+    paymentConfirmedAt: persisted.payment_confirmed_at ?? null,
+    paymentConfirmedAmountThb: persisted.payment_confirmed_amount_thb === null || persisted.payment_confirmed_amount_thb === undefined
+      ? null
+      : Number(persisted.payment_confirmed_amount_thb),
+    paymentReference: persisted.payment_reference ?? null,
+    resolutionReasonCode: persisted.resolution_reason_code ?? null,
+    createdAt: row.created_at,
+  };
+}
+
 export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return [];
+
   const { data, error } = await supabase
     .from("upgrade_requests")
-    .select("id, plan_id, status, created_at")
+    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) logError("fetchUpgradeRequests failed", error);
   if (error || !data) return [];
-  return data.map((r) => ({ id: r.id, planId: r.plan_id, status: r.status, createdAt: r.created_at }));
+  return (data as UpgradeRequestRow[])
+    .map(membershipApplicationFromRow)
+    .filter((application): application is UpgradeRequest => application !== null);
 }
 
-export async function submitUpgradeRequest(supabase: SupabaseClient, userId: string, planId: string): Promise<string | null> {
-  const { error } = await supabase.from("upgrade_requests").insert({ user_id: userId, plan_id: planId });
+export async function createMembershipApplication(supabase: SupabaseClient, planId: string): Promise<MembershipApplicationMutationResult> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return { application: null, error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE };
+  }
+
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("create_membership_application", {
+    p_plan_id: planId,
+  })), "create membership application");
+  if (!outcome.ok) return { application: null, error: outcome.reason };
+
+  const { data, error } = outcome.value;
   if (error) {
-    logError("submitUpgradeRequest failed", error);
+    logError("createMembershipApplication failed", error);
+    return { application: null, error: error.message };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as CreatedMembershipApplicationRow | null;
+  const application = row ? membershipApplicationFromRow(row) : null;
+  return application
+    ? { application, error: null }
+    : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
+}
+
+async function mutateMembershipApplication(
+  supabase: SupabaseClient,
+  rpcName: "report_membership_payment" | "convert_founder_application_to_teacher",
+  requestId: string,
+  operationLabel: string,
+): Promise<MembershipApplicationMutationResult> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return { application: null, error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE };
+  }
+
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc(rpcName, {
+    p_request_id: requestId,
+  })), operationLabel);
+  if (!outcome.ok) return { application: null, error: outcome.reason };
+
+  const { data, error } = outcome.value;
+  if (error) {
+    logError(`${rpcName} failed`, error);
+    return { application: null, error: error.message };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as CreatedMembershipApplicationRow | null;
+  const application = row ? membershipApplicationFromRow(row) : null;
+  return application
+    ? { application, error: null }
+    : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
+}
+
+export async function reportMembershipPayment(
+  supabase: SupabaseClient,
+  requestId: string,
+): Promise<MembershipApplicationMutationResult> {
+  return mutateMembershipApplication(supabase, "report_membership_payment", requestId, "report membership payment");
+}
+
+export async function convertFounderApplicationToTeacher(
+  supabase: SupabaseClient,
+  requestId: string,
+): Promise<MembershipApplicationMutationResult> {
+  return mutateMembershipApplication(
+    supabase,
+    "convert_founder_application_to_teacher",
+    requestId,
+    "convert Founder application to Teacher",
+  );
+}
+
+export async function confirmMembershipPayment(
+  supabase: SupabaseClient,
+  requestId: string,
+  confirmation: ManualPaymentConfirmation,
+): Promise<string | null> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
+  }
+
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("confirm_membership_payment", {
+    p_request_id: requestId,
+    p_amount_thb: confirmation.amountThb,
+    p_payment_reference: confirmation.paymentReference.trim(),
+    p_paid_at: confirmation.paidAt,
+    p_idempotency_key: confirmation.idempotencyKey,
+  })), "confirm membership payment");
+  if (!outcome.ok) return outcome.reason;
+  const { error } = outcome.value;
+  if (error) {
+    logError("confirmMembershipPayment failed", error);
+    return error.message;
+  }
+  return null;
+}
+
+export async function confirmSubscriptionRenewal(
+  supabase: SupabaseClient,
+  subscriptionId: string,
+  confirmation: ManualPaymentConfirmation,
+): Promise<string | null> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
+  }
+
+  const outcome = await withTimeout(Promise.resolve(supabase.rpc("confirm_subscription_renewal", {
+    p_subscription_id: subscriptionId,
+    p_amount_thb: confirmation.amountThb,
+    p_payment_reference: confirmation.paymentReference.trim(),
+    p_paid_at: confirmation.paidAt,
+    p_idempotency_key: confirmation.idempotencyKey,
+  })), "confirm subscription renewal");
+  if (!outcome.ok) return outcome.reason;
+  const { error } = outcome.value;
+  if (error) {
+    logError("confirmSubscriptionRenewal failed", error);
     return error.message;
   }
   return null;

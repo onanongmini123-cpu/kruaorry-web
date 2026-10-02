@@ -1,0 +1,43 @@
+{
+  "name": "KruAorry main menu",
+  "chatBarText": "เมนูครูอรรี่",
+  "selected": true,
+  "size": {
+    "width": 2500,
+    "height": 1686
+  },
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "เข้าชมเว็บไซต์",
+        "uri": "https://kruaorry-web.vercel.app"
+      }
+    },
+    {
+      "bounds": { "x": 0, "y": 843, "width": 834, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "สมัครสมาชิก",
+        "uri": "https://kruaorry-web.vercel.app/membership"
+      }
+    },
+    {
+      "bounds": { "x": 834, "y": 843, "width": 833, "height": 843 },
+      "action": {
+        "type": "uri",
+        "label": "แจ้งชำระเงิน",
+        "uri": "https://kruaorry-web.vercel.app/membership#how-to-pay"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "action": {
+        "type": "message",
+        "label": "รายงานปัญหา",
+        "text": "ต้องการแจ้งปัญหาการใช้งาน…"
+      }
+    }
+  ]
+}

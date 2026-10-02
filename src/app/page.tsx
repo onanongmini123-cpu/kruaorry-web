@@ -9,7 +9,6 @@ import {
   FolderOpen,
   Gift,
   Lock,
-  MessageCircle,
   Search,
   Sparkles,
   Timer,
@@ -20,8 +19,11 @@ import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, t
 import { createClient } from "@/lib/supabase/client";
 import { filterDiscoveredResources, resourceDiscoveryHref } from "@/lib/resourceDiscovery";
 import { publicCoverUrl } from "@/lib/resourceVisibility";
-import { LINE_OA_URL } from "@/lib/config";
 import type { FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  type MembershipSchemaReadiness,
+} from "@/lib/membershipSchemaReadiness";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import { FeaturedResourceCarousel, featuredAccessLabel } from "@/app/landing/FeaturedResourceCarousel";
 import { PlanBenefits, billingIntervalLabel } from "@/app/landing/PlanBenefits";
@@ -50,6 +52,7 @@ export default function LandingPage() {
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
+  const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>(isSupabaseConfigured ? "checking" : "unavailable");
   const [resources, setResources] = useState<Resource[]>([]);
   const [samplesLoaded, setSamplesLoaded] = useState(!isSupabaseConfigured);
   const [plansLoaded, setPlansLoaded] = useState(!isSupabaseConfigured);
@@ -79,11 +82,16 @@ export default function LandingPage() {
     if (!isSupabaseConfigured) return;
     let active = true;
     const supabase = createClient();
-    Promise.all([fetchPlans(supabase), fetchFounderCapacity(supabase)])
-      .then(([rows, capacity]) => {
+    Promise.all([
+      fetchPlans(supabase),
+      fetchMembershipSchemaReadiness(supabase),
+      fetchFounderCapacity(supabase),
+    ])
+      .then(([rows, readiness, capacity]) => {
         if (!active) return;
         setPlans(rows);
-        setFounderCapacity(capacity);
+        setMembershipSchemaReadiness(readiness);
+        setFounderCapacity(readiness === "ready" ? capacity : null);
         setPlansLoaded(true);
       })
       .catch(() => {
@@ -97,7 +105,10 @@ export default function LandingPage() {
     let active = true;
     const supabase = createClient();
     const refreshFounderCapacity = () => {
-      void fetchFounderCapacity(supabase).then((capacity) => {
+      void fetchMembershipSchemaReadiness(supabase).then(async (readiness) => {
+        if (!active) return;
+        setMembershipSchemaReadiness(readiness);
+        const capacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
         if (active) setFounderCapacity(capacity);
       });
     };
@@ -154,7 +165,7 @@ export default function LandingPage() {
           </span>
           <div style={{ flex: 1 }} />
           <Link href="/login" className="kru-btn kru-btn--ghost kru-btn--sm">เข้าสู่ระบบ</Link>
-          <Link href="/login?mode=signup" className="kru-btn kru-btn--primary kru-btn--sm">สมัครฟรี</Link>
+          <Link href="/membership" className="kru-btn kru-btn--primary kru-btn--sm">สมัครฟรี</Link>
         </div>
       </header>
 
@@ -190,7 +201,7 @@ export default function LandingPage() {
 
               <div className="kru-discovery-hero__secondary">
                 <span>สื่อพร้อมสอนภาษาไทย เทมเพลต Google พร้อมใช้ และเครื่องมือในห้องเรียน</span>
-                <Link href="/login?mode=signup">สมัครสมาชิกฟรี <ArrowRight size={16} aria-hidden="true" /></Link>
+                <Link href="/membership">สมัครสมาชิกฟรี <ArrowRight size={16} aria-hidden="true" /></Link>
               </div>
             </div>
 
@@ -277,7 +288,7 @@ export default function LandingPage() {
               <Link href="/resources?access=free" className="kru-btn kru-btn--primary kru-btn--lg">
                 ดูสื่อฟรีทั้งหมด <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link href="/login?mode=signup" className="kru-btn kru-btn--secondary">
+              <Link href="/membership" className="kru-btn kru-btn--secondary">
                 สมัครสมาชิกฟรี
               </Link>
             </div>
@@ -341,7 +352,7 @@ export default function LandingPage() {
           )}
           <div className="kru-landing-plans__grid">
             {plans.map((plan) => {
-              const intervalLabel = billingIntervalLabel(plan.billingInterval);
+              const intervalLabel = plan.id === "founder" ? null : billingIntervalLabel(plan.billingInterval);
               return (
                 <article key={plan.id} className={`kru-card kru-landing-plan ${plan.isPopular ? "kru-landing-plan--popular" : ""}`}>
                   <div className="kru-landing-plan__heading">
@@ -355,31 +366,26 @@ export default function LandingPage() {
                   {plan.note && <p className="kru-landing-plan__note">{plan.note}</p>}
                   {plan.id === "founder" && (
                     <div role="status" className="kru-landing-plan__capacity">
-                      {founderCapacity ? (
+                      {membershipSchemaReadiness === "unavailable" ? (
+                        <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
+                      ) : founderCapacity ? (
                         <>
-                          <strong>สมัครแล้ว {founderCapacity.used} คนจาก {founderCapacity.capacity}</strong>
+                          <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
                           <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
                         </>
                       ) : (
-                        <span>กำลังตรวจสอบจำนวนสิทธิ์ Founder</span>
+                        <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                       )}
                     </div>
                   )}
                   <PlanBenefits benefits={plan.benefits ?? []} />
                   {plan.id !== "free" && (
-                    plan.id === "founder" && founderCapacity?.isFull ? (
-                      <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
-                        Founder 100 เต็มแล้ว
-                      </button>
-                    ) : plan.id === "founder" && founderCapacity === null ? (
-                      <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
-                        กำลังตรวจสอบสิทธิ์ Founder
-                      </button>
-                    ) : (
-                      <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta">
-                        <MessageCircle size={18} aria-hidden="true" /> สนใจอัปเกรด
-                      </a>
-                    )
+                    <Link
+                      href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}
+                      className="kru-btn kru-btn--primary kru-btn--block kru-landing-plan__cta"
+                    >
+                      {plan.id === "founder" && founderCapacity?.isFull ? "ดูแพ็ก 599 บาท/ปี" : "สมัครหรือดูสถานะ"}
+                    </Link>
                   )}
                 </article>
               );

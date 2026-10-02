@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Heart, ShieldCheck, MessageSquareText, MessageCircle, Sparkles, UserRound, CheckCircle2 } from "lucide-react";
+import { House, FolderOpen, IdCard, LogOut, ArrowLeft, ArrowRight, Heart, ShieldCheck, MessageSquareText, Sparkles, UserRound, CheckCircle2 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { MemberContactMenu } from "@/components/MemberContactMenu";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
@@ -11,7 +12,6 @@ import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import { Button, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { LINE_OA_URL } from "@/lib/config";
 import {
   fetchPublishedResources,
   fetchPlans,
@@ -22,8 +22,6 @@ import {
   submitRequest,
   fetchSavedResourceIds,
   setResourceSaved,
-  fetchUpgradeRequests,
-  submitUpgradeRequest,
   resourceIcon,
   resourceTint,
   type Resource,
@@ -31,16 +29,20 @@ import {
   type PlanBenefit,
   type Profile,
   type TeacherRequest,
-  type UpgradeRequest,
 } from "@/lib/data";
 import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import type { FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  type MembershipSchemaReadiness,
+} from "@/lib/membershipSchemaReadiness";
 import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
 import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
 import { persistFavoriteOptimistically } from "@/lib/favoriteState";
+import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 
 export const dynamic = "force-dynamic";
 
@@ -91,10 +93,11 @@ export default function TeacherAppPage() {
   const [newRequestTitle, setNewRequestTitle] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
-  const [upgradeRequests, setUpgradeRequests] = useState<UpgradeRequest[]>([]);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
-  const [submittingUpgradePlanId, setSubmittingUpgradePlanId] = useState<string | null>(null);
+  const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -107,14 +110,14 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
-      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, upgradeData, founderCapacityData] = await Promise.all([
+      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, schemaReadiness, founderCapacityData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
         fetchEntitlements(supabase),
         fetchRequests(supabase),
         fetchSavedResourceIds(supabase, user.id),
-        fetchUpgradeRequests(supabase, user.id),
+        fetchMembershipSchemaReadiness(supabase),
         fetchFounderCapacity(supabase),
       ]);
       if (!profileData) {
@@ -132,8 +135,8 @@ export default function TeacherAppPage() {
       setEntitlements(entitlementData);
       setRequests(requestData);
       setSaved(savedIds);
-      setUpgradeRequests(upgradeData);
-      setFounderCapacity(founderCapacityData);
+      setMembershipSchemaReadiness(schemaReadiness);
+      setFounderCapacity(schemaReadiness === "ready" ? founderCapacityData : null);
       const discoveryState = appDiscoveryStateFromSearch(window.location.search);
       setQuery(discoveryState.query);
       setCategory(discoveryState.category);
@@ -152,7 +155,10 @@ export default function TeacherAppPage() {
   useEffect(() => {
     let active = true;
     const refreshFounderCapacity = () => {
-      void fetchFounderCapacity(supabase).then((capacity) => {
+      void fetchMembershipSchemaReadiness(supabase).then(async (readiness) => {
+        if (!active) return;
+        setMembershipSchemaReadiness(readiness);
+        const capacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
         if (active) setFounderCapacity(capacity);
       });
     };
@@ -179,19 +185,6 @@ export default function TeacherAppPage() {
       window.removeEventListener("focus", refreshSaved);
     };
   }, [supabase, userId]);
-
-  const handleRequestUpgrade = async (planId: string) => {
-    if (!userId || submittingUpgradePlanId) return;
-    setSubmittingUpgradePlanId(planId);
-    const errorMessage = await submitUpgradeRequest(supabase, userId, planId);
-    setSubmittingUpgradePlanId(null);
-    if (errorMessage) {
-      window.alert(`ส่งคำขอไม่สำเร็จ: ${errorMessage}`);
-      setFounderCapacity(await fetchFounderCapacity(supabase));
-      return;
-    }
-    setUpgradeRequests(await fetchUpgradeRequests(supabase, userId));
-  };
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,8 +277,24 @@ export default function TeacherAppPage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
+    if (signingOut) return;
+    setSigningOut(true);
+    setSignOutError(null);
+    const logoutError = await signOutCurrentSession(supabase.auth);
+    if (logoutError) {
+      setSignOutError(logoutError);
+      setSigningOut(false);
+      return;
+    }
+    setProfile(null);
+    setUserId(null);
+    setResources([]);
+    setPlans([]);
+    setRequests([]);
+    setSaved([]);
+    setEntitlements(EMPTY_ENTITLEMENTS);
+    setLoading(true);
+    router.replace("/login");
     router.refresh();
   };
 
@@ -369,7 +378,7 @@ export default function TeacherAppPage() {
               ไปที่หลังบ้านแอดมิน
             </Button>
           )}
-          <Button size="sm" block variant="ghost" icon={LogOut} onClick={handleSignOut} style={{ marginTop: "var(--sp-4)" }}>
+          <Button size="sm" block variant="ghost" icon={LogOut} onClick={() => void handleSignOut()} loading={signingOut} style={{ marginTop: "var(--sp-4)" }}>
             ออกจากระบบ
           </Button>
         </aside>
@@ -416,6 +425,12 @@ export default function TeacherAppPage() {
               <div role="alert" className="kru-save-alert">
                 <span>{saveError}</span>
                 <button type="button" onClick={() => setSaveError(null)} aria-label="ปิดข้อความแจ้งเตือน">×</button>
+              </div>
+            )}
+            {signOutError && (
+              <div role="alert" className="kru-save-alert">
+                <span>{signOutError}</span>
+                <button type="button" onClick={() => setSignOutError(null)} aria-label="ปิดข้อความแจ้งเตือนการออกจากระบบ">×</button>
               </div>
             )}
             {view === "home" && (
@@ -612,9 +627,6 @@ export default function TeacherAppPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
                   {plans.map((plan) => {
                     const isCurrent = entitlements.planId === plan.id;
-                    const pendingRequest = upgradeRequests.find((r) => r.planId === plan.id && r.status === "pending");
-                    const founderCapacityUnknown = plan.id === "founder" && founderCapacity === null;
-                    const founderIsFull = plan.id === "founder" && founderCapacity?.isFull === true;
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
@@ -634,53 +646,31 @@ export default function TeacherAppPage() {
                         </div>
                         {plan.id === "founder" && (
                           <div role="status" className="kru-founder-capacity">
-                            {founderCapacity ? (
+                            {membershipSchemaReadiness === "unavailable" ? (
+                              <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
+                            ) : founderCapacity ? (
                               <>
-                                <strong>สมัครแล้ว {founderCapacity.used} คนจาก {founderCapacity.capacity}</strong>
+                                <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
                                 <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
                                 <span aria-hidden="true" className="kru-founder-capacity__track">
                                   <span style={{ width: `${Math.min(100, (founderCapacity.used / founderCapacity.capacity) * 100)}%` }} />
                                 </span>
                               </>
                             ) : (
-                              <span>กำลังตรวจสอบจำนวนสิทธิ์ Founder</span>
+                              <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                             )}
                           </div>
                         )}
                         <div style={{ marginTop: "var(--sp-6)" }}>
                           {isCurrent ? (
                             <Badge tone="success">แพ็กปัจจุบันของคุณ</Badge>
-                          ) : plan.id === "free" ? null : pendingRequest ? (
-                            <div>
-                              <Badge tone="warning">รอแอดมินอนุมัติ</Badge>
-                              <p style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginTop: 8 }}>
-                                ติดต่อชำระผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> แล้วรอแอดมินอัปเกรดให้
-                              </p>
-                            </div>
-                          ) : founderIsFull ? (
-                            <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
-                              Founder 100 เต็มแล้ว
-                            </button>
-                          ) : founderCapacityUnknown ? (
-                            <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
-                              กำลังตรวจสอบสิทธิ์ Founder
-                            </button>
-                          ) : submittingUpgradePlanId === plan.id ? (
-                            <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">
-                              กำลังส่งคำขอ
-                            </button>
-                          ) : (
-                            <a
+                          ) : plan.id === "free" ? null : (
+                            <Link
                               className="kru-btn kru-btn--primary kru-btn--block"
-                              href={LINE_OA_URL}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              referrerPolicy="no-referrer"
-                              onClick={() => void handleRequestUpgrade(plan.id)}
+                              href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}
                             >
-                              <MessageCircle size={18} aria-hidden="true" />
-                              สนใจอัปเกรด
-                            </a>
+                              สมัครหรือดูสถานะ
+                            </Link>
                           )}
                         </div>
                       </div>
@@ -688,13 +678,19 @@ export default function TeacherAppPage() {
                   })}
                 </div>
                 <p style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
-                  วิธีอัปเกรด: กด &ldquo;สนใจอัปเกรด&rdquo; เพื่อคุยกับทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a> โดยตรง ทีมงานจะอัปเกรดแพ็กให้หลังยืนยันการชำระเงิน
+                  วิธีอัปเกรด: เข้าหน้า <Link href="/membership">สมัครสมาชิก</Link> เพื่อสร้างเลขอ้างอิง แจ้งชำระ และติดตามสถานะได้ในที่เดียว
                 </p>
               </div>
             )}
 
             {view === "account" && profile && (
-              <ProfileSettings supabase={supabase} profile={profile} onUpdated={setProfile} />
+              <ProfileSettings
+                supabase={supabase}
+                profile={profile}
+                onUpdated={setProfile}
+                onSignOut={() => void handleSignOut()}
+                signingOut={signingOut}
+              />
             )}
           </main>
         </div>
