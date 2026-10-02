@@ -20,6 +20,10 @@ import { createClient } from "@/lib/supabase/client";
 import { filterDiscoveredResources, resourceDiscoveryHref } from "@/lib/resourceDiscovery";
 import { publicCoverUrl } from "@/lib/resourceVisibility";
 import type { FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  type MembershipSchemaReadiness,
+} from "@/lib/membershipSchemaReadiness";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import { FeaturedResourceCarousel, featuredAccessLabel } from "@/app/landing/FeaturedResourceCarousel";
 import { PlanBenefits, billingIntervalLabel } from "@/app/landing/PlanBenefits";
@@ -48,6 +52,7 @@ export default function LandingPage() {
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
+  const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>(isSupabaseConfigured ? "checking" : "unavailable");
   const [resources, setResources] = useState<Resource[]>([]);
   const [samplesLoaded, setSamplesLoaded] = useState(!isSupabaseConfigured);
   const [plansLoaded, setPlansLoaded] = useState(!isSupabaseConfigured);
@@ -77,11 +82,16 @@ export default function LandingPage() {
     if (!isSupabaseConfigured) return;
     let active = true;
     const supabase = createClient();
-    Promise.all([fetchPlans(supabase), fetchFounderCapacity(supabase)])
-      .then(([rows, capacity]) => {
+    Promise.all([
+      fetchPlans(supabase),
+      fetchMembershipSchemaReadiness(supabase),
+      fetchFounderCapacity(supabase),
+    ])
+      .then(([rows, readiness, capacity]) => {
         if (!active) return;
         setPlans(rows);
-        setFounderCapacity(capacity);
+        setMembershipSchemaReadiness(readiness);
+        setFounderCapacity(readiness === "ready" ? capacity : null);
         setPlansLoaded(true);
       })
       .catch(() => {
@@ -95,7 +105,10 @@ export default function LandingPage() {
     let active = true;
     const supabase = createClient();
     const refreshFounderCapacity = () => {
-      void fetchFounderCapacity(supabase).then((capacity) => {
+      void fetchMembershipSchemaReadiness(supabase).then(async (readiness) => {
+        if (!active) return;
+        setMembershipSchemaReadiness(readiness);
+        const capacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
         if (active) setFounderCapacity(capacity);
       });
     };
@@ -353,13 +366,15 @@ export default function LandingPage() {
                   {plan.note && <p className="kru-landing-plan__note">{plan.note}</p>}
                   {plan.id === "founder" && (
                     <div role="status" className="kru-landing-plan__capacity">
-                      {founderCapacity ? (
+                      {membershipSchemaReadiness === "unavailable" ? (
+                        <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
+                      ) : founderCapacity ? (
                         <>
                           <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
                           <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
                         </>
                       ) : (
-                        <span>กำลังตรวจสอบจำนวนสิทธิ์ Founder</span>
+                        <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                       )}
                     </div>
                   )}

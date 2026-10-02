@@ -76,14 +76,31 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain("request.profiles?.email");
     expect(pageSource).toContain("filteredUpgradeRequests.map");
     expect(pageSource).toContain("payment_reported_at");
-    expect(pageSource).toContain("รอแจ้งชำระ");
-    expect(pageSource).toContain("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
+    expect(pageSource).toContain("resolution_reason_code");
+    expect(pageSource).toContain("adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)");
     expect(pageSource).toContain("const loadUpgradeRequests = async () =>");
     expect(pageSource).toContain("profiles!upgrade_requests_user_id_fkey(full_name, email)");
     expect(pageSource).toContain("profiles!resource_reviews_user_id_fkey(full_name, email)");
     expect(pageSource).toContain("loadUpgradeRequests(),");
     expect(pageSource).toContain(".range(offset, offset + pageSize - 1)");
     expect(pageSource).toContain('.order("id", { ascending: false })');
+  });
+
+  it("fails closed for membership operations without blocking unrelated admin data", () => {
+    expect(pageSource).toContain("fetchMembershipSchemaReadiness(supabase)");
+    expect(pageSource).toContain('if (readiness === "ready")');
+    expect(pageSource).toContain('membershipSchemaReadiness === "ready" && membershipDataError === null');
+    expect(pageSource).toContain("MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE");
+    expect(pageSource).toContain('select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order")');
+    expect(pageSource).toContain('select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order")');
+    expect(pageSource.indexOf('if (readiness === "ready")')).toBeLessThan(
+      pageSource.indexOf('select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order")'),
+    );
+    expect(pageSource).toContain("if (!membershipMutationsReady)");
+    expect(pageSource).toContain("setUpgradeRequests([])");
+    expect(pageSource).toContain("setSubscriptions(null)");
+    expect(pageSource).toContain("setFounderSeatsUsed(null)");
+    expect(pageSource).not.toContain('p_reason: "owner_test_cleanup"');
   });
 
   it("shows Founder capacity before confirmation and blocks an over-capacity approval", () => {

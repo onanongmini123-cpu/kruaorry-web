@@ -21,6 +21,25 @@ export interface AdminPlan {
 
 export const FOUNDER_RENEWAL_PRICE_THB = 599;
 
+const TEST_APPLICATION_CLEANUP_REASONS = new Set([
+  "owner_test_cleanup",
+  "test_application_cleanup",
+]);
+
+export function adminMembershipApplicationStatusLabel(
+  status: "pending" | "approved" | "declined",
+  resolutionReasonCode: string | null,
+  paymentReportedAt: string | null,
+): string {
+  if (status === "approved") return "อนุมัติแล้ว";
+  if (status === "declined") {
+    return resolutionReasonCode && TEST_APPLICATION_CLEANUP_REASONS.has(resolutionReasonCode)
+      ? "ยกเลิกรายการทดสอบ"
+      : "ปฏิเสธแล้ว";
+  }
+  return paymentReportedAt ? "แจ้งหลักฐานแล้ว · รอตรวจสอบ" : "รอแจ้งชำระ";
+}
+
 const STATUS_PRIORITY: Record<AdminSubscription["status"], number> = {
   active: 3,
   past_due: 2,

@@ -2,6 +2,26 @@
 -- people whose payments are confirmed by an admin. Applications never reserve
 -- a place. Founder paid activation and every paid renewal go through
 -- idempotent, audited RPCs; no payment slip image is stored in KruAorry.
+-- Supabase's migration runner owns the outer transaction and migration-ledger
+-- write. Keep transaction control out of this file so schema, data and ledger
+-- changes succeed or roll back as one runner-managed unit.
+
+-- Keep the live data stable from the first audit through the final readiness
+-- marker. Acquire table locks before advisory locks: an older approval RPC may
+-- already hold a row/table lock and only later request the Founder advisory
+-- lock. Reversing that order here could deadlock the rollout. ACCESS EXCLUSIVE
+-- also prevents a legacy SELECT ... FOR UPDATE from entering while this large
+-- transactional DDL change is in progress; release it only when the runner's
+-- transaction ends.
+lock table
+  public.upgrade_requests,
+  public.subscriptions,
+  public.founder_seat_ledger,
+  public.plans,
+  public.features
+  in access exclusive mode;
+select pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
+select pg_advisory_xact_lock(hashtextextended('membership-payment-schema-v1', 0));
 
 -- Older migrations could add Founder grants without recording explicit payment
 -- confirmation evidence. The new public counter is labelled as confirmed-paid,
@@ -12,14 +32,211 @@ do $$
 declare
   v_grants integer;
   v_duplicate_pending_users integer;
+  v_all_request_count integer;
+  v_target_count integer;
+  v_target_founder_count integer;
+  v_target_teacher_count integer;
+  v_target_owner_count integer;
+  v_target_owner_id uuid;
+  v_target_pending_count integer;
+  v_target_subscription_links integer;
+  v_owner_active_plus_subscriptions integer;
+  v_partial_objects text[] := array[]::text[];
 begin
-  perform pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0));
+  -- A previous failed/manual rollout must be reconciled explicitly. Continuing
+  -- over a partially installed contract could silently weaken the invariants
+  -- below or mislabel historical data as confirmed payment evidence.
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'founder_seat_ledger'
+      and column_name = 'slot_number'
+  ) then
+    v_partial_objects := array_append(v_partial_objects, 'founder_seat_ledger.slot_number');
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'plans'
+      and column_name = 'renewal_price_amount_thb'
+  ) then
+    v_partial_objects := array_append(v_partial_objects, 'plans.renewal_price_amount_thb');
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'upgrade_requests'
+      and column_name in (
+        'reference_code', 'quoted_amount_thb', 'payment_reported_at',
+        'payment_paid_at', 'payment_confirmed_at', 'payment_confirmed_by',
+        'payment_confirmed_amount_thb', 'payment_reference', 'resolved_by',
+        'resolution_reason_code'
+      )
+  ) then
+    v_partial_objects := array_append(v_partial_objects, 'upgrade_requests payment columns');
+  end if;
+
+  if pg_catalog.to_regclass('public.membership_payment_confirmations') is not null then
+    v_partial_objects := array_append(v_partial_objects, 'membership_payment_confirmations');
+  end if;
+
+  if pg_catalog.to_regclass('public.membership_application_resolution_audit') is not null then
+    v_partial_objects := array_append(v_partial_objects, 'membership_application_resolution_audit');
+  end if;
+
+  if pg_catalog.to_regclass('public.membership_application_reference_seq') is not null then
+    v_partial_objects := array_append(v_partial_objects, 'membership_application_reference_seq');
+  end if;
+
+  if pg_catalog.to_regprocedure('public.create_membership_application(text)') is not null
+    or pg_catalog.to_regprocedure('public.report_membership_payment(uuid)') is not null
+    or pg_catalog.to_regprocedure('public.convert_founder_application_to_teacher(uuid)') is not null
+    or pg_catalog.to_regprocedure('public.confirm_membership_payment(uuid,integer,text,timestamp with time zone,uuid)') is not null
+    or pg_catalog.to_regprocedure('public.confirm_subscription_renewal(uuid,integer,text,timestamp with time zone,uuid)') is not null
+  then
+    v_partial_objects := array_append(v_partial_objects, 'membership payment RPCs');
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.pg_indexes
+    where schemaname = 'public'
+      and indexname = 'upgrade_requests_one_pending_per_user'
+  ) then
+    v_partial_objects := array_append(v_partial_objects, 'upgrade_requests_one_pending_per_user');
+  end if;
+
+  if exists (
+    select 1 from public.features
+    where id = 'system.membership_payment_confirmation_v1_ready'
+  ) then
+    v_partial_objects := array_append(v_partial_objects, 'membership payment readiness marker');
+  end if;
+
+  if cardinality(v_partial_objects) > 0 then
+    raise exception 'Founder payment migration blocked: partial schema detected (%); audit before retrying',
+      array_to_string(v_partial_objects, ', ');
+  end if;
 
   select count(*)::integer into v_grants
   from public.founder_seat_ledger;
 
   if v_grants > 0 then
     raise exception 'Founder payment migration blocked: founder_seat_ledger contains % legacy grants without explicit payment-confirmation provenance; audit them before applying this migration', v_grants;
+  end if;
+
+  select count(*)::integer into v_all_request_count
+  from public.upgrade_requests;
+
+  -- A pristine migration replay has no application history to reconcile. That
+  -- is the only allowed cleanup bypass: any nonempty request table must match
+  -- the exact reviewed production tuple and all of its surrounding assertions.
+  -- Keep the explicit duplicate check so the replay contract remains visible
+  -- and fail-closed even if this branch is changed later.
+  if v_all_request_count = 0 then
+    if exists (
+      select 1
+      from public.upgrade_requests request
+      where request.status = 'pending'
+      group by request.user_id
+      having count(*) > 1
+    ) then
+      raise exception 'Owner test reconciliation blocked: pristine replay unexpectedly contains duplicate pending applications';
+    end if;
+  else
+  -- The only reviewed duplicate is an owner-owned Founder/Teacher test pair.
+  -- Match it by the exact, non-identifying creation instants observed during the
+  -- production read-only audit. Never embed account, request or payment IDs in
+  -- source control. Every surrounding fact is asserted before any DDL or data
+  -- repair runs; a changed row or an additional duplicate aborts the migration.
+  select
+    count(*)::integer,
+    count(*) filter (
+      where request.plan_id = 'founder'
+        and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    )::integer,
+    count(*) filter (
+      where request.plan_id = 'teacher'
+        and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    )::integer,
+    count(distinct request.user_id)::integer
+  into
+    v_target_count,
+    v_target_founder_count,
+    v_target_teacher_count,
+    v_target_owner_count
+  from public.upgrade_requests request
+  where (
+      request.plan_id = 'founder'
+      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    ) or (
+      request.plan_id = 'teacher'
+      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    );
+
+  if v_target_count <> 2
+    or v_target_founder_count <> 1
+    or v_target_teacher_count <> 1
+    or v_target_owner_count <> 1
+  then
+    raise exception 'Owner test reconciliation blocked: the exact Founder/Teacher pair does not match the reviewed production audit';
+  end if;
+
+  select request.user_id into v_target_owner_id
+  from public.upgrade_requests request
+  where (
+      request.plan_id = 'founder'
+      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    ) or (
+      request.plan_id = 'teacher'
+      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    )
+  limit 1;
+
+  -- Keep the owner profile stable through the runner transaction and prove that the unrelated
+  -- Plus entitlement which must be preserved is still the profile source of
+  -- truth. The reconciliation below never updates profiles or subscriptions.
+  perform 1
+  from public.profiles profile
+  where profile.id = v_target_owner_id
+    and profile.role = 'owner'
+    and profile.plan = 'plus'
+  for share;
+
+  if not found then
+    raise exception 'Owner test reconciliation blocked: the reviewed owner profile or Plus plan changed';
+  end if;
+
+  select count(*)::integer into v_target_pending_count
+  from public.upgrade_requests request
+  where (
+      (
+        request.plan_id = 'founder'
+        and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+      ) or (
+        request.plan_id = 'teacher'
+        and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+      )
+    )
+    and request.user_id = v_target_owner_id
+    and request.status = 'pending'
+    and request.resolved_at is null;
+
+  if v_target_pending_count <> 2 then
+    raise exception 'Owner test reconciliation blocked: both reviewed applications must remain pending and unresolved';
+  end if;
+
+  select count(*)::integer into v_target_pending_count
+  from public.upgrade_requests request
+  where request.user_id = v_target_owner_id
+    and request.status = 'pending';
+
+  if v_target_pending_count <> 2 then
+    raise exception 'Owner test reconciliation blocked: the reviewed owner has an unexpected pending application';
   end if;
 
   select count(*)::integer into v_duplicate_pending_users
@@ -31,8 +248,54 @@ begin
     having count(*) > 1
   ) duplicates;
 
-  if v_duplicate_pending_users > 0 then
-    raise exception 'Founder payment migration blocked: % members have multiple pending membership applications; reconcile them before applying this migration', v_duplicate_pending_users;
+  if v_duplicate_pending_users <> 1 then
+    raise exception 'Owner test reconciliation blocked: expected exactly one reviewed duplicate-pending owner, found %', v_duplicate_pending_users;
+  end if;
+
+  select count(*)::integer into v_target_subscription_links
+  from public.subscriptions subscription
+  join public.upgrade_requests request
+    on request.id = subscription.approved_from_request_id
+  where (
+      request.plan_id = 'founder'
+      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    ) or (
+      request.plan_id = 'teacher'
+      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    );
+
+  if v_target_subscription_links <> 0 then
+    raise exception 'Owner test reconciliation blocked: a reviewed application is already linked to a subscription';
+  end if;
+
+  select count(*)::integer into v_owner_active_plus_subscriptions
+  from public.subscriptions subscription
+  join public.upgrade_requests source_request
+    on source_request.id = subscription.approved_from_request_id
+  where subscription.user_id = v_target_owner_id
+    and subscription.plan_id = 'plus'
+    and subscription.status = 'active'
+    and (
+      subscription.current_period_end is null
+      or subscription.current_period_end > now()
+    )
+    and source_request.user_id = v_target_owner_id
+    and source_request.plan_id = 'plus'
+    and source_request.status = 'approved'
+    and source_request.resolved_at is not null
+    and not (
+      (
+        source_request.plan_id = 'founder'
+        and source_request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+      ) or (
+        source_request.plan_id = 'teacher'
+        and source_request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+      )
+    );
+
+  if v_owner_active_plus_subscriptions <> 1 then
+    raise exception 'Owner test reconciliation blocked: the unrelated active Plus subscription no longer matches the reviewed audit';
+  end if;
   end if;
 end;
 $$;
@@ -40,9 +303,8 @@ $$;
 -- Payment references remain readable only in the protected audit table. The
 -- uniqueness key below uses a one-way fingerprint so PostgreSQL duplicate-key
 -- DETAIL cannot echo a bank reference into server logs. Install prerequisites
--- only after the legacy-data preflight above has passed, so that check remains
--- side-effect free even under a migration runner that does not wrap the file in
--- a transaction.
+-- only after the legacy-data preflight above has passed. The Supabase runner's
+-- outer transaction keeps every schema and data change atomic with its ledger.
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 do $$
@@ -142,7 +404,8 @@ alter table public.upgrade_requests
   add column payment_confirmed_by uuid references public.profiles(id) on delete set null,
   add column payment_confirmed_amount_thb integer,
   add column payment_reference text,
-  add column resolved_by uuid references public.profiles(id) on delete set null;
+  add column resolved_by uuid references public.profiles(id) on delete set null,
+  add column resolution_reason_code text;
 
 create sequence public.membership_application_reference_seq as bigint;
 alter sequence public.membership_application_reference_seq
@@ -176,6 +439,11 @@ alter table public.upgrade_requests
     check (payment_confirmed_amount_thb is null or payment_confirmed_amount_thb > 0),
   add constraint upgrade_requests_payment_reference_nonempty
     check (payment_reference is null or btrim(payment_reference) <> ''),
+  add constraint upgrade_requests_resolution_reason_code_format
+    check (
+      resolution_reason_code is null
+      or resolution_reason_code ~ '^[a-z][a-z0-9_]{2,63}$'
+    ),
   add constraint upgrade_requests_payment_confirmation_complete
     check (
       (payment_paid_at is null
@@ -195,13 +463,6 @@ create unique index upgrade_requests_reference_code_unique
 
 create index upgrade_requests_status_created
   on public.upgrade_requests(status, created_at desc);
-
--- The member UI and payment workflow intentionally operate on one open
--- application at a time. This invariant prevents a Founder and Teacher request
--- from being confirmed independently after a multi-tab or direct-API race.
-create unique index upgrade_requests_one_pending_per_user
-  on public.upgrade_requests(user_id)
-  where status = 'pending';
 
 -- This is the durable financial-operation audit. It stores only confirmation
 -- metadata, never a slip image or bank credentials. Foreign keys become null
@@ -313,6 +574,379 @@ create trigger trg_protect_membership_payment_confirmation
 
 revoke execute on function public.protect_membership_payment_confirmation()
   from public, anon, authenticated;
+
+-- Every post-048 application resolution has a durable, append-only audit row.
+-- `request_id` intentionally has no foreign key: the non-identifying request
+-- UUID, reference and resolution facts survive later account/application
+-- deletion. User and actor links may only be anonymized by their FK actions.
+create table public.membership_application_resolution_audit (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null,
+  application_reference_code text not null
+    check (btrim(application_reference_code) <> ''),
+  user_id uuid references public.profiles(id) on delete set null,
+  plan_id text not null,
+  previous_status text not null check (previous_status = 'pending'),
+  new_status text not null check (new_status in ('approved', 'declined')),
+  reason_code text not null
+    check (reason_code ~ '^[a-z][a-z0-9_]{2,63}$'),
+  resolved_at timestamptz not null,
+  resolved_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint membership_application_resolution_once unique (request_id)
+);
+
+create index membership_application_resolution_created
+  on public.membership_application_resolution_audit(created_at desc);
+
+alter table public.membership_application_resolution_audit enable row level security;
+
+create policy "membership_application_resolution_audit_admin_read"
+  on public.membership_application_resolution_audit for select
+  using (public.is_admin());
+
+revoke all on table public.membership_application_resolution_audit from anon, authenticated;
+grant select on table public.membership_application_resolution_audit to authenticated;
+
+create function public.protect_membership_application_resolution_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'Membership application resolution audit is append-only';
+  end if;
+
+  if new.id is distinct from old.id
+    or new.request_id is distinct from old.request_id
+    or new.application_reference_code is distinct from old.application_reference_code
+    or new.plan_id is distinct from old.plan_id
+    or new.previous_status is distinct from old.previous_status
+    or new.new_status is distinct from old.new_status
+    or new.reason_code is distinct from old.reason_code
+    or new.resolved_at is distinct from old.resolved_at
+    or new.created_at is distinct from old.created_at
+    or (
+      new.user_id is distinct from old.user_id
+      and not (old.user_id is not null and new.user_id is null)
+    )
+    or (
+      new.resolved_by is distinct from old.resolved_by
+      and not (old.resolved_by is not null and new.resolved_by is null)
+    )
+  then
+    raise exception 'Membership application resolution audit facts cannot be changed';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger trg_protect_membership_application_resolution_audit
+  before update or delete on public.membership_application_resolution_audit
+  for each row execute function public.protect_membership_application_resolution_audit();
+
+revoke execute on function public.protect_membership_application_resolution_audit()
+  from public, anon, authenticated;
+
+-- Reconcile the reviewed owner-only test applications only after the audit
+-- table and its immutability trigger exist. Exact non-identifying creation
+-- instants plus plan IDs identify the two rows; all ownership, state, payment,
+-- entitlement and preserved-Plus facts are rechecked inside this block. The
+-- surrounding transaction makes a mismatch or short write roll everything
+-- back, including the schema work above.
+do $$
+declare
+  v_all_request_count integer;
+  v_target_count integer;
+  v_target_founder_count integer;
+  v_target_teacher_count integer;
+  v_target_owner_count integer;
+  v_target_owner_id uuid;
+  v_target_clean_payment_count integer;
+  v_target_subscription_links integer;
+  v_plus_subscription_id uuid;
+  v_resolved_at timestamptz := now();
+  v_resolved_count integer;
+  v_audit_count integer;
+begin
+  select count(*)::integer into v_all_request_count
+  from public.upgrade_requests;
+
+  -- A pristine replay has no rows to resolve or audit. Recheck the exact zero
+  -- state after the schema work above; any nonempty state must take the strict
+  -- production reconciliation path below and cannot silently skip cleanup.
+  if v_all_request_count = 0 then
+    if exists (
+      select 1
+      from public.upgrade_requests request
+      where request.status = 'pending'
+      group by request.user_id
+      having count(*) > 1
+    ) then
+      raise exception 'Owner test reconciliation blocked: pristine replay unexpectedly contains duplicate pending applications';
+    end if;
+  else
+  select
+    count(*)::integer,
+    count(*) filter (
+      where request.plan_id = 'founder'
+        and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    )::integer,
+    count(*) filter (
+      where request.plan_id = 'teacher'
+        and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    )::integer,
+    count(distinct request.user_id)::integer,
+    count(*) filter (
+      where request.status = 'pending'
+        and request.resolved_at is null
+        and request.resolved_by is null
+        and request.resolution_reason_code is null
+        and request.payment_reported_at is null
+        and request.payment_paid_at is null
+        and request.payment_confirmed_at is null
+        and request.payment_confirmed_by is null
+        and request.payment_confirmed_amount_thb is null
+        and request.payment_reference is null
+    )::integer
+  into
+    v_target_count,
+    v_target_founder_count,
+    v_target_teacher_count,
+    v_target_owner_count,
+    v_target_clean_payment_count
+  from public.upgrade_requests request
+  where (
+      request.plan_id = 'founder'
+      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    ) or (
+      request.plan_id = 'teacher'
+      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    );
+
+  if v_target_count <> 2
+    or v_target_founder_count <> 1
+    or v_target_teacher_count <> 1
+    or v_target_owner_count <> 1
+    or v_target_clean_payment_count <> 2
+  then
+    raise exception 'Owner test reconciliation blocked: reviewed applications changed before cleanup';
+  end if;
+
+  select request.user_id into v_target_owner_id
+  from public.upgrade_requests request
+  where (
+      request.plan_id = 'founder'
+      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    ) or (
+      request.plan_id = 'teacher'
+      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    )
+  limit 1;
+
+  perform request.id
+  from public.upgrade_requests request
+  where (
+      (
+        request.plan_id = 'founder'
+        and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+      ) or (
+        request.plan_id = 'teacher'
+        and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+      )
+    )
+    and request.user_id = v_target_owner_id
+  for update;
+
+  perform 1
+  from public.profiles profile
+  where profile.id = v_target_owner_id
+    and profile.role = 'owner'
+    and profile.plan = 'plus';
+
+  if not found then
+    raise exception 'Owner test reconciliation blocked: the owner profile or Plus plan changed before cleanup';
+  end if;
+
+  select subscription.id into v_plus_subscription_id
+  from public.subscriptions subscription
+  join public.upgrade_requests source_request
+    on source_request.id = subscription.approved_from_request_id
+  where subscription.user_id = v_target_owner_id
+    and subscription.plan_id = 'plus'
+    and subscription.status = 'active'
+    and (
+      subscription.current_period_end is null
+      or subscription.current_period_end > now()
+    )
+    and source_request.user_id = v_target_owner_id
+    and source_request.plan_id = 'plus'
+    and source_request.status = 'approved'
+    and source_request.resolved_at is not null
+    and not (
+      (
+        source_request.plan_id = 'founder'
+        and source_request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+      ) or (
+        source_request.plan_id = 'teacher'
+        and source_request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+      )
+    )
+  limit 1;
+
+  if v_plus_subscription_id is null then
+    raise exception 'Owner test reconciliation blocked: the unrelated active Plus subscription changed before cleanup';
+  end if;
+
+  select count(*)::integer into v_target_subscription_links
+  from public.subscriptions subscription
+  join public.upgrade_requests request
+    on request.id = subscription.approved_from_request_id
+  where (
+      request.plan_id = 'founder'
+      and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+    ) or (
+      request.plan_id = 'teacher'
+      and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+    );
+
+  if v_target_subscription_links <> 0
+    or exists (
+      select 1
+      from public.membership_payment_confirmations confirmation
+      join public.upgrade_requests request on request.id = confirmation.request_id
+      where (
+          request.plan_id = 'founder'
+          and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+        ) or (
+          request.plan_id = 'teacher'
+          and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+        )
+    )
+  then
+    raise exception 'Owner test reconciliation blocked: a reviewed application gained payment or entitlement evidence';
+  end if;
+
+  with resolved as (
+    update public.upgrade_requests request
+    set
+      status = 'declined',
+      resolved_at = v_resolved_at,
+      resolved_by = request.user_id,
+      resolution_reason_code = 'owner_test_cleanup'
+    where request.user_id = v_target_owner_id
+      and request.status = 'pending'
+      and request.resolved_at is null
+      and request.resolved_by is null
+      and request.resolution_reason_code is null
+      and request.payment_reported_at is null
+      and request.payment_paid_at is null
+      and request.payment_confirmed_at is null
+      and request.payment_confirmed_by is null
+      and request.payment_confirmed_amount_thb is null
+      and request.payment_reference is null
+      and (
+        (
+          request.plan_id = 'founder'
+          and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+        ) or (
+          request.plan_id = 'teacher'
+          and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+        )
+      )
+    returning
+      request.id,
+      request.reference_code,
+      request.user_id,
+      request.plan_id,
+      request.resolved_at,
+      request.resolved_by
+  )
+  insert into public.membership_application_resolution_audit (
+    request_id, application_reference_code, user_id, plan_id,
+    previous_status, new_status, reason_code, resolved_at, resolved_by
+  )
+  select
+    resolved.id,
+    resolved.reference_code,
+    resolved.user_id,
+    resolved.plan_id,
+    'pending',
+    'declined',
+    'owner_test_cleanup',
+    resolved.resolved_at,
+    resolved.resolved_by
+  from resolved;
+
+  get diagnostics v_resolved_count = row_count;
+  if v_resolved_count <> 2 then
+    raise exception 'Owner test reconciliation blocked: expected to resolve exactly two reviewed applications, resolved %', v_resolved_count;
+  end if;
+
+  select count(*)::integer into v_audit_count
+  from public.membership_application_resolution_audit audit
+  join public.upgrade_requests request on request.id = audit.request_id
+  where request.user_id = v_target_owner_id
+    and audit.previous_status = 'pending'
+    and audit.new_status = 'declined'
+    and audit.reason_code = 'owner_test_cleanup'
+    and audit.resolved_at = v_resolved_at
+    and audit.resolved_by = v_target_owner_id
+    and request.status = 'declined'
+    and request.resolved_at = v_resolved_at
+    and request.resolved_by = v_target_owner_id
+    and request.resolution_reason_code = 'owner_test_cleanup'
+    and (
+      (
+        request.plan_id = 'founder'
+        and request.created_at = timestamptz '2026-10-01 12:48:53.40514+00'
+      ) or (
+        request.plan_id = 'teacher'
+        and request.created_at = timestamptz '2026-10-01 12:49:04.996398+00'
+      )
+    );
+
+  if v_audit_count <> 2 then
+    raise exception 'Owner test reconciliation blocked: immutable cleanup audit is incomplete';
+  end if;
+
+  if not exists (
+    select 1
+    from public.profiles profile
+    where profile.id = v_target_owner_id
+      and profile.role = 'owner'
+      and profile.plan = 'plus'
+  ) or not exists (
+    select 1
+    from public.subscriptions subscription
+    where subscription.id = v_plus_subscription_id
+      and subscription.user_id = v_target_owner_id
+      and subscription.plan_id = 'plus'
+      and subscription.status = 'active'
+      and (
+        subscription.current_period_end is null
+        or subscription.current_period_end > now()
+      )
+  ) then
+    raise exception 'Owner test reconciliation blocked: the unrelated Plus entitlement was not preserved';
+  end if;
+
+  if exists (select 1 from public.founder_seat_ledger) then
+    raise exception 'Owner test reconciliation blocked: cleanup must not consume a Founder seat';
+  end if;
+  end if;
+end;
+$$;
+
+-- The member UI and payment workflow intentionally operate on one open
+-- application at a time. Create this invariant only after the exact reviewed
+-- duplicate has been declined and immutably audited.
+create unique index upgrade_requests_one_pending_per_user
+  on public.upgrade_requests(user_id)
+  where status = 'pending';
 
 -- Founder grants are permanent financial history. The only allowed update is
 -- the FK-driven anonymization from a member id to NULL when an account is
@@ -1012,8 +1646,20 @@ begin
   end if;
 
   update public.upgrade_requests
-  set status = 'approved', resolved_at = now(), resolved_by = v_actor_id
+  set
+    status = 'approved',
+    resolved_at = now(),
+    resolved_by = v_actor_id,
+    resolution_reason_code = 'payment_confirmed'
   where id = v_request.id;
+
+  insert into public.membership_application_resolution_audit (
+    request_id, application_reference_code, user_id, plan_id,
+    previous_status, new_status, reason_code, resolved_at, resolved_by
+  ) values (
+    v_request.id, v_request.reference_code, v_request.user_id, v_request.plan_id,
+    'pending', 'approved', 'payment_confirmed', now(), v_actor_id
+  );
 
   return v_subscription_id;
 end;
@@ -1205,27 +1851,127 @@ $$;
 revoke execute on function public.confirm_subscription_renewal(uuid, integer, text, timestamptz, uuid) from public, anon;
 grant execute on function public.confirm_subscription_renewal(uuid, integer, text, timestamptz, uuid) to authenticated;
 
--- Declines now record the resolver as well; existing pending data is preserved.
+-- Ordinary admin declines use a stable machine-readable reason and the same
+-- immutable audit contract as payment-confirmed approvals. A separately
+-- reviewed production reconciliation may use `owner_test_cleanup`, but only for
+-- the exact non-identifying application tuple approved before this migration.
 create or replace function public.decline_upgrade_request(p_request_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_actor_id uuid := (select auth.uid());
+  v_request public.upgrade_requests%rowtype;
 begin
   if not public.is_admin() then
     raise exception 'Admin access required' using errcode = '42501';
   end if;
 
+  select * into v_request
+  from public.upgrade_requests request
+  where request.id = p_request_id
+  for update;
+
+  if not found or v_request.status <> 'pending' then
+    raise exception 'Pending membership application not found';
+  end if;
+
   update public.upgrade_requests
-  set status = 'declined', resolved_at = now(), resolved_by = (select auth.uid())
-  where id = p_request_id and status = 'pending';
+  set
+    status = 'declined',
+    resolved_at = now(),
+    resolved_by = v_actor_id,
+    resolution_reason_code = 'admin_declined'
+  where id = v_request.id;
 
   if not found then
     raise exception 'Pending membership application not found';
   end if;
+
+  insert into public.membership_application_resolution_audit (
+    request_id, application_reference_code, user_id, plan_id,
+    previous_status, new_status, reason_code, resolved_at, resolved_by
+  ) values (
+    v_request.id, v_request.reference_code, v_request.user_id, v_request.plan_id,
+    'pending', 'declined', 'admin_declined', now(), v_actor_id
+  );
 end;
 $$;
 
 revoke execute on function public.decline_upgrade_request(uuid) from public, anon;
 grant execute on function public.decline_upgrade_request(uuid) to authenticated;
+
+-- Postconditions run before publishing the readiness marker. If any assertion
+-- fails, the runner transaction rolls back every DDL, data and grant change.
+do $$
+begin
+  if exists (
+    select 1
+    from public.upgrade_requests request
+    where request.status = 'pending'
+    group by request.user_id
+    having count(*) > 1
+  ) then
+    raise exception 'Founder payment migration assertion failed: duplicate pending applications remain';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_class index_class
+    join pg_catalog.pg_index index_definition
+      on index_definition.indexrelid = index_class.oid
+    join pg_catalog.pg_namespace namespace
+      on namespace.oid = index_class.relnamespace
+    where namespace.nspname = 'public'
+      and index_class.relname = 'upgrade_requests_one_pending_per_user'
+      and index_definition.indisunique
+      and index_definition.indisvalid
+  ) then
+    raise exception 'Founder payment migration assertion failed: pending-per-user index is missing or invalid';
+  end if;
+
+  if exists (select 1 from public.founder_seat_ledger) then
+    raise exception 'Founder payment migration assertion failed: reconciliation changed the Founder ledger';
+  end if;
+
+  if pg_catalog.to_regclass('public.membership_payment_confirmations') is null
+    or pg_catalog.to_regclass('public.membership_application_resolution_audit') is null
+    or pg_catalog.to_regprocedure('public.create_membership_application(text)') is null
+    or pg_catalog.to_regprocedure('public.report_membership_payment(uuid)') is null
+    or pg_catalog.to_regprocedure('public.convert_founder_application_to_teacher(uuid)') is null
+    or pg_catalog.to_regprocedure('public.confirm_membership_payment(uuid,integer,text,timestamp with time zone,uuid)') is null
+    or pg_catalog.to_regprocedure('public.confirm_subscription_renewal(uuid,integer,text,timestamp with time zone,uuid)') is null
+  then
+    raise exception 'Founder payment migration assertion failed: required audit objects or RPCs are missing';
+  end if;
+
+  if exists (
+    select 1
+    from public.membership_application_resolution_audit audit
+    left join public.upgrade_requests request on request.id = audit.request_id
+    where request.id is not null
+      and (
+        request.status <> audit.new_status
+        or request.resolution_reason_code is distinct from audit.reason_code
+        or request.resolved_at is distinct from audit.resolved_at
+        or request.resolved_by is distinct from audit.resolved_by
+      )
+  ) then
+    raise exception 'Founder payment migration assertion failed: resolution audit does not match application state';
+  end if;
+end;
+$$;
+
+-- This is the sole client-safe readiness probe. It uses the pre-existing
+-- public-readable `features.id` contract, is not assigned to any plan, and is
+-- written only after every assertion above succeeds. Clients must not query
+-- the new columns or call the payment RPCs until this exact row exists.
+insert into public.features (id, name, description, value_type)
+values (
+  'system.membership_payment_confirmation_v1_ready',
+  'System: membership payment confirmation v1 ready',
+  'Internal schema-readiness marker; never display as a member benefit.',
+  'boolean'
+);

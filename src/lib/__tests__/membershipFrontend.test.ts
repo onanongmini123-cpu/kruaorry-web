@@ -46,6 +46,32 @@ describe("canonical manual membership flow", () => {
     expect(membership).not.toContain('if (!userId || submitting || !capacity)');
   });
 
+  it("gates every new membership path behind the old-schema readiness marker", () => {
+    expect(membership).toContain("fetchMembershipSchemaReadiness");
+    expect(membership).toContain('schemaReadiness === "unavailable"');
+    expect(membership).toContain("MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE");
+    expect(membership).toContain("ลองตรวจสอบอีกครั้ง");
+    expect(membership).toContain('if (schemaReadiness !== "ready")');
+    expect(membership).toContain('schemaReadiness !== "ready" ? (');
+    expect(membership).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
+  });
+
+  it("shows maintenance instead of stale Founder capacity on public and member package cards", () => {
+    for (const page of [landing, memberApp]) {
+      expect(page).toContain("fetchMembershipSchemaReadiness");
+      expect(page).toContain('membershipSchemaReadiness === "unavailable"');
+      expect(page).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
+    }
+  });
+
+  it("labels owner test cleanup without presenting it as a rejected customer application", () => {
+    expect(membership).toContain('"owner_test_cleanup"');
+    expect(membership).toContain('"ยกเลิกรายการทดสอบ"');
+    expect(membership).toContain("ไม่มีการให้สิทธิ์หรือใช้โควตา Founder");
+    expect(membership).toContain("isTestCleanupReason(latestApplication.resolutionReasonCode)");
+    expect(membership).toContain("รายการทดสอบถูกยกเลิกแล้ว คุณสามารถส่งใบสมัครจริงได้");
+  });
+
   it("loads the live plan catalog and renders its benefits", () => {
     expect(membership).toContain("fetchPlans");
     expect(membership).toContain("<PlanBenefits benefits={selectedPlan.benefits ?? []} />");

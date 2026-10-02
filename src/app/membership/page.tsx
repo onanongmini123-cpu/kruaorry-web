@@ -19,24 +19,38 @@ import {
   type UpgradeRequest,
 } from "@/lib/data";
 import type { FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+  type MembershipSchemaReadiness,
+} from "@/lib/membershipSchemaReadiness";
 import { createClient } from "@/lib/supabase/client";
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 type MembershipPlanId = "founder" | "teacher";
 
-const STATUS_COPY: Record<Exclude<UpgradeRequest["status"], "pending">, { label: string; tone: "success" | "neutral"; detail: string }> = {
-  approved: {
+function isTestCleanupReason(reasonCode: string | null): boolean {
+  return ["owner_test_cleanup", "test_application_cleanup"].includes(reasonCode ?? "");
+}
+
+function resolvedStatusCopy(application: UpgradeRequest): { label: string; tone: "success" | "neutral"; detail: string } {
+  if (application.status === "approved") return {
     label: "ยืนยันชำระแล้ว",
     tone: "success",
     detail: "ครูอรรี่ยืนยันการชำระแล้ว สิทธิ์สมาชิกจะนับจากรายการที่อนุมัตินี้",
-  },
-  declined: {
+  };
+  if (isTestCleanupReason(application.resolutionReasonCode)) return {
+    label: "ยกเลิกรายการทดสอบ",
+    tone: "neutral",
+    detail: "รายการนี้เป็นข้อมูลทดสอบของเจ้าของระบบและถูกยกเลิกแล้ว ไม่มีการให้สิทธิ์หรือใช้โควตา Founder",
+  };
+  return {
     label: "ไม่ผ่านการตรวจสอบ",
     tone: "neutral",
     detail: "รายการนี้ไม่ได้รับสิทธิ์ หากต้องการสอบถามรายละเอียด กรุณาติดต่อครูอรรี่ทาง LINE",
-  },
-};
+  };
+}
 
 function pendingStatusCopy(application: UpgradeRequest) {
   return application.paymentReportedAt
@@ -73,6 +87,7 @@ function MembershipContent() {
   const supabase = useMemo(() => createClient(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(!isSupabaseConfigured);
+  const [schemaReadiness, setSchemaReadiness] = useState<MembershipSchemaReadiness>(isSupabaseConfigured ? "checking" : "unavailable");
   const [capacity, setCapacity] = useState<FounderCapacity | null>(null);
   const [capacityLoaded, setCapacityLoaded] = useState(!isSupabaseConfigured);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -88,8 +103,8 @@ function MembershipContent() {
 
   // A legacy account can legitimately have an older pending application and a
   // newer resolved record. Keep the still-actionable request visible instead
-  // of hiding it behind history; migration 047 prevents more than one pending
-  // request per member going forward.
+  // of hiding it behind history; the membership schema migration prevents
+  // more than one pending request per member once it is ready.
   const latestApplication = applications.find((application) => application.status === "pending")
     ?? applications[0]
     ?? null;
@@ -109,30 +124,41 @@ function MembershipContent() {
     if (!isSupabaseConfigured) return;
     let active = true;
     const load = async () => {
-      const [founderCapacity, authResult, publicPlans] = await Promise.all([
-        fetchFounderCapacity(supabase),
+      const [readiness, authResult, publicPlans] = await Promise.all([
+        fetchMembershipSchemaReadiness(supabase),
         supabase.auth.getUser(),
         fetchPlans(supabase),
       ]);
       if (!active) return;
-      setCapacity(founderCapacity);
-      setCapacityLoaded(true);
+      setSchemaReadiness(readiness);
       setPlans(publicPlans);
       const user = authResult.data.user;
       setUserId(user?.id ?? null);
+      if (readiness !== "ready") {
+        setCapacity(null);
+        setCapacityLoaded(true);
+        setApplications([]);
+        setAuthLoaded(true);
+        return;
+      }
+      const [founderCapacity, nextApplications] = await Promise.all([
+        fetchFounderCapacity(supabase),
+        user ? fetchUpgradeRequests(supabase, user.id) : Promise.resolve([]),
+      ]);
+      if (!active) return;
+      setCapacity(founderCapacity);
+      setCapacityLoaded(true);
       if (user) {
-        const nextApplications = await fetchUpgradeRequests(supabase, user.id);
-        if (!active) return;
         setApplications(nextApplications);
       }
-      if (active) setAuthLoaded(true);
+      setAuthLoaded(true);
     };
     void load();
     return () => { active = false; };
   }, [supabase]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured || schemaReadiness !== "ready") return;
     let active = true;
     const refreshStatus = () => {
       void Promise.all([
@@ -151,7 +177,29 @@ function MembershipContent() {
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshStatus);
     };
-  }, [supabase, userId]);
+  }, [schemaReadiness, supabase, userId]);
+
+  const handleRetrySchemaReadiness = async () => {
+    if (!isSupabaseConfigured || schemaReadiness === "checking") return;
+    setSchemaReadiness("checking");
+    setCapacityLoaded(false);
+    setError(null);
+    const readiness = await fetchMembershipSchemaReadiness(supabase);
+    setSchemaReadiness(readiness);
+    if (readiness !== "ready") {
+      setCapacity(null);
+      setCapacityLoaded(true);
+      setApplications([]);
+      return;
+    }
+    const [nextCapacity, nextApplications] = await Promise.all([
+      fetchFounderCapacity(supabase),
+      userId ? fetchUpgradeRequests(supabase, userId) : Promise.resolve([]),
+    ]);
+    setCapacity(nextCapacity);
+    setCapacityLoaded(true);
+    setApplications(nextApplications);
+  };
 
   const selectPlan = (planId: MembershipPlanId) => {
     if (hasOpenApplication) return;
@@ -163,6 +211,10 @@ function MembershipContent() {
 
   const handleCreateApplication = async () => {
     if (!userId || submitting) return;
+    if (schemaReadiness !== "ready") {
+      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+      return;
+    }
     if (applicationPlanId === "founder" && !capacity) {
       setError("ยังตรวจสอบจำนวนสิทธิ์ Founder ไม่ได้ จึงปิดการส่งใบสมัครชั่วคราว");
       return;
@@ -187,6 +239,10 @@ function MembershipContent() {
 
   const handleReportPayment = async () => {
     if (!latestApplication || latestApplication.status !== "pending" || reporting || pendingFounderFull) return;
+    if (schemaReadiness !== "ready") {
+      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+      return;
+    }
     setReporting(true);
     setError(null);
     const result = await reportMembershipPayment(supabase, latestApplication.id);
@@ -205,6 +261,10 @@ function MembershipContent() {
 
   const handleConvertToTeacher = async () => {
     if (!latestApplication || latestApplication.status !== "pending" || latestApplication.planId !== "founder" || converting) return;
+    if (schemaReadiness !== "ready") {
+      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+      return;
+    }
     if (!window.confirm("เปลี่ยนใบสมัครนี้เป็นแพ็ก Teacher ราคา 599 บาท/ปีใช่หรือไม่? เลขอ้างอิงเดิมจะใช้ต่อได้")) return;
     setConverting(true);
     setError(null);
@@ -264,7 +324,9 @@ function MembershipContent() {
 
           <aside className="kru-membership-capacity" aria-live="polite" aria-busy={!capacityLoaded}>
             <span>จำนวนสิทธิ์จากฐานข้อมูล</span>
-            {capacity ? (
+            {schemaReadiness === "unavailable" ? (
+              <strong>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</strong>
+            ) : capacity ? (
               <>
                 <strong>ยืนยันชำระแล้ว {capacity.used}/{capacity.capacity}</strong>
                 <p>{capacity.isFull ? "สิทธิ์ราคาเปิดตัวครบแล้ว" : `เหลือ ${capacity.remaining} สิทธิ์`}</p>
@@ -273,7 +335,7 @@ function MembershipContent() {
                 </span>
               </>
             ) : (
-              <strong>{capacityLoaded ? "ตรวจสอบจำนวนสิทธิ์ไม่ได้ในขณะนี้" : "กำลังตรวจสอบจำนวนสิทธิ์…"}</strong>
+              <strong>{schemaReadiness === "checking" || !capacityLoaded ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ตรวจสอบจำนวนสิทธิ์ไม่ได้ในขณะนี้"}</strong>
             )}
           </aside>
         </section>
@@ -323,6 +385,13 @@ function MembershipContent() {
 
             {!isSupabaseConfigured ? (
               <p role="status" className="kru-membership-alert kru-membership-alert--warning">ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณากลับมาใหม่ภายหลัง</p>
+            ) : schemaReadiness === "checking" ? (
+              <p role="status" className="kru-membership-alert">กำลังตรวจสอบความพร้อมของระบบสมัครสมาชิก…</p>
+            ) : schemaReadiness === "unavailable" ? (
+              <div className="kru-membership-action-block">
+                <p role="alert" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
+                <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+              </div>
             ) : !authLoaded ? (
               <p role="status" className="kru-membership-alert">กำลังตรวจสอบบัญชีสมาชิก…</p>
             ) : !userId ? (
@@ -352,7 +421,18 @@ function MembershipContent() {
             ) : (
               <div className="kru-membership-action-block">
                 {latestApplication?.status === "declined" && (
-                  <p className="kru-membership-alert">ใบสมัครก่อนหน้าไม่ผ่านการตรวจสอบ คุณสามารถส่งใบสมัครใหม่ได้</p>
+                  <>
+                    <ApplicationStatus
+                      application={latestApplication}
+                      copied={copied === latestApplication.referenceCode}
+                      onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
+                    />
+                    <p className="kru-membership-alert">
+                      {isTestCleanupReason(latestApplication.resolutionReasonCode)
+                        ? "รายการทดสอบถูกยกเลิกแล้ว คุณสามารถส่งใบสมัครจริงได้"
+                        : "ใบสมัครก่อนหน้าไม่ผ่านการตรวจสอบ คุณสามารถส่งใบสมัครใหม่ได้"}
+                    </p>
+                  </>
                 )}
                 {applicationPlanId === "founder" && capacity?.isFull ? (
                   <>
@@ -383,7 +463,9 @@ function MembershipContent() {
               <li>กลับมากด “ฉันส่งหลักฐานแล้ว” แล้วรอครูอรรี่ตรวจสอบยอดจริง</li>
             </ol>
             <p className="kru-membership-payment__notice">การส่งสลิปหรือกรอกใบสมัครยังไม่นับสิทธิ์ จนกว่าระบบจะแสดงสถานะ “ยืนยันชำระแล้ว”</p>
-            {pendingFounderFull ? (
+            {schemaReadiness !== "ready" ? (
+              <p role="status" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
+            ) : pendingFounderFull ? (
               <p role="alert" className="kru-membership-alert kru-membership-alert--danger">Founder ครบแล้ว จึงปิดปุ่ม LINE และการแจ้งหลักฐานสำหรับใบสมัครนี้ กรุณาเปลี่ยนเป็น Teacher ก่อน</p>
             ) : latestApplication?.status === "pending" ? (
               <>
@@ -503,7 +585,7 @@ function MembershipContent() {
 }
 
 function ApplicationStatus({ application, copied, onCopy }: { application: UpgradeRequest; copied: boolean; onCopy: () => void }) {
-  const copy = application.status === "pending" ? pendingStatusCopy(application) : STATUS_COPY[application.status];
+  const copy = application.status === "pending" ? pendingStatusCopy(application) : resolvedStatusCopy(application);
   return (
     <section className="kru-membership-status" aria-live="polite">
       <div className="kru-membership-status__heading">

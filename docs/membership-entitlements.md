@@ -64,6 +64,17 @@ paid timestamp, confirming admin, idempotency key and result; it never stores
 a payment-slip image. Authenticated members cannot insert, update or delete
 these rows, and only admins may read them through RLS.
 
+`membership_application_resolution_audit` is the separate append-only history
+of application outcomes. Payment-confirmed approvals use the reason code
+`payment_confirmed`; ordinary admin declines use `admin_declined`. A reviewed
+owner test cleanup may use `owner_test_cleanup`, but only for the exact
+non-identifying creation instants and Founder/Teacher plan tuple approved before
+migration 048 is applied. The migration proves both rows belong to the same
+owner and derives the resolver from that validated owner profile; no production
+request or account UUID is committed. The member-facing application row retains
+the same machine-readable `resolution_reason_code`, `resolved_at`, and
+`resolved_by` facts.
+
 Free members may save at most 10 resources. A database trigger checks the
 catalogue limit under a per-member transaction lock. Existing saved rows are
 preserved if a member was already over that limit; only new inserts are denied.
@@ -94,8 +105,9 @@ preserved if a member was already over that limit; only new inserts are denied.
   consumes a Founder place when applicable, appends the payment audit and
   resolves the request in one transaction. A retry with the same facts and
   idempotency key returns the original subscription.
-- `decline_upgrade_request(request_id)` resolves a pending request without
-  changing membership.
+- `decline_upgrade_request(request_id)` resolves a pending request with the
+  machine-readable reason `admin_declined`, records the resolver, and appends a
+  resolution audit without changing membership.
 - `confirm_subscription_renewal(subscription_id, amount_thb,
   payment_reference, paid_at, idempotency_key)` renews an annual subscription
   at the catalogue renewal price. An early renewal extends the existing end;
@@ -122,10 +134,10 @@ The offer is cumulative, not concurrent. Only a successful 299 THB admin
 confirmation consumes a place. The durable `founder_seat_ledger` is the
 capacity source of truth and each grant receives one unique `slot_number` in
 the structural range 1–100. Because older migrations did not record explicit
-payment-confirmation evidence, migration 047 fails closed when it finds any
+payment-confirmation evidence, migration 048 fails closed when it finds any
 legacy ledger rows. Those rows must be audited and reconciled in a separately
 reviewed data migration before the live schema change may proceed; migration
-047 never guesses that an older grant was paid.
+048 never guesses that an older grant was paid.
 
 Application creation and member payment reporting do not write the ledger.
 Reporting and activation obtain the same shared transaction advisory lock.
@@ -168,8 +180,48 @@ the actual live dataset. No automatic payment is collected.
 The two older migrations executed manually (016d and 017) were verified
 against the live schema and recorded with `supabase migration repair` on
 2026-09-18 without rerunning their SQL. Later applied state is recorded in the
-migration README. Migration 047 is additive and pending; immediately before
+migration README. Migration 048 is additive and pending; immediately before
 release, audit the live `founder_seat_ledger` provenance, recheck with
 `supabase migration list` and
 `supabase db push --dry-run`, then test RLS and payment-confirmation flows as
 real member and admin roles against a staging copy.
+
+Migration 048 contains one narrowly scoped reconciliation for the reviewed
+owner test pair. It matches the exact non-identifying `created_at` instants plus
+the Founder/Teacher plan IDs, then proves that exactly two rows match, both
+belong to the same owner, both remain pending and unresolved, neither produced
+subscription or payment evidence, the unrelated active Plus entitlement is
+unchanged, and there are no other duplicate-pending users. Any mismatch rolls
+back the whole migration. A pristine replay may skip this production-only
+cleanup only when `upgrade_requests` contains exactly zero rows; any nonempty
+database must satisfy the full reviewed tuple and surrounding assertions.
+
+The migration acquires `ACCESS EXCLUSIVE` locks on the affected catalogue and
+membership tables before its advisory locks. Run it only during the planned
+short maintenance window: this order lets an already-running legacy approval
+finish before rollout and prevents a new legacy `SELECT ... FOR UPDATE` from
+entering midway through the transactional schema change.
+
+Migration 048 deliberately contains no transaction-control statements or
+transaction opt-out directive. Apply it only through a supported Supabase
+migration runner that owns one atomic transaction for the migration and its
+history record; never execute the file piecemeal in the SQL Editor. The PGlite
+suite opens an outer transaction only to simulate that runner boundary.
+
+The isolated release rehearsal on 2026-10-02 pinned Supabase CLI `2.114.0`.
+`supabase db reset --local --no-seed` replayed the complete clean chain through
+048 with `LOCK TABLE` inside the runner-owned transaction. A separate local-only
+late-failure probe then proved that both its schema/data changes and migration
+history row rolled back, while the recorded 048 row and readiness marker
+remained intact; the probe file was removed immediately afterwards. CLI
+`2.115.0` and `2.116.0` are not approved for this release because the upstream
+`LOCK TABLE` regression reports SQLSTATE `25P01`. Any replacement runner must
+repeat this rehearsal. Partial application or migration-ledger drift is a
+NO-GO; do not add `BEGIN`/`COMMIT` to the migration as a workaround.
+
+The final migration statement inserts
+`system.membership_payment_confirmation_v1_ready` into the existing public
+feature catalogue without assigning it to any plan. The frontend may probe only
+that pre-existing `features.id` contract before readiness; it must not select
+the new payment/application columns or call the new mutation RPCs until the
+marker exists.

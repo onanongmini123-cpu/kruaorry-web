@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminMembershipApplicationStatusLabel,
   canOfferAdminPlan,
   canRenewMember,
   effectiveMemberPlan,
@@ -9,6 +10,21 @@ import {
   type AdminPlan,
   type AdminSubscription,
 } from "../adminMembership";
+
+describe("admin membership application status", () => {
+  it("distinguishes owner test cleanup from a normal decline", () => {
+    expect(adminMembershipApplicationStatusLabel("declined", "owner_test_cleanup", null)).toBe("ยกเลิกรายการทดสอบ");
+    expect(adminMembershipApplicationStatusLabel("declined", "test_application_cleanup", null)).toBe("ยกเลิกรายการทดสอบ");
+    expect(adminMembershipApplicationStatusLabel("declined", "admin_declined", null)).toBe("ปฏิเสธแล้ว");
+    expect(adminMembershipApplicationStatusLabel("declined", null, null)).toBe("ปฏิเสธแล้ว");
+  });
+
+  it("preserves approved and pending workflow labels", () => {
+    expect(adminMembershipApplicationStatusLabel("approved", "payment_confirmed", null)).toBe("อนุมัติแล้ว");
+    expect(adminMembershipApplicationStatusLabel("pending", null, null)).toBe("รอแจ้งชำระ");
+    expect(adminMembershipApplicationStatusLabel("pending", null, "2026-10-01T00:00:00Z")).toBe("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
+  });
+});
 
 const member = (overrides: Partial<AdminSubscription> = {}): AdminSubscription => ({
   id: "subscription-1",

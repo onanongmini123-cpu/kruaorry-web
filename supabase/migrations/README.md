@@ -291,13 +291,51 @@ blocked; the request can only proceed through the explicit conversion RPC,
 which preserves its reference, requotes canonical Teacher at 599 THB and clears
 any report made against the old quote.
 
-Migration 048 is intentionally fail-closed until the two known owner test
-applications have been reconciled using their exact reviewed request IDs and
-resolver UUID. It never guesses rows by email, role, or a broad user predicate.
+Migration 048 contains one narrowly scoped, fail-closed reconciliation for the
+two owner test applications confirmed by the production read-only audit. It
+matches the exact non-identifying `created_at` instants plus the Founder/Teacher
+plan IDs; no production request, account or payment identifier is committed.
+Before writing, it proves that exactly two rows match, both belong to the same
+owner, both remain pending and unresolved, no payment or subscription evidence
+is linked to either request, no other duplicate-pending owner exists, and the
+separate active Plus subscription/profile still matches the audited state. It
+then declines exactly those two rows with
+`resolution_reason_code = 'owner_test_cleanup'`, derives `resolved_by` from the
+validated owner profile and appends two immutable resolution audit rows before
+creating the one-pending-request index. Any mismatch, short write or failed
+postcondition rolls the entire transaction back. The cleanup never grants a
+plan, changes the existing Plus entitlement, consumes a Founder slot, or invents
+payment evidence.
+
+For migration replay on a pristine database, 048 skips this production-only
+cleanup only when `upgrade_requests` contains exactly zero rows (and therefore
+no duplicate-pending owner). The zero-row condition is checked again immediately
+before reconciliation. Any nonempty request history—whether one unrelated row,
+an incomplete target pair, or a changed target—must satisfy the full audited
+production shape or the transaction fails closed. This keeps fresh database
+reconstruction portable without broadening the production data repair.
+
 It also fails before membership DDL if the historical Founder ledger contains
 any legacy grant, because migrations 019–025 did not record explicit
 payment-confirmation provenance. Those rows require a separate reviewed audit
 and reconciliation; 048 never guesses that an older grant was paid.
+
+Migration 048 contains no `BEGIN`, `COMMIT`, `ROLLBACK`, or transaction opt-out
+directive. It must run through a supported Supabase migration runner that wraps
+the whole file in one transaction and keeps the schema/data changes atomic with
+the migration-history write; do not paste or execute its statements piecemeal
+in the SQL Editor. The PGlite regression harness opens an outer transaction only
+to simulate that runner boundary—the migration file must not control it.
+
+The migration takes the affected-table `ACCESS EXCLUSIVE` locks before its
+advisory locks to keep legacy RPC lock order from deadlocking the rollout,
+rejects partially installed schema, and checks its postconditions before adding
+the unassigned system feature
+`system.membership_payment_confirmation_v1_ready` as its final readiness marker.
+Clients must probe only that pre-existing `features.id` contract and remain
+fail-closed until the marker exists. Payment-confirmed approvals and ordinary
+admin declines append immutable application-resolution audit rows using
+`payment_confirmed` and `admin_declined` respectively.
 
 Before applying `048`, confirm no unexpected direct clients still call the now
 disabled `approve_upgrade_request` or `renew_subscription` RPCs. Run
@@ -305,6 +343,18 @@ disabled `approve_upgrade_request` or `renew_subscription` RPCs. Run
 real-role staging checks. The PGlite suite verifies transaction rollback and
 idempotency in one embedded connection; a staging test with independent
 Postgres connections is still required to validate advisory-lock contention.
+The isolated release rehearsal on 2026-10-02 pinned Supabase CLI `2.114.0`.
+`supabase db reset --local --no-seed` replayed the complete clean chain through
+048 and proved that `LOCK TABLE` runs inside the runner-owned transaction. A
+separate local-only late-failure migration then rolled back its table/data and
+left no migration-history row; the recorded 048 row and readiness marker both
+remained present. The temporary probe was removed after verification. CLI
+`2.115.0` and `2.116.0` are not approved because of the upstream `LOCK TABLE`
+SQLSTATE `25P01` regression. Pin `2.114.0` for this release, or rehearse any
+replacement runner in the same way before use. A partial apply or
+migration-ledger drift remains a release blocker; do not work around it by
+adding transaction control back to the migration file. Recheck the migration
+list after the rehearsal and again after any authorized production apply.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.

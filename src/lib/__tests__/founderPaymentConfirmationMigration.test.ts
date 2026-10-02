@@ -2,10 +2,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const sql = readFileSync(
-  join(process.cwd(), "supabase/migrations/20261001180000_047_founder_payment_confirmation.sql"),
-  "utf8",
-);
+const reconciliationArtifactPaths = [
+  "supabase/migrations/20261001190000_048_founder_payment_confirmation.sql",
+  "supabase/migrations/README.md",
+  "scripts/test-membership-sql.mjs",
+] as const;
+const reconciliationArtifacts = reconciliationArtifactPaths.map((path) => ({
+  path,
+  content: readFileSync(join(process.cwd(), path), "utf8"),
+}));
+const sql = reconciliationArtifacts[0].content;
 
 const section = (start: string, end: string) => {
   const startIndex = sql.indexOf(start);
@@ -35,6 +41,8 @@ describe("Founder payment-confirmation migration", () => {
       "payment_confirmed_by",
       "payment_confirmed_amount_thb",
       "payment_reference",
+      "resolved_by",
+      "resolution_reason_code",
     ]) {
       expect(sql).toContain(`add column ${column}`);
     }
@@ -57,8 +65,30 @@ describe("Founder payment-confirmation migration", () => {
     expect(sql).toContain("revoke insert on table public.upgrade_requests from anon, authenticated");
     expect(sql).toContain("create unique index upgrade_requests_one_pending_per_user");
     expect(sql).toMatch(/on public\.upgrade_requests\(user_id\)\s+where status = 'pending'/);
-    expect(sql).toContain("v_duplicate_pending_users > 0");
-    expect(sql).toContain("members have multiple pending membership applications");
+    expect(sql).toContain("v_duplicate_pending_users <> 1");
+    expect(sql).toContain("expected exactly one reviewed duplicate-pending owner");
+    expect(sql).toContain("Never embed account, request or payment IDs in");
+  });
+
+  it("delegates transaction control to the runner and keeps fail-closed locks", () => {
+    const explicitTransactionControl = /^\s*(?:begin|commit|rollback)\s*;\s*$/gim;
+
+    expect(sql).not.toMatch(explicitTransactionControl);
+    expect(sql).not.toMatch(/--\s*pg-delta:\s*transaction\s*=\s*false/i);
+    expect(sql).toContain("Supabase's migration runner owns the outer transaction");
+    expect(sql).toContain("pg_advisory_xact_lock(hashtextextended('membership-payment-schema-v1', 0))");
+    const tableLockIndex = sql.indexOf("lock table");
+    const founderLockIndex = sql.indexOf(
+      "pg_advisory_xact_lock(hashtextextended('founder-seat-allocation', 0))",
+    );
+    expect(tableLockIndex).toBeGreaterThanOrEqual(0);
+    expect(founderLockIndex).toBeGreaterThan(tableLockIndex);
+    expect(sql).toMatch(
+      /lock table\s+public\.upgrade_requests,\s+public\.subscriptions,\s+public\.founder_seat_ledger,\s+public\.plans,\s+public\.features\s+in access exclusive mode/,
+    );
+    expect(sql).toContain("partial schema detected");
+    expect(sql).toContain("membership_application_resolution_audit");
+    expect(sql).toContain("upgrade_requests_one_pending_per_user");
   });
 
   it("separates member-reported payment from admin-confirmed payment", () => {
@@ -119,7 +149,178 @@ describe("Founder payment-confirmation migration", () => {
     expect(confirm).toContain("payment_confirmed_amount_thb = p_amount_thb");
     expect(confirm).toContain("public.activate_membership_internal");
     expect(confirm).toContain("insert into public.membership_payment_confirmations");
-    expect(confirm).toContain("set status = 'approved'");
+    expect(confirm).toMatch(/set\s+status = 'approved'/);
+    expect(confirm).toContain("resolution_reason_code = 'payment_confirmed'");
+    expect(confirm).toContain("insert into public.membership_application_resolution_audit");
+  });
+
+  it("keeps application resolutions append-only with machine-readable reasons", () => {
+    const resolutionAudit = section(
+      "create table public.membership_application_resolution_audit",
+      "-- Founder grants are permanent financial history",
+    );
+    expect(resolutionAudit).toContain("request_id uuid not null");
+    expect(resolutionAudit).toContain("application_reference_code text not null");
+    expect(resolutionAudit).toContain("reason_code text not null");
+    expect(resolutionAudit).toContain("constraint membership_application_resolution_once unique (request_id)");
+    expect(resolutionAudit).toContain("using (public.is_admin())");
+    expect(resolutionAudit).toContain("Membership application resolution audit is append-only");
+    expect(resolutionAudit).toContain("before update or delete on public.membership_application_resolution_audit");
+
+    const decline = section(
+      "create or replace function public.decline_upgrade_request(p_request_id uuid)",
+      "revoke execute on function public.decline_upgrade_request(uuid)",
+    );
+    expect(decline).toContain("resolution_reason_code = 'admin_declined'");
+    expect(decline).toContain("'pending', 'declined', 'admin_declined'");
+    expect(decline).toContain("resolved_by = v_actor_id");
+  });
+
+  it("reconciles only the exact reviewed owner test pair without embedding identity", () => {
+    const preflight = section(
+      "-- The only reviewed duplicate is an owner-owned Founder/Teacher test pair",
+      "-- Payment references remain readable only in the protected audit table",
+    );
+    const reconciliation = section(
+      "-- Reconcile the reviewed owner-only test applications only after the audit",
+      "create unique index upgrade_requests_one_pending_per_user",
+    );
+
+    for (const timestamp of [
+      "2026-10-01 12:48:53.40514+00",
+      "2026-10-01 12:49:04.996398+00",
+    ]) {
+      expect(preflight).toContain(timestamp);
+      expect(reconciliation).toContain(timestamp);
+    }
+
+    expect(preflight).toContain("'founder'");
+    expect(preflight).toContain("'teacher'");
+    expect(preflight).toContain("'owner'");
+    expect(preflight).toContain("status = 'pending'");
+    expect(preflight).toContain("resolved_at is null");
+    expect(preflight).toContain("public.subscriptions");
+    expect(preflight).toContain("plan_id = 'plus'");
+    expect(preflight).toContain("raise exception");
+    expect(preflight).toMatch(/count\(\*\)[\s\S]*<>\s*2/i);
+
+    expect(reconciliation).toContain("resolution_reason_code = 'owner_test_cleanup'");
+    expect(reconciliation).toContain("insert into public.membership_application_resolution_audit");
+    expect(reconciliation).toMatch(/'pending',\s*'declined',\s*'owner_test_cleanup'/);
+    expect(reconciliation).toContain("v_target_clean_payment_count <> 2");
+    expect(reconciliation).toContain("v_resolved_count <> 2");
+    expect(reconciliation).toContain("v_audit_count <> 2");
+    expect(reconciliation).toContain("resolved_by = request.user_id");
+    expect(reconciliation).toContain("resolved_at");
+    expect(reconciliation).toContain("resolved_by");
+    expect(reconciliation).toContain("payment_reported_at is null");
+    expect(reconciliation).toContain("payment_confirmed_at is null");
+    expect(reconciliation).toContain("public.subscriptions");
+    expect(reconciliation).toContain("plan_id = 'plus'");
+    expect(reconciliation).toContain("public.founder_seat_ledger");
+    expect(reconciliation).toContain("cleanup must not consume a Founder seat");
+    expect(reconciliation).toContain("raise exception");
+
+    const executableReconciliation = reconciliation
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("--"))
+      .join("\n");
+    expect(executableReconciliation).not.toMatch(
+      /\b(?:update|insert\s+into|delete\s+from)\s+public\.(?:profiles|subscriptions|founder_seat_ledger)\b/i,
+    );
+
+  });
+
+  it("keeps every reconciliation artifact free of identity and plausible payment references", () => {
+    const uuidLiteral = /\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/i;
+    const emailLiteral = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+    const thaiMobileLiteral = /\b(?:\+66|0)[689](?:[-\s]?\d){8}\b/;
+    const mixedReferenceCandidate =
+      /\b(?=[A-Za-z0-9-]{12,}\b)(?=[A-Za-z0-9-]*[A-Za-z])(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]+\b/g;
+    const isKnownNonPaymentToken = (value: string) =>
+      /^20\d{2}-\d{2}-\d{2}T\d{2}$/.test(value) ||
+      /^[0-9a-f]{40}$/.test(value) ||
+      /^\d+-(?:question|sentence)$/.test(value) ||
+      value === "membership-payment-schema-v1" ||
+      /^(?:founder|teacher)(?:-[a-z]+)*-(?:payment|renewal)(?:-[a-z]+)*-\d{3}$/i.test(value);
+
+    for (const artifact of reconciliationArtifacts) {
+      expect(artifact.content, `${artifact.path} contains a literal UUID`).not.toMatch(uuidLiteral);
+      expect(artifact.content, `${artifact.path} contains an email literal`).not.toMatch(emailLiteral);
+      expect(artifact.content, `${artifact.path} contains a Thai mobile literal`).not.toMatch(
+        thaiMobileLiteral,
+      );
+
+      const unexpectedLongNumbers = [...artifact.content.matchAll(/\b\d{10,}\b/g)]
+        .map(([value]) => value)
+        .filter((value) => !/^20\d{12}$/.test(value));
+      expect(
+        unexpectedLongNumbers,
+        `${artifact.path} contains a plausible numeric payment reference`,
+      ).toEqual([]);
+
+      const singleLineStringLiterals = [
+        ...artifact.content.matchAll(/(["'`])([^\r\n"'`]{1,200})\1/g),
+      ].map((match) => match[2]);
+      const unexpectedMixedReferences = singleLineStringLiterals
+        .flatMap((literal) => [...literal.matchAll(mixedReferenceCandidate)].map(([value]) => value))
+        .filter((value) => !isKnownNonPaymentToken(value));
+      expect(
+        unexpectedMixedReferences,
+        `${artifact.path} contains a plausible mixed payment reference`,
+      ).toEqual([]);
+    }
+  });
+
+  it("skips reconciliation only for a pristine zero-request replay", () => {
+    const preflight = section(
+      "select count(*)::integer into v_all_request_count",
+      "-- Payment references remain readable only in the protected audit table",
+    );
+    const reconciliation = section(
+      "-- Reconcile the reviewed owner-only test applications only after the audit",
+      "create unique index upgrade_requests_one_pending_per_user",
+    );
+
+    expect(sql.match(/if v_all_request_count = 0 then/g)).toHaveLength(2);
+
+    expect(preflight).toContain("select count(*)::integer into v_all_request_count");
+    expect(preflight).toContain(
+      "-- A pristine migration replay has no application history to reconcile",
+    );
+    expect(preflight).toContain("if v_all_request_count = 0 then");
+    expect(preflight.indexOf("else")).toBeLessThan(
+      preflight.indexOf("-- The only reviewed duplicate is an owner-owned Founder/Teacher test pair"),
+    );
+    expect(preflight).toContain("v_target_count <> 2");
+    expect(preflight).toContain(
+      "the exact Founder/Teacher pair does not match the reviewed production audit",
+    );
+
+    expect(reconciliation).toContain("-- A pristine replay has no rows to resolve or audit");
+    expect(reconciliation).toContain("if v_all_request_count = 0 then");
+    expect(reconciliation.indexOf("else")).toBeLessThan(
+      reconciliation.indexOf("v_target_count <> 2"),
+    );
+    expect(reconciliation).toContain("v_target_clean_payment_count <> 2");
+    expect(reconciliation).toContain("reviewed applications changed before cleanup");
+  });
+
+  it("creates pending-user uniqueness only after the exact reconciliation", () => {
+    const reconciliationIndex = sql.indexOf(
+      "-- Reconcile the reviewed owner-only test applications only after the audit",
+    );
+    const cleanupIndex = sql.indexOf("resolution_reason_code = 'owner_test_cleanup'", reconciliationIndex);
+    const auditIndex = sql.indexOf(
+      "insert into public.membership_application_resolution_audit",
+      reconciliationIndex,
+    );
+    const uniqueIndex = sql.indexOf("create unique index upgrade_requests_one_pending_per_user");
+
+    expect(reconciliationIndex).toBeGreaterThanOrEqual(0);
+    expect(cleanupIndex).toBeGreaterThan(reconciliationIndex);
+    expect(auditIndex).toBeGreaterThan(cleanupIndex);
+    expect(uniqueIndex).toBeGreaterThan(auditIndex);
   });
 
   it("uses a permanent, structurally bounded Founder ledger", () => {
@@ -206,5 +407,17 @@ describe("Founder payment-confirmation migration", () => {
     expect(executable).not.toMatch(/delete\s+from/i);
     expect(executable).not.toMatch(/truncate/i);
     expect(executable).not.toMatch(/drop\s+table/i);
+  });
+
+  it("publishes readiness only after the RPCs and postcondition assertions", () => {
+    const marker = "system.membership_payment_confirmation_v1_ready";
+    const markerIndex = sql.lastIndexOf(marker);
+    const postconditionIndex = sql.lastIndexOf("Postconditions run before publishing the readiness marker");
+    const declineIndex = sql.lastIndexOf("create or replace function public.decline_upgrade_request");
+
+    expect(markerIndex).toBeGreaterThan(postconditionIndex);
+    expect(markerIndex).toBeGreaterThan(declineIndex);
+    expect(sql.slice(markerIndex)).not.toContain("plan_features");
+    expect(sql.trimEnd()).toMatch(/\);$/);
   });
 });

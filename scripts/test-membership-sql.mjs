@@ -4,10 +4,6 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 
-// Executes the actual pending SQL against an isolated Postgres-compatible
-// engine. The small baseline below only supplies objects introduced by older
-// migrations; this is not a substitute for staging against a live DB copy.
-const db = new PGlite({ extensions: { pgcrypto } });
 const files = [
   "20260901090000_017b_membership_catalog_and_capabilities.sql",
   "20260901090100_018_subscriptions_and_legacy_backfill.sql",
@@ -15,7 +11,7 @@ const files = [
   "20260901090300_020_membership_safety_guards.sql",
   "20260901090400_021_founder_seat_usage.sql",
   "20260924170000_025_active_founder_capacity.sql",
-  "20261001180000_047_founder_payment_confirmation.sql",
+  "20261001190000_048_founder_payment_confirmation.sql",
 ];
 const plusFeatures = [
   "คลังสื่อพร้อมสอนทั้งหมด",
@@ -23,13 +19,19 @@ const plusFeatures = [
   "เครื่องมือในห้องเรียนครบชุด",
 ];
 const legacyUser = randomUUID();
+const ownerTestUser = randomUUID();
+const ownerTestFounderCreatedAt = "2026-10-01T12:48:53.40514+00:00";
+const ownerTestTeacherCreatedAt = "2026-10-01T12:49:04.996398+00:00";
+const mismatchedTeacherCreatedAt = "2026-10-01T12:49:04.996399+00:00";
 
 async function rejectsWith(run, message) {
   await assert.rejects(run, (error) => String(error).includes(message));
 }
 
-try {
-  await db.exec(`
+// Executes the actual pending SQL against an isolated Postgres-compatible
+// engine. The small baseline below only supplies objects introduced by older
+// migrations; this is not a substitute for staging against a live DB copy.
+const baselineSql = `
     create role anon;
     create role authenticated;
     create schema auth;
@@ -89,12 +91,521 @@ try {
     alter table storage.objects enable row level security;
     create policy resource_files_entitled_read on storage.objects
       for select using (bucket_id = 'resource-files');
-  `);
+`;
+
+async function createBaselineDb() {
+  const instance = new PGlite({ extensions: { pgcrypto } });
+  await instance.exec(baselineSql);
+  return instance;
+}
+
+// Supabase owns the transaction around each migration and records the
+// migration ledger in that same unit. PGlite executes raw SQL directly, so the
+// harness supplies the runner boundary instead of allowing BEGIN/COMMIT inside
+// a migration file.
+async function runMigrationTransactionally(instance, migrationSql) {
+  await instance.exec("begin;");
+  try {
+    await instance.exec(migrationSql);
+    await instance.exec("commit;");
+  } catch (error) {
+    await instance.exec("rollback;");
+    throw error;
+  }
+}
+
+async function getPreservedPlusSnapshot(instance, userId, requestId, subscriptionId) {
+  const result = await instance.query(`
+    select
+      profile.id as profile_id,
+      profile.plan as profile_plan,
+      profile.role as profile_role,
+      request.id as request_id,
+      request.user_id as request_user_id,
+      request.plan_id as request_plan_id,
+      request.status as request_status,
+      request.created_at::text as request_created_at,
+      request.resolved_at::text as request_resolved_at,
+      subscription.id as subscription_id,
+      subscription.user_id as subscription_user_id,
+      subscription.plan_id as subscription_plan_id,
+      subscription.status as subscription_status,
+      subscription.source as subscription_source,
+      subscription.approved_from_request_id,
+      subscription.price_amount_thb,
+      subscription.billing_interval,
+      subscription.started_at::text as subscription_started_at,
+      subscription.current_period_start::text as subscription_period_start,
+      subscription.current_period_end::text as subscription_period_end,
+      subscription.cancelled_at::text as subscription_cancelled_at,
+      subscription.founder_started_at::text as subscription_founder_started_at,
+      subscription.founder_status as subscription_founder_status,
+      subscription.founder_price_lock,
+      subscription.created_by,
+      subscription.created_at::text as subscription_created_at,
+      subscription.updated_at::text as subscription_updated_at
+    from public.profiles profile
+    join public.upgrade_requests request on request.id = $2
+    join public.subscriptions subscription on subscription.id = $3
+    where profile.id = $1
+      and request.user_id = profile.id
+      and subscription.user_id = profile.id
+  `, [userId, requestId, subscriptionId]);
+  assert.equal(result.rows.length, 1, "preserved Plus entitlement snapshot is incomplete");
+  return result.rows[0];
+}
+
+const db = await createBaselineDb();
+
+try {
   await db.query("insert into public.profiles(id, plan) values ($1, 'plus')", [legacyUser]);
 
   for (const file of files) {
-    await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8"));
+    const migrationSql = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+    let preservedPlusSnapshot;
+
+    if (file.includes("_048_")) {
+      // Reproduce the reviewed production shape without copying any production
+      // UUID or personal data. The owner has an unrelated approved Plus request
+      // and current Plus subscription that reconciliation must preserve.
+      await db.query(
+        "insert into public.profiles(id, plan, role) values ($1, 'plus', 'owner')",
+        [ownerTestUser],
+      );
+      const preservedPlusRequest = await db.query(`
+        insert into public.upgrade_requests (
+          user_id, plan_id, status, created_at, resolved_at
+        ) values (
+          $1, 'plus', 'approved', timestamptz '2026-09-30 12:00:00+00',
+          timestamptz '2026-09-30 12:05:00+00'
+        ) returning id
+      `, [ownerTestUser]);
+      const preservedPlusSubscription = await db.query(`
+        insert into public.subscriptions (
+          user_id, plan_id, status, source, approved_from_request_id,
+          price_amount_thb, billing_interval, started_at,
+          current_period_start, current_period_end
+        ) values (
+          $1, 'plus', 'active', 'upgrade_request', $2,
+          990, 'year', timestamptz '2026-09-30 12:05:00+00',
+          timestamptz '2026-09-30 12:05:00+00',
+          timestamptz '2027-09-30 12:05:00+00'
+        ) returning id
+      `, [ownerTestUser, preservedPlusRequest.rows[0].id]);
+      preservedPlusSnapshot = await getPreservedPlusSnapshot(
+        db,
+        ownerTestUser,
+        preservedPlusRequest.rows[0].id,
+        preservedPlusSubscription.rows[0].id,
+      );
+
+      const pendingOwnerTestRequests = await db.query(`
+        insert into public.upgrade_requests (user_id, plan_id, status, created_at)
+        values
+          ($1, 'founder', 'pending', $2::timestamptz),
+          ($1, 'teacher', 'pending', $3::timestamptz)
+        returning id, plan_id
+      `, [ownerTestUser, ownerTestFounderCreatedAt, mismatchedTeacherCreatedAt]);
+      assert.equal(pendingOwnerTestRequests.rows.length, 2);
+
+      await rejectsWith(
+        () => runMigrationTransactionally(db, migrationSql),
+        "Owner test reconciliation blocked:",
+      );
+
+      const rollbackState = await db.query(`
+        select
+          exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'plans'
+              and column_name = 'renewal_price_amount_thb'
+          ) as renewal_column_exists,
+          pg_catalog.to_regclass('public.membership_payment_confirmations') is not null
+            as payment_audit_exists,
+          exists (
+            select 1 from public.features
+            where id = 'system.membership_payment_confirmation_v1_ready'
+          ) as readiness_marker_exists,
+          (
+            select count(*)::integer
+            from public.upgrade_requests
+            where user_id = $1 and status = 'pending'
+          ) as pending_owner_test_requests,
+          (
+            select count(*)::integer
+            from public.upgrade_requests
+            where user_id = $1 and status = 'approved' and plan_id = 'plus'
+          ) as approved_plus_requests,
+          (
+            select count(*)::integer
+            from public.subscriptions
+            where id = $2 and user_id = $1 and plan_id = 'plus'
+              and status = 'active' and approved_from_request_id = $3
+          ) as active_plus_subscriptions,
+          (select plan from public.profiles where id = $1) as profile_plan,
+          (select count(*)::integer from public.founder_seat_ledger) as founder_seats
+      `, [
+        ownerTestUser,
+        preservedPlusSubscription.rows[0].id,
+        preservedPlusRequest.rows[0].id,
+      ]);
+      assert.deepEqual(rollbackState.rows[0], {
+        renewal_column_exists: false,
+        payment_audit_exists: false,
+        readiness_marker_exists: false,
+        pending_owner_test_requests: 2,
+        approved_plus_requests: 1,
+        active_plus_subscriptions: 1,
+        profile_plan: "plus",
+        founder_seats: 0,
+      }, "failed 048 preflight left partial schema or readiness state");
+
+      // Correct only the synthetic mismatch, then retry the same migration.
+      // The retry must reconcile the exact reviewed shape atomically rather
+      // than relying on destructive test-fixture cleanup.
+      await db.query(`
+        update public.upgrade_requests
+        set created_at = $2::timestamptz
+        where user_id = $1 and plan_id = 'teacher' and status = 'pending'
+      `, [ownerTestUser, ownerTestTeacherCreatedAt]);
+
+      const assertPre048Rollback = async (label) => {
+        const state = await db.query(`
+          select
+            exists (
+              select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'plans'
+                and column_name = 'renewal_price_amount_thb'
+            ) as renewal_column_exists,
+            pg_catalog.to_regclass('public.membership_payment_confirmations') is not null
+              as payment_audit_exists,
+            pg_catalog.to_regclass('public.membership_application_resolution_audit') is not null
+              as resolution_audit_exists,
+            pg_catalog.to_regclass('public.upgrade_requests_one_pending_per_user') is not null
+              as pending_index_exists,
+            (
+              select count(*)::integer
+              from public.features
+              where id = 'system.membership_payment_confirmation_v1_ready'
+            ) as readiness_markers,
+            (
+              select count(*)::integer
+              from public.upgrade_requests
+              where user_id = $1 and status = 'pending' and resolved_at is null
+            ) as pending_owner_test_requests,
+            (select count(*)::integer from public.founder_seat_ledger) as founder_seats
+        `, [ownerTestUser]);
+        assert.deepEqual(state.rows[0], {
+          renewal_column_exists: false,
+          payment_audit_exists: false,
+          resolution_audit_exists: false,
+          pending_index_exists: false,
+          readiness_markers: 0,
+          pending_owner_test_requests: 2,
+          founder_seats: 0,
+        }, `${label} left partial 048 schema or reconciled data behind`);
+        assert.deepEqual(
+          await getPreservedPlusSnapshot(
+            db,
+            ownerTestUser,
+            preservedPlusRequest.rows[0].id,
+            preservedPlusSubscription.rows[0].id,
+          ),
+          preservedPlusSnapshot,
+          `${label} changed the preserved Plus membership`,
+        );
+      };
+
+      const failClosedCases = [
+        {
+          label: "non-owner target",
+          error: "reviewed owner profile or Plus plan changed",
+          arrange: () => db.query(
+            "update public.profiles set role = 'member' where id = $1",
+            [ownerTestUser],
+          ),
+          restore: () => db.query(
+            "update public.profiles set role = 'owner' where id = $1",
+            [ownerTestUser],
+          ),
+        },
+        {
+          label: "missing current Plus entitlement",
+          error: "unrelated active Plus subscription no longer matches",
+          arrange: () => db.query(
+            "update public.upgrade_requests set status = 'declined' where id = $1",
+            [preservedPlusRequest.rows[0].id],
+          ),
+          restore: () => db.query(
+            "update public.upgrade_requests set status = 'approved' where id = $1",
+            [preservedPlusRequest.rows[0].id],
+          ),
+        },
+        {
+          label: "target linked to an entitlement",
+          error: "reviewed application is already linked to a subscription",
+          arrange: async () => {
+            const founderRequest = pendingOwnerTestRequests.rows.find(
+              (request) => request.plan_id === "founder",
+            );
+            assert.ok(founderRequest);
+            await db.query(`
+              insert into public.subscriptions (
+                user_id, plan_id, status, source, approved_from_request_id,
+                price_amount_thb, billing_interval, started_at,
+                current_period_start, current_period_end
+              ) values (
+                $1, 'teacher', 'expired', 'upgrade_request', $2,
+                599, 'year', timestamptz '2025-01-01 00:00:00+00',
+                timestamptz '2025-01-01 00:00:00+00',
+                timestamptz '2026-01-01 00:00:00+00'
+              )
+            `, [ownerTestUser, founderRequest.id]);
+          },
+          restore: () => db.query(`
+            update public.subscriptions
+            set approved_from_request_id = null
+            where user_id = $1 and plan_id = 'teacher' and status = 'expired'
+          `, [ownerTestUser]),
+        },
+        {
+          label: "additional duplicate-pending owner",
+          error: "expected exactly one reviewed duplicate-pending owner",
+          arrange: async () => {
+            const extraDuplicateUser = randomUUID();
+            await db.query("insert into public.profiles(id) values ($1)", [extraDuplicateUser]);
+            await db.query(`
+              insert into public.upgrade_requests (user_id, plan_id, status)
+              values ($1, 'founder', 'pending'), ($1, 'teacher', 'pending')
+            `, [extraDuplicateUser]);
+          },
+          restore: () => db.query(`
+            update public.upgrade_requests request
+            set status = 'declined', resolved_at = now()
+            where request.plan_id = 'teacher'
+              and request.status = 'pending'
+              and request.user_id <> $1
+          `, [ownerTestUser]),
+        },
+      ];
+
+      for (const testCase of failClosedCases) {
+        await testCase.arrange();
+        await rejectsWith(
+          () => runMigrationTransactionally(db, migrationSql),
+          testCase.error,
+        );
+        await testCase.restore();
+        await assertPre048Rollback(testCase.label);
+      }
+
+      const cleanupMarker = "-- Reconcile the reviewed owner-only test applications only after the audit";
+      const paymentEvidenceSql = migrationSql.replace(cleanupMarker, `
+        insert into public.membership_payment_confirmations (
+          idempotency_key, operation, request_id, user_id,
+          application_reference_code, plan_id, amount_thb,
+          payment_reference, paid_at, confirmed_by
+        )
+        select
+          gen_random_uuid(), 'activation', request.id, request.user_id,
+          request.reference_code, request.plan_id, 299,
+          'test-only-payment-evidence', now(), request.user_id
+        from public.upgrade_requests request
+        where request.plan_id = 'founder'
+          and request.created_at = timestamptz '${ownerTestFounderCreatedAt}';
+
+        ${cleanupMarker}
+      `);
+      assert.notEqual(paymentEvidenceSql, migrationSql,
+        "payment-evidence test could not locate the reconciliation marker");
+      await rejectsWith(
+        () => runMigrationTransactionally(db, paymentEvidenceSql),
+        "reviewed application gained payment or entitlement evidence",
+      );
+      await assertPre048Rollback("payment-evidence mismatch");
+
+      // Force the last readiness-marker insert to fail after cleanup DML and
+      // both immutable audits have executed. The outer migration transaction
+      // must restore the original pending rows and remove every 048 object.
+      await db.exec(`
+        create function public.reject_test_readiness_marker()
+        returns trigger language plpgsql as $$
+        begin
+          if new.id = 'system.membership_payment_confirmation_v1_ready' then
+            raise exception 'test-only late readiness failure';
+          end if;
+          return new;
+        end;
+        $$;
+        create trigger trg_reject_test_readiness_marker
+          before insert on public.features
+          for each row execute function public.reject_test_readiness_marker();
+      `);
+      await rejectsWith(
+        () => runMigrationTransactionally(db, migrationSql),
+        "test-only late readiness failure",
+      );
+      await assertPre048Rollback("late readiness failure");
+      await db.exec(`
+        drop trigger trg_reject_test_readiness_marker on public.features;
+        drop function public.reject_test_readiness_marker();
+      `);
+    }
+
+    await runMigrationTransactionally(db, migrationSql);
     process.stdout.write(`executed ${file}\n`);
+
+    if (file.includes("_048_")) {
+      assert.ok(preservedPlusSnapshot, "missing pre-migration Plus entitlement snapshot");
+      const postMigrationPlusSnapshot = await getPreservedPlusSnapshot(
+        db,
+        ownerTestUser,
+        preservedPlusSnapshot.request_id,
+        preservedPlusSnapshot.subscription_id,
+      );
+      assert.deepEqual(
+        postMigrationPlusSnapshot,
+        preservedPlusSnapshot,
+        "048 changed an identifier or entitlement-relevant field on the preserved Plus membership",
+      );
+
+      const reconciledRequests = await db.query(`
+        select request.plan_id, request.status, request.resolution_reason_code,
+          request.resolved_at, request.resolved_by,
+          count(audit.id)::integer as audit_rows,
+          min(audit.previous_status) as previous_status,
+          min(audit.new_status) as new_status,
+          min(audit.reason_code) as audit_reason_code,
+          min(audit.resolved_by::text)::uuid as audit_resolved_by,
+          bool_and(audit.resolved_at = request.resolved_at) as matching_resolved_at
+        from public.upgrade_requests request
+        left join public.membership_application_resolution_audit audit
+          on audit.request_id = request.id
+        where request.user_id = $1
+          and request.plan_id in ('founder', 'teacher')
+          and request.created_at in ($2::timestamptz, $3::timestamptz)
+        group by request.id, request.plan_id, request.status,
+          request.resolution_reason_code, request.resolved_at, request.resolved_by
+        order by request.plan_id
+      `, [ownerTestUser, ownerTestFounderCreatedAt, ownerTestTeacherCreatedAt]);
+      assert.equal(reconciledRequests.rows.length, 2,
+        "048 deleted or failed to retain one of the reviewed owner-test requests");
+      for (const request of reconciledRequests.rows) {
+        assert.equal(request.status, "declined");
+        assert.equal(request.resolution_reason_code, "owner_test_cleanup");
+        assert.ok(request.resolved_at);
+        assert.equal(request.resolved_by, ownerTestUser);
+        assert.equal(request.audit_rows, 1);
+        assert.equal(request.previous_status, "pending");
+        assert.equal(request.new_status, "declined");
+        assert.equal(request.audit_reason_code, "owner_test_cleanup");
+        assert.equal(request.audit_resolved_by, ownerTestUser);
+        assert.equal(request.matching_resolved_at, true);
+      }
+
+      const preservedState = await db.query(`
+        select
+          profile.plan as profile_plan,
+          request.id as plus_request_id,
+          request.status as plus_request_status,
+          request.plan_id as plus_request_plan,
+          subscription.id as subscription_id,
+          subscription.plan_id as subscription_plan,
+          subscription.status as subscription_status,
+          subscription.approved_from_request_id,
+          (select count(*)::integer from public.founder_seat_ledger) as founder_seats,
+          (
+            select count(*)::integer
+            from public.upgrade_requests
+            where user_id = $1
+          ) as total_owner_requests,
+          (
+            select count(*)::integer
+            from public.membership_application_resolution_audit
+            where request_id in (
+              select id from public.upgrade_requests
+              where user_id = $1 and resolution_reason_code = 'owner_test_cleanup'
+            )
+          ) as cleanup_audit_rows
+        from public.profiles profile
+        join public.upgrade_requests request
+          on request.user_id = profile.id
+          and request.plan_id = 'plus'
+          and request.status = 'approved'
+        join public.subscriptions subscription
+          on subscription.user_id = profile.id
+          and subscription.plan_id = 'plus'
+          and subscription.status = 'active'
+          and subscription.approved_from_request_id = request.id
+        where profile.id = $1
+      `, [ownerTestUser]);
+      const preserved = preservedState.rows[0];
+      assert.ok(preserved.plus_request_id);
+      assert.ok(preserved.subscription_id);
+      assert.equal(preserved.approved_from_request_id, preserved.plus_request_id,
+        "the preserved Plus subscription was re-linked to a different application");
+      assert.deepEqual({
+        profile_plan: preserved.profile_plan,
+        plus_request_status: preserved.plus_request_status,
+        plus_request_plan: preserved.plus_request_plan,
+        subscription_plan: preserved.subscription_plan,
+        subscription_status: preserved.subscription_status,
+        founder_seats: preserved.founder_seats,
+        total_owner_requests: preserved.total_owner_requests,
+        cleanup_audit_rows: preserved.cleanup_audit_rows,
+      }, {
+        profile_plan: "plus",
+        plus_request_status: "approved",
+        plus_request_plan: "plus",
+        subscription_plan: "plus",
+        subscription_status: "active",
+        founder_seats: 0,
+        total_owner_requests: 3,
+        cleanup_audit_rows: 2,
+      }, "048 changed the unrelated Plus membership or duplicated cleanup state");
+
+      // Supabase's migration ledger prevents an applied migration from running
+      // twice. Prove that an accidental direct retry still fails closed before
+      // duplicating audit facts or disturbing the preserved entitlement.
+      await rejectsWith(
+        () => runMigrationTransactionally(db, migrationSql),
+        "partial schema detected",
+      );
+      const retryState = await db.query(`
+        select
+          (
+            select count(*)::integer
+            from public.upgrade_requests
+            where user_id = $1 and status = 'declined'
+              and resolution_reason_code = 'owner_test_cleanup'
+          ) as declined_cleanup_requests,
+          (
+            select count(*)::integer
+            from public.membership_application_resolution_audit
+            where user_id = $1 and reason_code = 'owner_test_cleanup'
+          ) as cleanup_audit_rows,
+          (
+            select count(*)::integer
+            from public.subscriptions
+            where user_id = $1 and plan_id = 'plus' and status = 'active'
+          ) as active_plus_subscriptions,
+          (select plan from public.profiles where id = $1) as profile_plan,
+          (select count(*)::integer from public.founder_seat_ledger) as founder_seats,
+          (
+            select count(*)::integer
+            from public.features
+            where id = 'system.membership_payment_confirmation_v1_ready'
+          ) as readiness_markers
+      `, [ownerTestUser]);
+      assert.deepEqual(retryState.rows[0], {
+        declined_cleanup_requests: 2,
+        cleanup_audit_rows: 2,
+        active_plus_subscriptions: 1,
+        profile_plan: "plus",
+        founder_seats: 0,
+        readiness_markers: 1,
+      }, "an accidental 048 retry changed reconciled membership state");
+    }
 
     if (file.includes("_019_")) {
       const policy = await db.query(`
@@ -228,8 +739,56 @@ try {
       );
       assert.equal(interimPrice.rows[0].price_amount_thb, 599, "019 alone kept an old renewal price");
       await db.query("select set_config('request.jwt.claim.sub', '', false)");
+      // Keep the later reconciliation fixture production-like: its shared
+      // application owner is the sole resolver candidate at migration time.
+      await db.query("update public.profiles set role = 'member' where id = $1", [interimAdmin]);
     }
   }
+
+  // A fresh install has no historic applications to reconcile. Replay the
+  // entire active membership chain on a second pristine database and prove
+  // the production-only cleanup branch is skipped without weakening 048.
+  const pristineDb = await createBaselineDb();
+  try {
+    for (const file of files) {
+      await runMigrationTransactionally(
+        pristineDb,
+        readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8"),
+      );
+    }
+    const pristineState = await pristineDb.query(`
+      select
+        (select count(*)::integer from public.upgrade_requests) as applications,
+        (
+          select count(*)::integer
+          from public.membership_application_resolution_audit
+        ) as resolution_audits,
+        (select count(*)::integer from public.founder_seat_ledger) as founder_seats,
+        (
+          select count(*)::integer from public.features
+          where id = 'system.membership_payment_confirmation_v1_ready'
+        ) as readiness_markers,
+        pg_catalog.to_regclass('public.upgrade_requests_one_pending_per_user') is not null
+          as pending_index_exists
+    `);
+    assert.deepEqual(pristineState.rows[0], {
+      applications: 0,
+      resolution_audits: 0,
+      founder_seats: 0,
+      readiness_markers: 1,
+      pending_index_exists: true,
+    }, "pristine membership migration replay did not complete cleanly");
+  } finally {
+    await pristineDb.close();
+  }
+
+  const readinessMarker = await db.query(`
+    select count(*)::integer as count
+    from public.features
+    where id = 'system.membership_payment_confirmation_v1_ready'
+  `);
+  assert.equal(readinessMarker.rows[0].count, 1,
+    "048 did not publish exactly one final membership schema-readiness marker");
 
   const plus = await db.query("select features from public.plans where id = 'plus'");
   assert.deepEqual(plus.rows[0].features, plusFeatures, "016d Plus copy was overwritten");
@@ -338,6 +897,44 @@ try {
     return result.rows[0].period_end;
   };
 
+  const declinedUser = randomUUID();
+  await db.query("insert into public.profiles(id) values ($1)", [declinedUser]);
+  const declinedApplication = await createApplication(declinedUser, "teacher");
+  await setActor(admin);
+  await db.query("select public.decline_upgrade_request($1)", [declinedApplication.id]);
+  const declinedState = await db.query(`
+    select request.status, request.resolution_reason_code,
+      request.resolved_by, audit.previous_status, audit.new_status,
+      audit.reason_code, audit.resolved_by as audit_resolved_by
+    from public.upgrade_requests request
+    join public.membership_application_resolution_audit audit
+      on audit.request_id = request.id
+    where request.id = $1
+  `, [declinedApplication.id]);
+  assert.deepEqual(declinedState.rows[0], {
+    status: "declined",
+    resolution_reason_code: "admin_declined",
+    resolved_by: admin,
+    previous_status: "pending",
+    new_status: "declined",
+    reason_code: "admin_declined",
+    audit_resolved_by: admin,
+  }, "ordinary decline did not preserve its machine-readable resolution audit");
+  await rejectsWith(
+    () => db.query(
+      "update public.membership_application_resolution_audit set reason_code = 'changed' where request_id = $1",
+      [declinedApplication.id],
+    ),
+    "resolution audit facts cannot be changed",
+  );
+  await rejectsWith(
+    () => db.query(
+      "delete from public.membership_application_resolution_audit where request_id = $1",
+      [declinedApplication.id],
+    ),
+    "resolution audit is append-only",
+  );
+
   const firstFounderUser = randomUUID();
   await db.query("insert into public.profiles(id) values ($1)", [firstFounderUser]);
   const firstApplication = await createApplication(firstFounderUser, "founder");
@@ -444,23 +1041,35 @@ try {
 
   const firstActivationState = await db.query(`
     select request.status, request.payment_confirmed_amount_thb,
-      request.payment_reference, subscription.price_amount_thb,
-      subscription.plan_id
+      request.payment_reference, request.resolution_reason_code,
+      subscription.price_amount_thb, subscription.plan_id,
+      resolution.previous_status, resolution.new_status,
+      resolution.reason_code
     from public.upgrade_requests request
     join public.subscriptions subscription on subscription.approved_from_request_id = request.id
+    join public.membership_application_resolution_audit resolution
+      on resolution.request_id = request.id
     where request.id = $1
   `, [firstApplication.id]);
   assert.deepEqual(firstActivationState.rows[0], {
     status: "approved",
     payment_confirmed_amount_thb: 299,
     payment_reference: "founder-payment-001",
+    resolution_reason_code: "payment_confirmed",
     price_amount_thb: 299,
     plan_id: "founder",
+    previous_status: "pending",
+    new_status: "approved",
+    reason_code: "payment_confirmed",
   });
   assert.equal((await db.query(
     "select count(*)::integer as count from public.membership_payment_confirmations where request_id = $1",
     [firstApplication.id],
   )).rows[0].count, 1, "activation retry duplicated its payment audit");
+  assert.equal((await db.query(
+    "select count(*)::integer as count from public.membership_application_resolution_audit where request_id = $1",
+    [firstApplication.id],
+  )).rows[0].count, 1, "activation retry duplicated its resolution audit");
   const firstPaymentFingerprint = createHash("sha256")
     .update("founder-payment-001")
     .digest("hex");

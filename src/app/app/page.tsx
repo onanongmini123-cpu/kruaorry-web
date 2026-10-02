@@ -32,6 +32,10 @@ import {
 } from "@/lib/data";
 import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import type { FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  type MembershipSchemaReadiness,
+} from "@/lib/membershipSchemaReadiness";
 import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
@@ -90,6 +94,7 @@ export default function TeacherAppPage() {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(null);
+  const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -105,13 +110,14 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
-      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, founderCapacityData] = await Promise.all([
+      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, schemaReadiness, founderCapacityData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
         fetchEntitlements(supabase),
         fetchRequests(supabase),
         fetchSavedResourceIds(supabase, user.id),
+        fetchMembershipSchemaReadiness(supabase),
         fetchFounderCapacity(supabase),
       ]);
       if (!profileData) {
@@ -129,7 +135,8 @@ export default function TeacherAppPage() {
       setEntitlements(entitlementData);
       setRequests(requestData);
       setSaved(savedIds);
-      setFounderCapacity(founderCapacityData);
+      setMembershipSchemaReadiness(schemaReadiness);
+      setFounderCapacity(schemaReadiness === "ready" ? founderCapacityData : null);
       const discoveryState = appDiscoveryStateFromSearch(window.location.search);
       setQuery(discoveryState.query);
       setCategory(discoveryState.category);
@@ -148,7 +155,10 @@ export default function TeacherAppPage() {
   useEffect(() => {
     let active = true;
     const refreshFounderCapacity = () => {
-      void fetchFounderCapacity(supabase).then((capacity) => {
+      void fetchMembershipSchemaReadiness(supabase).then(async (readiness) => {
+        if (!active) return;
+        setMembershipSchemaReadiness(readiness);
+        const capacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
         if (active) setFounderCapacity(capacity);
       });
     };
@@ -636,7 +646,9 @@ export default function TeacherAppPage() {
                         </div>
                         {plan.id === "founder" && (
                           <div role="status" className="kru-founder-capacity">
-                            {founderCapacity ? (
+                            {membershipSchemaReadiness === "unavailable" ? (
+                              <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
+                            ) : founderCapacity ? (
                               <>
                                 <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
                                 <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
@@ -645,7 +657,7 @@ export default function TeacherAppPage() {
                                 </span>
                               </>
                             ) : (
-                              <span>กำลังตรวจสอบจำนวนสิทธิ์ Founder</span>
+                              <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                             )}
                           </div>
                         )}

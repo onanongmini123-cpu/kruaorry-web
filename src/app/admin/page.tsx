@@ -32,6 +32,7 @@ import {
 } from "@/lib/resourceFile";
 import { applySelfRoleChange } from "@/lib/memberRole";
 import {
+  adminMembershipApplicationStatusLabel,
   canOfferAdminPlan,
   canRenewMember,
   effectiveMemberPlan,
@@ -41,6 +42,11 @@ import {
   type AdminPlan,
   type AdminSubscription,
 } from "@/lib/adminMembership";
+import {
+  fetchMembershipSchemaReadiness,
+  MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+  type MembershipSchemaReadiness,
+} from "@/lib/membershipSchemaReadiness";
 import { FOUNDER_CAPACITY_LIMIT, normalizeFounderCapacity } from "@/lib/founderCapacity";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
@@ -119,6 +125,7 @@ interface AdminUpgradeRequest {
   payment_confirmed_by: string | null;
   payment_confirmed_amount_thb: number | null;
   payment_reference: string | null;
+  resolution_reason_code: string | null;
   created_at: string;
   profiles: { full_name: string | null; email: string } | null;
 }
@@ -210,7 +217,7 @@ const AUDIT_FIELD_LABEL: Record<AdminAuditLogRow["field"], string> = { role: "�
 const MODERATION_PAGE_SIZE = 50;
 const ADMIN_REVIEW_SELECT = "id, resource_id, user_id, rating, body, moderation_status, created_at, updated_at, resources(title), profiles!resource_reviews_user_id_fkey(full_name, email)";
 const ADMIN_REPORT_SELECT = "id, resource_id, reporter_id, category, details, status, created_at, updated_at, resources(title), profiles(full_name, email)";
-const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
+const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
 
 const EMPTY_FORM = {
   title: "",
@@ -253,6 +260,7 @@ export default function AdminConsolePage() {
   const [reportTotal, setReportTotal] = useState(0);
   const [benefitRows, setBenefitRows] = useState<PlanBenefitRow[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
+  const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
   const [founderSeatsUsed, setFounderSeatsUsed] = useState<number | null>(null);
   const [founderCapacityRefreshing, setFounderCapacityRefreshing] = useState(false);
@@ -391,28 +399,16 @@ export default function AdminConsolePage() {
   };
 
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
-    const [
-      { data: resourceRows, error: resourceError },
-      { data: memberRows, error: memberError },
-      { data: requestRows, error: requestError },
-      { data: upgradeRows, error: upgradeError },
-      { data: planRows, error: planError },
-      { data: subscriptionRows, error: subscriptionError },
-      { data: founderCount, error: founderCountError },
-      { data: auditRows, error: auditError },
-      { data: accessRows, error: accessError },
-      { data: featuredRows, error: featuredError },
-      { data: reviewRows, error: reviewError, count: reviewCount },
-      { data: reportRows, error: reportError, count: reportCount },
-      { data: benefits, error: benefitError },
-    ] = await Promise.all([
+    setMembershipSchemaReadiness("checking");
+    // Keep the content, moderation and member-directory tools available while
+    // the payment-confirmation schema is being rolled out. Only the second
+    // batch below touches 048 columns/RPCs, and it cannot run until the shared
+    // readiness marker has been verified.
+    const baseDataPromise = Promise.all([
       supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("requests").select("id, title, votes, status, requested_by, created_at, profiles(full_name, email)").order("votes", { ascending: false }).order("created_at", { ascending: false }),
-      loadUpgradeRequests(),
-      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
-      loadCurrentSubscriptions(),
-      supabase.rpc("get_founder_capacity"),
+      supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("resource_plan_access").select("resource_id, plan_id").order("plan_id", { ascending: true }),
@@ -421,21 +417,28 @@ export default function AdminConsolePage() {
       supabase.from("resource_issue_reports").select(ADMIN_REPORT_SELECT, { count: "exact" }).order("created_at", { ascending: false }).order("id", { ascending: false }).range(nextReportPage * MODERATION_PAGE_SIZE, (nextReportPage + 1) * MODERATION_PAGE_SIZE - 1),
       supabase.from("plan_benefit_catalog").select("plan_id, feature_id, feature_name, feature_description, value_type, limit_value, sort_order").order("sort_order", { ascending: true }).order("feature_id", { ascending: true }),
     ]);
+    const readinessPromise = fetchMembershipSchemaReadiness(supabase);
+
+    const [
+      { data: resourceRows, error: resourceError },
+      { data: memberRows, error: memberError },
+      { data: requestRows, error: requestError },
+      { data: basePlanRows, error: basePlanError },
+      { data: auditRows, error: auditError },
+      { data: accessRows, error: accessError },
+      { data: featuredRows, error: featuredError },
+      { data: reviewRows, error: reviewError, count: reviewCount },
+      { data: reportRows, error: reportError, count: reportCount },
+      { data: benefits, error: benefitError },
+    ] = await baseDataPromise;
+
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
     if (memberError) console.error("Failed to load members:", memberError.message);
     if (requestError) console.error("Failed to load requests:", requestError.message);
     setResources((resourceRows as AdminResource[]) ?? []);
     setMembers((memberRows as AdminMember[]) ?? []);
     setRequests((requestRows as unknown as AdminRequest[]) ?? []);
-    if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
-    setUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []);
-    if (planError) console.error("Failed to load plans:", planError.message);
-    setPlans((planRows as AdminPlanRow[]) ?? []);
-    if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
-    setSubscriptions(subscriptionError || planError ? null : ((subscriptionRows as AdminSubscription[]) ?? []));
-    setMembershipDataError(subscriptionError || planError ? "ไม่สามารถตรวจแพ็กที่มีผลจริงได้ กรุณาตรวจการเชื่อมต่อและ migration ก่อนแก้ไขแพ็กสมาชิก" : null);
-    if (founderCountError) console.error("Failed to load Founder seat count:", founderCountError.message);
-    setFounderSeatsUsed(founderCountError ? null : normalizeFounderCapacity(founderCount)?.used ?? null);
+    if (basePlanError) console.error("Failed to load plans:", basePlanError.message);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
     if (accessError) console.error("Failed to load resource access:", accessError.message);
@@ -460,6 +463,55 @@ export default function AdminConsolePage() {
     }
     if (benefitError) console.error("Failed to load plan benefits:", benefitError.message);
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
+
+    const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
+      .map((plan) => ({ ...plan, renewal_price_amount_thb: null }));
+    setPlans(basePlanError ? [] : basePlans);
+
+    const readiness = await readinessPromise;
+
+    let membershipPlans = basePlans;
+    let membershipError: string | null = readiness === "ready" ? null : MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
+
+    if (readiness === "ready") {
+      const [
+        { data: upgradeRows, error: upgradeError },
+        { data: planRows, error: planError },
+        { data: subscriptionRows, error: subscriptionError },
+        { data: founderCount, error: founderCountError },
+      ] = await Promise.all([
+        loadUpgradeRequests(),
+        supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
+        loadCurrentSubscriptions(),
+        supabase.rpc("get_founder_capacity"),
+      ]);
+
+      if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
+      setUpgradeRequests(upgradeError ? [] : ((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []));
+      if (planError) console.error("Failed to load membership plans:", planError.message);
+      if (!planError) membershipPlans = (planRows as AdminPlanRow[]) ?? [];
+      if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
+      setSubscriptions(subscriptionError || planError ? null : ((subscriptionRows as AdminSubscription[]) ?? []));
+      if (founderCountError) console.error("Failed to load Founder seat count:", founderCountError.message);
+      setFounderSeatsUsed(founderCountError ? null : normalizeFounderCapacity(founderCount)?.used ?? null);
+      if (upgradeError || subscriptionError || planError || founderCountError) {
+        membershipError = "ไม่สามารถตรวจข้อมูลสมาชิกที่จำเป็นได้ จึงปิดการยืนยัน ปฏิเสธ และต่ออายุชั่วคราว";
+      }
+    } else {
+      setUpgradeRequests([]);
+      setSubscriptions(null);
+      setFounderSeatsUsed(null);
+      setPaymentTarget(null);
+    }
+
+    setMembershipDataError(membershipError);
+    setMembershipSchemaReadiness(readiness);
+    setPlans(membershipPlans);
+
+    // A missing 048 schema cannot prevent the base admin tools above from
+    // loading. The catalogue fallback intentionally omits the new renewal
+    // price while keeping resource-plan editing available.
+    if (basePlanError && readiness !== "ready") setPlans([]);
   };
 
   const subscriptionsByUser = useMemo(() => {
@@ -469,6 +521,8 @@ export default function AdminConsolePage() {
     }
     return byUser;
   }, [subscriptions]);
+  const membershipMutationsReady = membershipSchemaReadiness === "ready" && membershipDataError === null;
+  const membershipMaintenanceMessage = membershipDataError ?? MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
   const mutationBusy = saving || pendingAction !== null || changingPlanId !== null || paymentTarget !== null;
   const normalizedUpgradeSearch = upgradeSearch.trim().toLocaleLowerCase("th-TH");
   const filteredUpgradeRequests = useMemo(() => {
@@ -1083,6 +1137,10 @@ export default function AdminConsolePage() {
   };
 
   const openPaymentConfirmation = (target: PaymentConfirmationTarget) => {
+    if (!membershipMutationsReady) {
+      window.alert(membershipMaintenanceMessage);
+      return;
+    }
     if (mutationBusy) return;
     paymentTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setPaymentTarget(target);
@@ -1099,6 +1157,7 @@ export default function AdminConsolePage() {
   };
 
   const refreshFounderCapacityForPayment = async () => {
+    if (!membershipMutationsReady) return;
     setFounderCapacityRefreshing(true);
     try {
       const capacity = await fetchFounderCapacity(supabase);
@@ -1117,6 +1176,10 @@ export default function AdminConsolePage() {
   const handleConfirmPayment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!paymentTarget || pendingAction) return;
+    if (!membershipMutationsReady) {
+      setPaymentError(membershipMaintenanceMessage);
+      return;
+    }
     if (founderCapacityUnavailable) {
       setPaymentError("ยังตรวจสอบจำนวน Founder ปัจจุบันไม่ได้ จึงปิดการยืนยันชั่วคราว");
       return;
@@ -1171,6 +1234,10 @@ export default function AdminConsolePage() {
   };
 
   const handleApproveUpgrade = (request: AdminUpgradeRequest) => {
+    if (!membershipMutationsReady) {
+      window.alert(membershipMaintenanceMessage);
+      return;
+    }
     if (!request.payment_reported_at) {
       window.alert("ผู้สมัครยังไม่ได้แจ้งว่าส่งเลขอ้างอิงและหลักฐานแล้ว");
       return;
@@ -1189,6 +1256,10 @@ export default function AdminConsolePage() {
   };
 
   const handleDeclineUpgrade = async (id: string) => {
+    if (!membershipMutationsReady) {
+      window.alert(membershipMaintenanceMessage);
+      return;
+    }
     if (pendingAction || paymentTarget || !window.confirm("ปฏิเสธใบสมัครนี้ใช่หรือไม่? ผู้สมัครจะเห็นสถานะว่าไม่ผ่านการตรวจสอบ")) return;
     setPendingAction(`upgrade:${id}`);
     try {
@@ -1324,6 +1395,10 @@ export default function AdminConsolePage() {
   };
 
   const handleRenewSubscription = (subscription: AdminSubscription) => {
+    if (!membershipMutationsReady) {
+      window.alert(membershipMaintenanceMessage);
+      return;
+    }
     if (mutationBusy || !canRenewMember(subscription)) return;
     const plan = plans.find((item) => item.id === subscription.plan_id && item.lifecycle_status === "active");
     const price = renewalAmountThb(subscription, plan?.renewal_price_amount_thb ?? plan?.price_amount_thb ?? null);
@@ -1483,7 +1558,7 @@ export default function AdminConsolePage() {
                 <StatTile value={resources.filter((r) => r.status === "published").length} label="สื่อที่เผยแพร่แล้ว" icon={FolderOpen} tone="success" />
                 <StatTile value={members.length} label="สมาชิกทั้งหมด" icon={Users} tone="brand" />
                 <StatTile value={requests.filter((r) => r.status === "pending").length} label="คำขอจากครูที่รอ" icon={MessageSquareText} tone="info" />
-                <StatTile value={upgradeRequests.filter((r) => r.status === "pending").length} label="คำขออัปเกรดที่รอ" icon={Wallet} tone="warning" />
+                <StatTile value={membershipMutationsReady ? upgradeRequests.filter((r) => r.status === "pending").length : "—"} label="คำขออัปเกรดที่รอ" icon={Wallet} tone="warning" />
               </div>
             </div>
           )}
@@ -1929,6 +2004,11 @@ export default function AdminConsolePage() {
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>คำขออัปเกรด</h1>
               <p style={{ margin: "var(--sp-3) 0 var(--sp-5)", color: "var(--text-muted)" }}>จับคู่เลขอ้างอิงกับแชต LINE และตรวจยอดเงินเข้าจริงก่อนยืนยัน</p>
+              {!membershipMutationsReady && (
+                <p role="alert" className="kru-admin-membership-maintenance">
+                  {membershipMaintenanceMessage}
+                </p>
+              )}
               <Input
                 label="ค้นหาใบสมัคร"
                 icon={Search}
@@ -1938,7 +2018,7 @@ export default function AdminConsolePage() {
                 placeholder="เลขอ้างอิง ชื่อ หรืออีเมล"
                 containerClassName="kru-admin-upgrade-search"
               />
-              {upgradeRequests.length === 0 ? (
+              {!membershipMutationsReady ? null : upgradeRequests.length === 0 ? (
                 <EmptyState icon={Wallet} title="ยังไม่มีคำขออัปเกรด" description="" />
               ) : filteredUpgradeRequests.length === 0 ? (
                 <EmptyState icon={Search} title="ไม่พบใบสมัคร" description="ลองค้นหาด้วยเลขอ้างอิง ชื่อ หรืออีเมลอื่น" />
@@ -1950,7 +2030,7 @@ export default function AdminConsolePage() {
                         <div className="kru-admin-section-heading">
                           <div style={{ fontWeight: "var(--fw-semibold)" }}>{r.profiles?.full_name || r.profiles?.email || "(ไม่พบข้อมูลผู้ใช้)"}</div>
                           <Badge tone={r.status === "approved" ? "success" : r.status === "declined" ? "neutral" : r.payment_reported_at ? "info" : "warning"}>
-                            {r.status === "approved" ? "อนุมัติแล้ว" : r.status === "declined" ? "ปฏิเสธแล้ว" : r.payment_reported_at ? "แจ้งหลักฐานแล้ว · รอตรวจสอบ" : "รอแจ้งชำระ"}
+                            {adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)}
                           </Badge>
                         </div>
                         <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
@@ -1969,10 +2049,10 @@ export default function AdminConsolePage() {
                       </div>
                       {r.status === "pending" ? (
                         <div className="kru-admin-card-actions">
-                          <Button size="sm" icon={Check} disabled={mutationBusy || !r.payment_reported_at} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
+                          <Button size="sm" icon={Check} disabled={!membershipMutationsReady || mutationBusy || !r.payment_reported_at} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
                             {r.payment_reported_at ? `ยืนยันรับเงินจริง ${Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท` : "รอผู้สมัครแจ้งหลักฐาน"}
                           </Button>
-                          <Button size="sm" variant="ghost" icon={X} disabled={mutationBusy} onClick={() => handleDeclineUpgrade(r.id)}>
+                          <Button size="sm" variant="ghost" icon={X} disabled={!membershipMutationsReady || mutationBusy} onClick={() => handleDeclineUpgrade(r.id)}>
                             ปฏิเสธ
                           </Button>
                         </div>
@@ -2106,7 +2186,7 @@ export default function AdminConsolePage() {
                           </td>
                           <td data-label="การต่ออายุ" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
                             {canRenew && subscription ? (
-                              <Button size="sm" variant="ghost" disabled={mutationBusy} onClick={() => handleRenewSubscription(subscription)}>
+                              <Button size="sm" variant="ghost" disabled={!membershipMutationsReady || mutationBusy} onClick={() => handleRenewSubscription(subscription)}>
                                 ยืนยันชำระเพื่อต่ออายุ
                               </Button>
                             ) : "—"}
@@ -2265,6 +2345,7 @@ export default function AdminConsolePage() {
         .kru-admin-card-actions > .kru-btn { flex: 1 1 auto; }
         .kru-admin-request-card, .kru-admin-moderation-card, .kru-admin-benefit-card { padding: var(--sp-5); display: grid; gap: var(--sp-4); min-width: 0; }
         .kru-admin-card-list { display: grid; gap: var(--sp-4); max-width: 920px; }
+        .kru-admin-membership-maintenance { max-width: 920px; margin: 0 0 var(--sp-5); padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg); overflow-wrap: anywhere; }
         .kru-admin-upgrade-search { max-width: 520px; margin-bottom: var(--sp-6); }
         .kru-admin-payment-summary { margin: var(--sp-3) 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-2) var(--sp-5); }
         .kru-admin-payment-summary div { min-width: 0; }

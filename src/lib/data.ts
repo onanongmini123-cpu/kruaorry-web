@@ -6,6 +6,10 @@ import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
+import {
+  fetchMembershipSchemaReadiness,
+  MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+} from "@/lib/membershipSchemaReadiness";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -260,6 +264,8 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
 }
 
 export async function fetchFounderCapacity(supabase: SupabaseClient): Promise<FounderCapacity | null> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return null;
+
   const outcome = await withTimeout(Promise.resolve(supabase.rpc("get_founder_capacity")), "Founder capacity");
   if (!outcome.ok) {
     console.error(`fetchFounderCapacity failed: ${outcome.reason}`);
@@ -372,6 +378,7 @@ export interface UpgradeRequest {
   paymentConfirmedAt: string | null;
   paymentConfirmedAmountThb: number | null;
   paymentReference: string | null;
+  resolutionReasonCode: string | null;
   createdAt: string;
 }
 
@@ -386,6 +393,7 @@ interface UpgradeRequestRow {
   payment_confirmed_at: string | null;
   payment_confirmed_amount_thb: number | null;
   payment_reference: string | null;
+  resolution_reason_code: string | null;
   created_at: string;
 }
 
@@ -430,14 +438,17 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
       ? null
       : Number(persisted.payment_confirmed_amount_thb),
     paymentReference: persisted.payment_reference ?? null,
+    resolutionReasonCode: persisted.resolution_reason_code ?? null,
     createdAt: row.created_at,
   };
 }
 
 export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return [];
+
   const { data, error } = await supabase
     .from("upgrade_requests")
-    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, created_at")
+    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -449,6 +460,10 @@ export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: str
 }
 
 export async function createMembershipApplication(supabase: SupabaseClient, planId: string): Promise<MembershipApplicationMutationResult> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return { application: null, error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE };
+  }
+
   const outcome = await withTimeout(Promise.resolve(supabase.rpc("create_membership_application", {
     p_plan_id: planId,
   })), "create membership application");
@@ -472,6 +487,10 @@ async function mutateMembershipApplication(
   requestId: string,
   operationLabel: string,
 ): Promise<MembershipApplicationMutationResult> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return { application: null, error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE };
+  }
+
   const outcome = await withTimeout(Promise.resolve(supabase.rpc(rpcName, {
     p_request_id: requestId,
   })), operationLabel);
@@ -513,6 +532,10 @@ export async function confirmMembershipPayment(
   requestId: string,
   confirmation: ManualPaymentConfirmation,
 ): Promise<string | null> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
+  }
+
   const outcome = await withTimeout(Promise.resolve(supabase.rpc("confirm_membership_payment", {
     p_request_id: requestId,
     p_amount_thb: confirmation.amountThb,
@@ -534,6 +557,10 @@ export async function confirmSubscriptionRenewal(
   subscriptionId: string,
   confirmation: ManualPaymentConfirmation,
 ): Promise<string | null> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
+  }
+
   const outcome = await withTimeout(Promise.resolve(supabase.rpc("confirm_subscription_renewal", {
     p_subscription_id: subscriptionId,
     p_amount_thb: confirmation.amountThb,
