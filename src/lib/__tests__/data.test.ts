@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
@@ -218,6 +218,60 @@ describe("fetchFounderCapacity", () => {
 
     await expect(fetchFounderCapacity(supabase)).resolves.toBeNull();
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("membership Founder history and return-resource access", () => {
+  it("reads only the caller's aggregate Founder history", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: true,
+      error: false,
+    });
+    expect(rpc).toHaveBeenCalledWith("has_my_founder_history");
+  });
+
+  it("fails closed when Founder history cannot be verified", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({ data: null, error: { message: "missing", code: "42883" } }),
+    } as unknown as SupabaseClient;
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: false,
+      error: true,
+    });
+  });
+
+  it("keeps every actual supported plan for a shared resource", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { access_mode: "plans", required_plan_ids: ["founder", "teacher", "teacher", "plus", " retired ", ""] },
+      error: null,
+    });
+    const eq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq }));
+    const supabase = { from: vi.fn(() => ({ select })) } as unknown as SupabaseClient;
+
+    await expect(fetchMembershipReturnResource(supabase, "resource-1")).resolves.toEqual({
+      requiredPlanIds: ["founder", "teacher", "plus", "retired"],
+      error: false,
+    });
+    expect(supabase.from).toHaveBeenCalledWith("resource_catalog");
+    expect(eq).toHaveBeenCalledWith("id", "resource-1");
+  });
+
+  it("fails closed when the return resource is missing or is not plan-protected", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { access_mode: "authenticated", required_plan_ids: [] },
+      error: null,
+    });
+    const supabase = {
+      from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) })),
+    } as unknown as SupabaseClient;
+    await expect(fetchMembershipReturnResource(supabase, "resource-1")).resolves.toEqual({
+      requiredPlanIds: [],
+      error: true,
+    });
   });
 });
 

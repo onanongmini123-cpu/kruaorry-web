@@ -35,9 +35,11 @@ export function canStartMembershipApplication(
   entitlements: EntitlementSnapshot,
   subscription: MemberSubscription | null,
   requestedPlan: MembershipJourneyPlanId | null = null,
+  hasFounderHistory = false,
   now = Date.now(),
 ): boolean {
   if (pendingMembershipApplication(applications)) return false;
+  if (requestedPlan === "founder" && hasFounderHistory) return false;
   if (!hasCurrentPaidMembership(entitlements, subscription, now)) return true;
   if (!requestedPlan) return false;
   const currentPlan = entitlements.planId !== "free"
@@ -52,6 +54,100 @@ export function entitlementSatisfiesRequestedPlan(
 ): boolean {
   if (entitlements.planId === "free") return false;
   return requestedPlan === null || entitlements.planId === requestedPlan;
+}
+
+export function membershipPlanUnlocksResource(
+  planId: string,
+  requiredPlanIds: readonly string[],
+): boolean {
+  return requiredPlanIds.includes(planId);
+}
+
+export function membershipResourceHasSelectablePlan(
+  requiredPlanIds: readonly string[],
+): boolean {
+  return requiredPlanIds.some((planId) => planId === "founder" || planId === "teacher");
+}
+
+export function membershipApplicationPlanMismatch(
+  applicationPlanId: string | null | undefined,
+  requiredPlanIds: readonly string[],
+  hasResourceContext: boolean,
+  resourcePlansLoaded: boolean,
+  resourceReadError: boolean,
+): boolean {
+  if (!applicationPlanId || !hasResourceContext || !resourcePlansLoaded || resourceReadError) return false;
+  return !membershipPlanUnlocksResource(applicationPlanId, requiredPlanIds);
+}
+
+export function resolveMembershipPlanSelection(
+  preferredPlan: MembershipJourneyPlanId,
+  requiredPlanIds: readonly string[],
+  hasResourceContext: boolean,
+  resourcePlansLoaded: boolean,
+  founderUnavailable: boolean,
+): MembershipJourneyPlanId {
+  if (!hasResourceContext || !resourcePlansLoaded) return preferredPlan;
+  if (membershipPlanUnlocksResource(preferredPlan, requiredPlanIds)
+    && !(preferredPlan === "founder" && founderUnavailable)) {
+    return preferredPlan;
+  }
+  if (membershipPlanUnlocksResource("teacher", requiredPlanIds)) return "teacher";
+  if (membershipPlanUnlocksResource("founder", requiredPlanIds) && !founderUnavailable) return "founder";
+  // No eligible alternative is safe. Preserve the preference so the caller's
+  // fail-closed state can direct a former Founder to renewal instead.
+  return preferredPlan;
+}
+
+export function membershipReturnResourceId(raw: string | null | undefined): string | null {
+  const target = membershipReturnTarget(raw);
+  if (!target.canAutoReturn) return null;
+  const url = new URL(target.destination, "https://return-path.invalid");
+  const detail = /^\/resources\/([0-9a-f-]+)$/i.exec(url.pathname);
+  if (detail) return detail[1];
+  return url.pathname === "/app" ? url.searchParams.get("resource") : null;
+}
+
+export interface MembershipReturnResourceRead {
+  resourceId: string;
+  requiredPlanIds: readonly string[];
+  error: boolean;
+}
+
+export function membershipReturnResourceState(
+  resourceId: string | null,
+  read: MembershipReturnResourceRead | null,
+): { loaded: boolean; error: boolean; requiredPlanIds: readonly string[] } {
+  if (resourceId === null) return { loaded: true, error: false, requiredPlanIds: [] };
+  if (read?.resourceId !== resourceId) return { loaded: false, error: false, requiredPlanIds: [] };
+  return { loaded: true, error: read.error, requiredPlanIds: read.requiredPlanIds };
+}
+
+export function membershipPlanChangeConfirmation(
+  subscription: MemberSubscription | null,
+  targetPlan: MembershipJourneyPlanId,
+): string | null {
+  if (!subscription || subscription.planId === targetPlan) return null;
+  const warnings = [
+    `เมื่อทีมงานอนุมัติแพ็ก ${targetPlan === "teacher" ? "Teacher" : "Founder"} สิทธิ์แพ็กเดิมอาจสิ้นสุดทันที`,
+  ];
+  if (subscription.planId === "founder") {
+    warnings.push("สิทธิ์ Founder ราคาเดิมจะสิ้นสุดและไม่สามารถกู้คืนได้");
+  }
+  if (subscription.source === "legacy" || subscription.billingInterval === "one_time") {
+    warnings.push("สิทธิ์ Legacy หรือสิทธิ์ตลอดชีพอาจไม่สามารถกู้คืนได้");
+  }
+  return `โปรดตรวจสอบก่อนเปลี่ยนแพ็ก:\n\n• ${warnings.join("\n• ")}\n\nยืนยันส่งใบสมัครหรือไม่?`;
+}
+
+export function founderApplicationConversionConfirmation(
+  subscription: MemberSubscription | null,
+): string {
+  const planChangeWarning = membershipPlanChangeConfirmation(subscription, "teacher");
+  if (planChangeWarning) {
+    return `เปลี่ยนใบสมัคร Founder ที่รอดำเนินการเป็น Teacher 599 บาท/ปี โดยใช้เลขอ้างอิงเดิม\n\n${planChangeWarning}`;
+  }
+  return "เปลี่ยนเฉพาะใบสมัคร Founder ที่รอดำเนินการเป็น Teacher 599 บาท/ปี โดยใช้เลขอ้างอิงเดิมใช่หรือไม่? การเปลี่ยนใบสมัครนี้ยังไม่เปลี่ยนสิทธิ์สมาชิกปัจจุบันจนกว่าทีมงานจะอนุมัติ";
 }
 
 export interface MembershipReturnTarget {
@@ -69,15 +165,14 @@ export function membershipReturnTarget(raw: string | null | undefined): Membersh
 
 export function membershipAutoReturnDestination(
   rawReturnTo: string | null | undefined,
-  requestedPlan: MembershipJourneyPlanId | null,
+  requiredPlanIds: readonly string[],
   entitlements: EntitlementSnapshot,
   alreadyReturned: boolean,
 ): string | null {
-  // The normal resource CTA always includes its required plan. Without that
-  // signal the membership page cannot prove that an arbitrary paid plan can
-  // open the returned resource, so fail closed and keep the explicit /app
-  // fallback instead of risking a redirect loop.
-  if (alreadyReturned || requestedPlan === null || !entitlementSatisfiesRequestedPlan(entitlements, requestedPlan)) return null;
+  // For a resource return, callers must pass the plans read from the live
+  // catalogue. For a non-resource member route, callers may pass the already
+  // validated requested-plan hint; the destination is still restricted below.
+  if (alreadyReturned || !membershipPlanUnlocksResource(entitlements.planId, requiredPlanIds)) return null;
   const target = membershipReturnTarget(rawReturnTo);
   return target.canAutoReturn ? target.destination : null;
 }

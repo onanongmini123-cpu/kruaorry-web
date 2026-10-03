@@ -34,6 +34,7 @@ export interface PriorityPageSlice {
 }
 
 export const ADMIN_ACTION_REFRESH_INTERVAL_MS = 30_000;
+export const ADMIN_ACTION_REFRESH_TIMEOUT_MS = 10_000;
 
 export interface AdminActionCounts {
   requests: number | null;
@@ -96,6 +97,117 @@ export async function loadAdminActionCounts(
 export interface LatestAdminActionCountRefresh {
   refresh(): Promise<boolean>;
   dispose(): void;
+}
+
+export type AdminRefreshFailure = {
+  error: unknown;
+  timedOut: boolean;
+};
+
+export interface CoalescedAdminRefresh {
+  request(): Promise<boolean>;
+  dispose(): void;
+}
+
+/**
+ * Runs at most one admin queue read at a time. Calls received while a read is
+ * active are coalesced into one immediate follow-up read, so a slow poll
+ * cannot overlap another poll or starve a later focus/action refresh. Only the
+ * newest requested snapshot is applied. A timeout aborts PostgREST requests
+ * that honour AbortSignal and releases every caller with a failed result.
+ */
+export function createCoalescedAdminRefresh<T>(
+  load: (signal: AbortSignal) => Promise<T>,
+  apply: (value: T) => void,
+  onFailure: (failure: AdminRefreshFailure) => void,
+  timeoutMs = ADMIN_ACTION_REFRESH_TIMEOUT_MS,
+): CoalescedAdminRefresh {
+  let disposed = false;
+  let running = false;
+  let requestedGeneration = 0;
+  let settledGeneration = 0;
+  let activeController: AbortController | null = null;
+  const waiters: Array<{ generation: number; resolve: (applied: boolean) => void }> = [];
+
+  const settleThrough = (generation: number, applied: boolean) => {
+    settledGeneration = generation;
+    for (let index = waiters.length - 1; index >= 0; index -= 1) {
+      if (waiters[index].generation <= generation) {
+        const [{ resolve }] = waiters.splice(index, 1);
+        resolve(applied);
+      }
+    }
+  };
+
+  const drain = async () => {
+    if (running || disposed) return;
+    running = true;
+    try {
+      while (!disposed && settledGeneration < requestedGeneration) {
+        const generation = requestedGeneration;
+        const controller = new AbortController();
+        activeController = controller;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<{ ok: false; failure: AdminRefreshFailure }>((resolve) => {
+          timeoutId = setTimeout(() => {
+            resolve({
+              ok: false,
+              failure: {
+                error: new Error(`Admin queue refresh timed out after ${timeoutMs}ms`),
+                timedOut: true,
+              },
+            });
+            controller.abort();
+          }, timeoutMs);
+        });
+
+        const result = await Promise.race([
+          load(controller.signal).then(
+            (value) => ({ ok: true as const, value }),
+            (error) => ({ ok: false as const, failure: { error, timedOut: false } }),
+          ),
+          timeout,
+        ]);
+        clearTimeout(timeoutId);
+        if (activeController === controller) activeController = null;
+        if (disposed) return;
+
+        // A newer focus/menu/action request arrived while this snapshot was
+        // loading. Do not flash stale counts or rows; run the queued refresh.
+        if (generation !== requestedGeneration) continue;
+
+        if (result.ok) {
+          apply(result.value);
+          settleThrough(generation, true);
+        } else {
+          onFailure(result.failure);
+          settleThrough(generation, false);
+        }
+      }
+    } finally {
+      running = false;
+      if (!disposed && settledGeneration < requestedGeneration) void drain();
+    }
+  };
+
+  return {
+    request() {
+      if (disposed) return Promise.resolve(false);
+      const generation = ++requestedGeneration;
+      const result = new Promise<boolean>((resolve) => {
+        waiters.push({ generation, resolve });
+      });
+      void drain();
+      return result;
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      activeController?.abort();
+      activeController = null;
+      while (waiters.length > 0) waiters.shift()?.resolve(false);
+    },
+  };
 }
 
 export function createLatestAdminActionCountRefresh(

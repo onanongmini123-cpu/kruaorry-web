@@ -457,6 +457,61 @@ export interface UpgradeRequestsResult {
   error: boolean;
 }
 
+export interface FounderHistoryResult {
+  hasFounderHistory: boolean;
+  error: boolean;
+}
+
+export interface MembershipReturnResourceResult {
+  requiredPlanIds: string[];
+  error: boolean;
+}
+
+export async function fetchMyFounderHistory(supabase: SupabaseClient): Promise<FounderHistoryResult> {
+  const outcome = await withTimeout(
+    Promise.resolve(supabase.rpc("has_my_founder_history")),
+    "Founder membership history",
+  );
+  if (!outcome.ok) {
+    console.error(`fetchMyFounderHistory failed: ${outcome.reason}`);
+    return { hasFounderHistory: false, error: true };
+  }
+  const { data, error } = outcome.value;
+  if (error || typeof data !== "boolean") {
+    if (error) logError("fetchMyFounderHistory failed", error);
+    return { hasFounderHistory: false, error: true };
+  }
+  return { hasFounderHistory: data, error: false };
+}
+
+export async function fetchMembershipReturnResource(
+  supabase: SupabaseClient,
+  resourceId: string,
+): Promise<MembershipReturnResourceResult> {
+  const outcome = await withTimeout(Promise.resolve(supabase
+    .from("resource_catalog")
+    .select("access_mode, required_plan_ids")
+    .eq("id", resourceId)
+    .maybeSingle()), "membership return resource");
+  if (!outcome.ok) {
+    console.error(`fetchMembershipReturnResource failed: ${outcome.reason}`);
+    return { requiredPlanIds: [], error: true };
+  }
+  const { data, error } = outcome.value;
+  if (error || !data || data.access_mode !== "plans" || !Array.isArray(data.required_plan_ids)) {
+    if (error) logError("fetchMembershipReturnResource failed", error);
+    return { requiredPlanIds: [], error: true };
+  }
+  return {
+    requiredPlanIds: [...new Set(data.required_plan_ids.filter(
+      (planId): planId is string => typeof planId === "string" && planId.trim().length > 0,
+    ).map(
+      (planId) => planId.trim(),
+    ))],
+    error: false,
+  };
+}
+
 export async function fetchUpgradeRequestsResult(supabase: SupabaseClient, userId: string): Promise<UpgradeRequestsResult> {
   if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
     return { applications: [], error: true };

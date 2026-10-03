@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
 import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search } from "lucide-react";
@@ -56,10 +56,9 @@ import {
   ISSUE_CATEGORY_LABEL,
   ISSUE_STATUS_LABEL,
   adminViewHref,
-  createLatestAdminActionCountRefresh,
+  createCoalescedAdminRefresh,
   installAdminActionRefresh,
   isActionableUpgradeRequest,
-  loadAdminActionCounts,
   moveFeaturedResource,
   parseAdminView,
   priorityPageSlices,
@@ -117,6 +116,7 @@ interface AdminRequest {
   title: string;
   votes: number;
   status: "pending" | "in_progress" | "done";
+  admin_revision: number;
   requested_by: string | null;
   created_at: string;
   profiles: { full_name: string | null; email: string } | null;
@@ -179,6 +179,22 @@ interface AdminIssueReport {
   updated_at: string;
   resources: { title: string } | null;
   profiles: { full_name: string | null; email: string } | null;
+}
+
+interface AdminQueueResult<T> {
+  data: T[] | null;
+  error: { message?: string } | null;
+  count: number | null;
+  actionCount: number | null;
+}
+
+interface AdminQueueSnapshot {
+  requests: AdminQueueResult<AdminRequest>;
+  reviews: AdminQueueResult<AdminReview>;
+  reports: AdminQueueResult<AdminIssueReport>;
+  upgrades: AdminQueueResult<AdminUpgradeRequest>;
+  reviewPage: number;
+  reportPage: number;
 }
 
 interface PlanBenefitRow {
@@ -265,7 +281,13 @@ export default function AdminConsolePage() {
   const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [issueReports, setIssueReports] = useState<AdminIssueReport[]>([]);
   const [actionCounts, setActionCounts] = useState(EMPTY_ADMIN_ACTION_COUNTS);
-  const actionCountRefreshRef = useRef<ReturnType<typeof createLatestAdminActionCountRefresh> | null>(null);
+  const [queueRefreshError, setQueueRefreshError] = useState<string | null>(null);
+  const adminQueueRefreshRef = useRef<ReturnType<typeof createCoalescedAdminRefresh<AdminQueueSnapshot>> | null>(null);
+  const adminQueueLoaderRef = useRef<(signal: AbortSignal) => Promise<AdminQueueSnapshot>>(() => Promise.reject(new Error("Admin queue loader is not ready")));
+  const adminQueueApplyRef = useRef<(snapshot: AdminQueueSnapshot) => void>(() => undefined);
+  const reviewPageRef = useRef(0);
+  const reportPageRef = useRef(0);
+  const membershipSchemaReadinessRef = useRef<MembershipSchemaReadiness>("checking");
   const [reviewPage, setReviewPage] = useState(0);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [reportPage, setReportPage] = useState(0);
@@ -326,6 +348,19 @@ export default function AdminConsolePage() {
   useEffect(() => {
     pendingActionRef.current = pendingAction;
   }, [pendingAction]);
+
+  const beginPendingAction = (action: string): boolean => {
+    if (pendingActionRef.current) return false;
+    pendingActionRef.current = action;
+    setPendingAction(action);
+    return true;
+  };
+
+  const finishPendingAction = (action: string) => {
+    if (pendingActionRef.current !== action) return;
+    pendingActionRef.current = null;
+    setPendingAction(null);
+  };
 
   useEffect(() => {
     if (!paymentTarget) return;
@@ -394,16 +429,17 @@ export default function AdminConsolePage() {
 
   // The action queue must include every request before status/vote sorting;
   // otherwise PostgREST's default row cap could hide an older pending item.
-  const loadTeacherRequests = async () => {
+  const loadTeacherRequests = async (signal: AbortSignal) => {
     const rows: AdminRequest[] = [];
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase.from("requests")
-        .select("id, title, votes, status, requested_by, created_at, profiles(full_name, email)")
+        .select("id, title, votes, status, admin_revision, requested_by, created_at, profiles(full_name, email)")
         .order("votes", { ascending: false })
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
-        .range(offset, offset + pageSize - 1);
+        .range(offset, offset + pageSize - 1)
+        .abortSignal(signal);
       if (error) return { data: null, error };
       rows.push(...((data as unknown as AdminRequest[]) ?? []));
       if ((data?.length ?? 0) < pageSize) return { data: rows, error: null };
@@ -413,7 +449,7 @@ export default function AdminConsolePage() {
   // Upgrade search is client-side, so it must be backed by every row rather
   // than PostgREST's default first page. The secondary id ordering keeps page
   // boundaries stable when multiple requests share the same created_at.
-  const loadUpgradeRequests = async () => {
+  const loadUpgradeRequests = async (signal: AbortSignal) => {
     const rows: AdminUpgradeRequest[] = [];
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
@@ -421,7 +457,8 @@ export default function AdminConsolePage() {
         .select(ADMIN_UPGRADE_SELECT)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
-        .range(offset, offset + pageSize - 1);
+        .range(offset, offset + pageSize - 1)
+        .abortSignal(signal);
       if (error) return { data: null, error };
       rows.push(...((data as unknown as AdminUpgradeRequest[]) ?? []));
       if ((data?.length ?? 0) < pageSize) return { data: rows, error: null };
@@ -433,10 +470,10 @@ export default function AdminConsolePage() {
   // exact RLS-scoped count, then priorityPageSlices maps the requested global
   // page onto status-local ranges. This keeps an older pending item ahead of
   // newer completed history without loading the entire private table.
-  const loadReviewPage = async (page: number) => {
+  const loadReviewPage = async (page: number, signal: AbortSignal) => {
     const [pendingCountResult, historyCountResult] = await Promise.all([
-      supabase.from("resource_reviews").select("id", { count: "exact", head: true }).eq("moderation_status", "pending"),
-      supabase.from("resource_reviews").select("id", { count: "exact", head: true }).neq("moderation_status", "pending"),
+      supabase.from("resource_reviews").select("id", { count: "exact", head: true }).eq("moderation_status", "pending").abortSignal(signal),
+      supabase.from("resource_reviews").select("id", { count: "exact", head: true }).neq("moderation_status", "pending").abortSignal(signal),
     ]);
     const countError = pendingCountResult.error ?? historyCountResult.error;
     if (countError) return { data: null, error: countError, count: null, actionCount: null };
@@ -445,8 +482,8 @@ export default function AdminConsolePage() {
     const slices = priorityPageSlices(counts, page, MODERATION_PAGE_SIZE);
     const pageResults = await Promise.all(slices.map((slice) => (
       slice.groupIndex === 0
-        ? supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT).eq("moderation_status", "pending").order("created_at", { ascending: false }).order("id", { ascending: false }).range(slice.from, slice.to)
-        : supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT).neq("moderation_status", "pending").order("created_at", { ascending: false }).order("id", { ascending: false }).range(slice.from, slice.to)
+        ? supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT).eq("moderation_status", "pending").order("created_at", { ascending: false }).order("id", { ascending: false }).range(slice.from, slice.to).abortSignal(signal)
+        : supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT).neq("moderation_status", "pending").order("created_at", { ascending: false }).order("id", { ascending: false }).range(slice.from, slice.to).abortSignal(signal)
     )));
     const pageError = pageResults.find((result) => result.error)?.error ?? null;
     return {
@@ -457,10 +494,10 @@ export default function AdminConsolePage() {
     };
   };
 
-  const loadReportPage = async (page: number) => {
+  const loadReportPage = async (page: number, signal: AbortSignal) => {
     const statuses: IssueReportStatus[] = ["pending", "in_progress", "resolved"];
     const countResults = await Promise.all(statuses.map((status) => (
-      supabase.from("resource_issue_reports").select("id", { count: "exact", head: true }).eq("status", status)
+      supabase.from("resource_issue_reports").select("id", { count: "exact", head: true }).eq("status", status).abortSignal(signal)
     )));
     const countError = countResults.find((result) => result.error)?.error ?? null;
     if (countError) return { data: null, error: countError, count: null, actionCount: null };
@@ -474,6 +511,7 @@ export default function AdminConsolePage() {
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(slice.from, slice.to)
+        .abortSignal(signal)
     )));
     const pageError = pageResults.find((result) => result.error)?.error ?? null;
     return {
@@ -482,6 +520,116 @@ export default function AdminConsolePage() {
       count: counts.reduce((total, count) => total + count, 0),
       actionCount: counts[0] + counts[1],
     };
+  };
+
+  const loadAdminQueueSnapshot = async (signal: AbortSignal): Promise<AdminQueueSnapshot> => {
+    const reviewPageToLoad = reviewPageRef.current;
+    const reportPageToLoad = reportPageRef.current;
+    const includeUpgrades = membershipSchemaReadinessRef.current === "ready";
+    const [requestResult, reviewResult, reportResult, upgradeResult] = await Promise.all([
+      loadTeacherRequests(signal),
+      loadReviewPage(reviewPageToLoad, signal),
+      loadReportPage(reportPageToLoad, signal),
+      includeUpgrades
+        ? loadUpgradeRequests(signal)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    const requestRows = requestResult.data as AdminRequest[] | null;
+    const upgradeRows = upgradeResult.data as AdminUpgradeRequest[] | null;
+    return {
+      requests: {
+        data: requestRows,
+        error: requestResult.error,
+        count: requestResult.error ? null : requestRows?.length ?? 0,
+        actionCount: requestResult.error ? null : requestRows?.filter((row) => row.status === "pending").length ?? 0,
+      },
+      reviews: reviewResult,
+      reports: reportResult,
+      upgrades: {
+        data: upgradeRows,
+        error: upgradeResult.error,
+        count: includeUpgrades && !upgradeResult.error ? upgradeRows?.length ?? 0 : null,
+        actionCount: includeUpgrades && !upgradeResult.error
+          ? upgradeRows?.filter(isActionableUpgradeRequest).length ?? 0
+          : null,
+      },
+      reviewPage: reviewPageToLoad,
+      reportPage: reportPageToLoad,
+    };
+  };
+
+  const applyAdminQueueSnapshot = (snapshot: AdminQueueSnapshot) => {
+    const failures: string[] = [];
+    if (snapshot.requests.error) {
+      failures.push("คำขอจากครู");
+    } else {
+      setRequests(sortAdminRequests(snapshot.requests.data ?? []));
+    }
+    if (snapshot.reviews.error) {
+      failures.push("รีวิว");
+    } else {
+      setReviews(sortAdminReviews(snapshot.reviews.data ?? []));
+      setReviewTotal(snapshot.reviews.count ?? 0);
+      setReviewPage(snapshot.reviewPage);
+    }
+    if (snapshot.reports.error) {
+      failures.push("รายงานปัญหา");
+    } else {
+      setIssueReports(sortAdminReports(snapshot.reports.data ?? []));
+      setReportTotal(snapshot.reports.count ?? 0);
+      setReportPage(snapshot.reportPage);
+    }
+    if (snapshot.upgrades.error) {
+      failures.push("แจ้งชำระ");
+    } else if (membershipSchemaReadinessRef.current === "ready") {
+      setUpgradeRequests(sortAdminUpgradeRequests(snapshot.upgrades.data ?? []));
+    } else {
+      setUpgradeRequests([]);
+    }
+
+    setActionCounts({
+      requests: snapshot.requests.actionCount,
+      moderation: snapshot.reviews.error || snapshot.reports.error
+        ? null
+        : (snapshot.reviews.actionCount ?? 0) + (snapshot.reports.actionCount ?? 0),
+      upgrades: snapshot.upgrades.actionCount,
+    });
+    setQueueRefreshError(failures.length > 0
+      ? `อัปเดตรายการ ${failures.join(", ")} ไม่สำเร็จ ตัวเลขที่เกี่ยวข้องจะแสดงเป็น — และปิดการดำเนินการกับข้อมูลเดิมชั่วคราว`
+      : null);
+  };
+
+  useEffect(() => {
+    adminQueueLoaderRef.current = loadAdminQueueSnapshot;
+    adminQueueApplyRef.current = applyAdminQueueSnapshot;
+  });
+
+  useEffect(() => {
+    const refresh = createCoalescedAdminRefresh(
+      (signal) => adminQueueLoaderRef.current(signal),
+      (snapshot) => adminQueueApplyRef.current(snapshot),
+      ({ timedOut }) => {
+        setActionCounts(EMPTY_ADMIN_ACTION_COUNTS);
+        setQueueRefreshError(timedOut
+          ? "การอัปเดตรายการหลังบ้านใช้เวลานานเกินไป ตัวเลขจะแสดงเป็น — และปิดการดำเนินการกับข้อมูลเดิมชั่วคราว"
+          : "อัปเดตรายการหลังบ้านไม่สำเร็จ ตัวเลขจะแสดงเป็น — และปิดการดำเนินการกับข้อมูลเดิมชั่วคราว");
+      },
+    );
+    adminQueueRefreshRef.current = refresh;
+    return () => {
+      refresh.dispose();
+      if (adminQueueRefreshRef.current === refresh) adminQueueRefreshRef.current = null;
+    };
+  }, []);
+
+  const refreshAdminQueues = (
+    nextReviewPage = reviewPageRef.current,
+    nextReportPage = reportPageRef.current,
+  ): Promise<boolean> => {
+    reviewPageRef.current = nextReviewPage;
+    reportPageRef.current = nextReportPage;
+    return adminQueueRefreshRef.current?.request() ?? Promise.resolve(false);
   };
 
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
@@ -493,14 +641,11 @@ export default function AdminConsolePage() {
     const baseDataPromise = Promise.all([
       supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
-      loadTeacherRequests(),
       supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("resource_plan_access").select("resource_id, plan_id").order("plan_id", { ascending: true }),
       supabase.from("featured_resources").select("resource_id, position").order("position", { ascending: true }),
-      loadReviewPage(nextReviewPage),
-      loadReportPage(nextReportPage),
       supabase.from("plan_benefit_catalog").select("plan_id, feature_id, feature_name, feature_description, value_type, limit_value, sort_order").order("sort_order", { ascending: true }).order("feature_id", { ascending: true }),
     ]);
     const readinessPromise = fetchMembershipSchemaReadiness(supabase);
@@ -508,22 +653,17 @@ export default function AdminConsolePage() {
     const [
       { data: resourceRows, error: resourceError },
       { data: memberRows, error: memberError },
-      { data: requestRows, error: requestError },
       { data: basePlanRows, error: basePlanError },
       { data: auditRows, error: auditError },
       { data: accessRows, error: accessError },
       { data: featuredRows, error: featuredError },
-      { data: reviewRows, error: reviewError, count: reviewCount },
-      { data: reportRows, error: reportError, count: reportCount },
       { data: benefits, error: benefitError },
     ] = await baseDataPromise;
 
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
     if (memberError) console.error("Failed to load members:", memberError.message);
-    if (requestError) console.error("Failed to load requests:", requestError.message);
     setResources((resourceRows as AdminResource[]) ?? []);
     setMembers((memberRows as AdminMember[]) ?? []);
-    setRequests(sortAdminRequests((requestRows as unknown as AdminRequest[]) ?? []));
     if (basePlanError) console.error("Failed to load plans:", basePlanError.message);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
@@ -535,18 +675,6 @@ export default function AdminConsolePage() {
     setResourcePlanAccess(accessByResource);
     if (featuredError) console.error("Failed to load featured resources:", featuredError.message);
     setFeaturedIds(((featuredRows ?? []) as { resource_id: string }[]).map((row) => row.resource_id));
-    if (reviewError) console.error("Failed to load reviews:", reviewError.message);
-    setReviews(sortAdminReviews((reviewRows as unknown as AdminReview[]) ?? []));
-    if (!reviewError) {
-      setReviewTotal(reviewCount ?? 0);
-      setReviewPage(nextReviewPage);
-    }
-    if (reportError) console.error("Failed to load issue reports:", reportError.message);
-    setIssueReports(sortAdminReports((reportRows as unknown as AdminIssueReport[]) ?? []));
-    if (!reportError) {
-      setReportTotal(reportCount ?? 0);
-      setReportPage(nextReportPage);
-    }
     if (benefitError) console.error("Failed to load plan benefits:", benefitError.message);
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
     const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
@@ -560,26 +688,22 @@ export default function AdminConsolePage() {
 
     if (readiness === "ready") {
       const [
-        { data: upgradeRows, error: upgradeError },
         { data: planRows, error: planError },
         { data: subscriptionRows, error: subscriptionError },
         { data: founderCount, error: founderCountError },
       ] = await Promise.all([
-        loadUpgradeRequests(),
         supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
         loadCurrentSubscriptions(),
         supabase.rpc("get_founder_capacity"),
       ]);
 
-      if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
-      setUpgradeRequests(upgradeError ? [] : sortAdminUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []));
       if (planError) console.error("Failed to load membership plans:", planError.message);
       if (!planError) membershipPlans = (planRows as AdminPlanRow[]) ?? [];
       if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
       setSubscriptions(subscriptionError || planError ? null : ((subscriptionRows as AdminSubscription[]) ?? []));
       if (founderCountError) console.error("Failed to load Founder seat count:", founderCountError.message);
       setFounderSeatsUsed(founderCountError ? null : normalizeFounderCapacity(founderCount)?.used ?? null);
-      if (upgradeError || subscriptionError || planError || founderCountError) {
+      if (subscriptionError || planError || founderCountError) {
         membershipError = "ไม่สามารถตรวจข้อมูลสมาชิกที่จำเป็นได้ จึงปิดการยืนยัน ปฏิเสธ และต่ออายุชั่วคราว";
       }
     } else {
@@ -591,6 +715,7 @@ export default function AdminConsolePage() {
 
     setMembershipDataError(membershipError);
     setMembershipSchemaReadiness(readiness);
+    membershipSchemaReadinessRef.current = readiness;
     setPlans(membershipPlans);
 
     // A missing 048 schema cannot prevent the base admin tools above from
@@ -598,11 +723,10 @@ export default function AdminConsolePage() {
     // price while keeping resource-plan editing available.
     if (basePlanError && readiness !== "ready") setPlans([]);
 
-    // Keep badge writes on the single latest-only controller. This avoids an
-    // older full reload overwriting a newer focus/poll count, while preserving
-    // immediate badge updates after every successful mutation that awaits this
-    // function.
-    void actionCountRefreshRef.current?.refresh();
+    // Queue rows and their badges are one bounded, latest-only snapshot. Every
+    // full reload awaits it, so post-action UI cannot show a new badge beside
+    // stale rows from an earlier session.
+    await refreshAdminQueues(nextReviewPage, nextReportPage);
   };
 
   const subscriptionsByUser = useMemo(() => {
@@ -630,15 +754,6 @@ export default function AdminConsolePage() {
   const founderConfirmationBlocked = founderCapacityUnavailable || founderCapacityFull;
   const projectedFounderSeats = confirmsFounderApplication && founderSeatsUsed !== null ? founderSeatsUsed + 1 : null;
 
-  const loadCurrentAdminActionCounts = useCallback(() => {
-    return loadAdminActionCounts({
-      requests: () => supabase.from("requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      reviews: () => supabase.from("resource_reviews").select("id", { count: "exact", head: true }).eq("moderation_status", "pending"),
-      reports: () => supabase.from("resource_issue_reports").select("id", { count: "exact", head: true }).in("status", ["pending", "in_progress"]),
-      upgrades: () => supabase.from("upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending").not("payment_reported_at", "is", null),
-    }, membershipSchemaReadiness === "ready");
-  }, [membershipSchemaReadiness, supabase]);
-
   useEffect(() => {
     (async () => {
       const {
@@ -664,18 +779,14 @@ export default function AdminConsolePage() {
   }, [supabase, router]);
 
   useEffect(() => {
-    const countRefresh = createLatestAdminActionCountRefresh(loadCurrentAdminActionCounts, setActionCounts);
-    actionCountRefreshRef.current = countRefresh;
     const uninstall = installAdminActionRefresh(window, () => {
-      void countRefresh.refresh();
+      void refreshAdminQueues();
     }, allowed);
 
     return () => {
       uninstall();
-      countRefresh.dispose();
-      if (actionCountRefreshRef.current === countRefresh) actionCountRefreshRef.current = null;
     };
-  }, [allowed, loadCurrentAdminActionCounts]);
+  }, [allowed]);
 
   useEffect(() => {
     if (!viewerRole) return;
@@ -727,6 +838,9 @@ export default function AdminConsolePage() {
     const nextView = parseAdminView(key, viewerRole === "owner");
     setView(nextView);
     window.history.pushState(null, "", adminViewHref(nextView));
+    if (nextView === "requests" || nextView === "moderation" || nextView === "upgrades") {
+      void refreshAdminQueues();
+    }
   };
 
   const openCreateForm = () => {
@@ -1235,22 +1349,32 @@ export default function AdminConsolePage() {
     }
   };
 
-  const handleRequestStatusChange = async (id: string, status: AdminRequest["status"]) => {
-    if (pendingAction) return;
-    setPendingAction(`request:${id}`);
+  const handleRequestStatusChange = async (request: AdminRequest, status: AdminRequest["status"]) => {
+    const action = `request:${request.id}`;
+    if (queueRefreshError || !beginPendingAction(action)) return;
     try {
-      const { error } = await supabase.from("requests").update({ status }).eq("id", id);
+      const { data: updated, error } = await supabase.rpc("admin_compare_set_request_status", {
+        p_request_id: request.id,
+        p_expected_status: request.status,
+        p_expected_revision: request.admin_revision,
+        p_status: status,
+      });
       if (error) {
         window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
-        return;
+      } else if (!updated) {
+        window.alert("รายการนี้ถูกเปลี่ยนจากอีกหน้าต่างแล้ว ระบบจะโหลดข้อมูลล่าสุดก่อนดำเนินการต่อ");
       }
-      await reloadAdminData();
+      await refreshAdminQueues();
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const openPaymentConfirmation = (target: PaymentConfirmationTarget) => {
+    if (queueRefreshError) {
+      window.alert("กรุณาโหลดรายการหลังบ้านล่าสุดให้สำเร็จก่อนยืนยันการชำระ");
+      return;
+    }
     if (!membershipMutationsReady) {
       window.alert(membershipMaintenanceMessage);
       return;
@@ -1289,7 +1413,11 @@ export default function AdminConsolePage() {
 
   const handleConfirmPayment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!paymentTarget || pendingAction) return;
+    if (!paymentTarget || pendingActionRef.current) return;
+    if (queueRefreshError) {
+      setPaymentError("รายการหลังบ้านไม่ใช่ข้อมูลล่าสุด กรุณาโหลดใหม่ก่อนยืนยันการชำระ");
+      return;
+    }
     if (!membershipMutationsReady) {
       setPaymentError(membershipMaintenanceMessage);
       return;
@@ -1320,7 +1448,7 @@ export default function AdminConsolePage() {
     const actionId = paymentTarget.kind === "application"
       ? `payment:${paymentTarget.request.id}`
       : `renewal:${paymentTarget.subscription.id}`;
-    setPendingAction(actionId);
+    if (!beginPendingAction(actionId)) return;
     setPaymentError(null);
     try {
       const confirmation = {
@@ -1336,6 +1464,10 @@ export default function AdminConsolePage() {
         setPaymentError(/Founder 100 is full/i.test(errorMessage)
           ? "Founder ครบ 100 สิทธิ์แล้ว ระบบไม่ได้อนุมัติรายการนี้"
           : `ยืนยันการชำระไม่สำเร็จ: ${errorMessage}`);
+        // The payment RPC locks and re-checks pending state server-side. A
+        // stale second-session action therefore fails closed; refresh the
+        // whole queue immediately so the rejected row cannot be acted on again.
+        await refreshAdminQueues();
         return;
       }
       await reloadAdminData();
@@ -1343,7 +1475,7 @@ export default function AdminConsolePage() {
     } catch (error) {
       setPaymentError(`ยืนยันการชำระไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(actionId);
     }
   };
 
@@ -1369,22 +1501,31 @@ export default function AdminConsolePage() {
     });
   };
 
-  const handleDeclineUpgrade = async (id: string) => {
+  const handleDeclineUpgrade = async (request: AdminUpgradeRequest) => {
     if (!membershipMutationsReady) {
       window.alert(membershipMaintenanceMessage);
       return;
     }
-    if (pendingAction || paymentTarget || !window.confirm("ปฏิเสธใบสมัครนี้ใช่หรือไม่? ผู้สมัครจะเห็นสถานะว่าไม่ผ่านการตรวจสอบ")) return;
-    setPendingAction(`upgrade:${id}`);
+    const action = `upgrade:${request.id}`;
+    if (queueRefreshError || paymentTarget || !window.confirm("ปฏิเสธใบสมัครนี้ใช่หรือไม่? ผู้สมัครจะเห็นสถานะว่าไม่ผ่านการตรวจสอบ") || !beginPendingAction(action)) return;
     try {
-      const { error } = await supabase.rpc("decline_upgrade_request", { p_request_id: id });
+      const { data: declined, error } = await supabase.rpc("admin_compare_decline_upgrade_request", {
+        p_request_id: request.id,
+        p_expected_payment_reported_at: request.payment_reported_at,
+        p_expected_plan_id: request.plan_id,
+        p_expected_quoted_amount_thb: request.quoted_amount_thb,
+      });
       if (error) {
         window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
+        await refreshAdminQueues();
         return;
       }
-      await reloadAdminData();
+      if (!declined) {
+        window.alert("ใบสมัครนี้ถูกเปลี่ยนหรือเพิ่งแจ้งชำระจากอีกหน้าต่าง ระบบไม่ได้ปฏิเสธและจะโหลดข้อมูลล่าสุด");
+      }
+      await refreshAdminQueues();
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -1405,61 +1546,75 @@ export default function AdminConsolePage() {
   };
 
   const handleReviewVisibility = async (review: AdminReview) => {
-    if (pendingAction) return;
-    setPendingAction(`review:${review.id}`);
+    const action = `review:${review.id}`;
+    if (queueRefreshError || !beginPendingAction(action)) return;
     try {
-      const { error } = await supabase.rpc("admin_set_review_visibility", {
+      const { data: updated, error } = await supabase.rpc("admin_compare_set_review_visibility", {
         p_review_id: review.id,
+        p_expected_status: review.moderation_status,
+        p_expected_updated_at: review.updated_at,
         p_visible: review.moderation_status !== "visible",
       });
       if (error) window.alert(`อัปเดตรีวิวไม่สำเร็จ: ${error.message}`);
-      else await reloadAdminData();
+      else if (!updated) window.alert("รีวิวนี้ถูกเปลี่ยนจากอีกหน้าต่างแล้ว ระบบไม่ได้ทับสถานะใหม่และจะโหลดข้อมูลล่าสุด");
+      await refreshAdminQueues();
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleReviewPageChange = async (nextPage: number) => {
-    if (pendingAction || nextPage < 0 || nextPage * MODERATION_PAGE_SIZE >= reviewTotal) return;
-    setPendingAction("review-page");
+    const action = "review-page";
+    if (queueRefreshError || nextPage < 0 || nextPage * MODERATION_PAGE_SIZE >= reviewTotal || !beginPendingAction(action)) return;
     try {
-      await reloadAdminData(nextPage, reportPage);
+      await refreshAdminQueues(nextPage, reportPage);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleReportPageChange = async (nextPage: number) => {
-    if (pendingAction || nextPage < 0 || nextPage * MODERATION_PAGE_SIZE >= reportTotal) return;
-    setPendingAction("report-page");
+    const action = "report-page";
+    if (queueRefreshError || nextPage < 0 || nextPage * MODERATION_PAGE_SIZE >= reportTotal || !beginPendingAction(action)) return;
     try {
-      await reloadAdminData(reviewPage, nextPage);
+      await refreshAdminQueues(reviewPage, nextPage);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleDeleteReview = async (review: AdminReview) => {
-    if (pendingAction || !window.confirm("ลบรีวิวนี้ถาวรใช่หรือไม่?")) return;
-    setPendingAction(`review:${review.id}`);
+    const action = `review:${review.id}`;
+    if (queueRefreshError || !window.confirm("ลบรีวิวนี้ถาวรใช่หรือไม่?") || !beginPendingAction(action)) return;
     try {
-      const { error } = await supabase.rpc("admin_delete_resource_review", { p_review_id: review.id });
+      const { data: deleted, error } = await supabase.rpc("admin_compare_delete_resource_review", {
+        p_review_id: review.id,
+        p_expected_status: review.moderation_status,
+        p_expected_updated_at: review.updated_at,
+      });
       if (error) window.alert(`ลบรีวิวไม่สำเร็จ: ${error.message}`);
-      else await reloadAdminData(reviews.length === 1 ? Math.max(0, reviewPage - 1) : reviewPage, reportPage);
+      else if (!deleted) window.alert("รีวิวนี้ถูกเปลี่ยนหรือลบจากอีกหน้าต่างแล้ว ระบบไม่ได้ลบซ้ำและจะโหลดข้อมูลล่าสุด");
+      await refreshAdminQueues(reviews.length === 1 ? Math.max(0, reviewPage - 1) : reviewPage, reportPage);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
-  const handleIssueStatus = async (id: string, status: IssueReportStatus) => {
-    if (pendingAction) return;
-    setPendingAction(`report:${id}`);
+  const handleIssueStatus = async (report: AdminIssueReport, status: IssueReportStatus) => {
+    const action = `report:${report.id}`;
+    if (queueRefreshError || !beginPendingAction(action)) return;
     try {
-      const { error } = await supabase.rpc("admin_set_resource_issue_status", { p_report_id: id, p_status: status });
+      const { data: updated, error } = await supabase.rpc("admin_compare_set_resource_issue_status", {
+        p_report_id: report.id,
+        p_expected_status: report.status,
+        p_expected_updated_at: report.updated_at,
+        p_status: status,
+      });
       if (error) window.alert(`อัปเดตรายงานไม่สำเร็จ: ${error.message}`);
-      else await reloadAdminData();
+      else if (!updated) window.alert("รายงานนี้ถูกเปลี่ยนจากอีกหน้าต่างแล้ว ระบบไม่ได้ทับสถานะใหม่และจะโหลดข้อมูลล่าสุด");
+      await refreshAdminQueues();
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -1670,6 +1825,12 @@ export default function AdminConsolePage() {
         </aside>
 
         <main className="kru-admin-main">
+          {queueRefreshError && (
+            <div className="kru-admin-queue-error" role="alert">
+              <span>{queueRefreshError}</span>
+              <Button type="button" size="sm" variant="ghost" onClick={() => void refreshAdminQueues()}>ลองโหลดรายการใหม่</Button>
+            </div>
+          )}
           {view === "dash" && (
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>ภาพรวม</h1>
@@ -2003,10 +2164,10 @@ export default function AdminConsolePage() {
               <h1 style={{ fontSize: "var(--fs-30)" }}>รีวิวและรายงานปัญหา</h1>
               <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>ข้อมูลผู้รีวิวและผู้รายงานแสดงเฉพาะทีมงานหลังบ้าน</p>
               <div className="kru-admin-tablist" role="tablist" aria-label="เลือกประเภทรายการตรวจสอบ">
-                <button id="admin-reviews-tab" type="button" role="tab" aria-controls="admin-reviews-panel" aria-selected={moderationTab === "reviews"} className={moderationTab === "reviews" ? "is-active" : ""} onClick={() => setModerationTab("reviews")}>
+                <button id="admin-reviews-tab" type="button" role="tab" aria-controls="admin-reviews-panel" aria-selected={moderationTab === "reviews"} className={moderationTab === "reviews" ? "is-active" : ""} onClick={() => { setModerationTab("reviews"); void refreshAdminQueues(); }}>
                   รีวิว ({reviewTotal})
                 </button>
-                <button id="admin-reports-tab" type="button" role="tab" aria-controls="admin-reports-panel" aria-selected={moderationTab === "reports"} className={moderationTab === "reports" ? "is-active" : ""} onClick={() => setModerationTab("reports")}>
+                <button id="admin-reports-tab" type="button" role="tab" aria-controls="admin-reports-panel" aria-selected={moderationTab === "reports"} className={moderationTab === "reports" ? "is-active" : ""} onClick={() => { setModerationTab("reports"); void refreshAdminQueues(); }}>
                   รายงานปัญหา ({reportTotal})
                 </button>
               </div>
@@ -2033,10 +2194,10 @@ export default function AdminConsolePage() {
                         <div aria-label={`${review.rating} ดาว`} className="kru-admin-review-stars">{"★".repeat(review.rating)}{"☆".repeat(Math.max(0, 5 - review.rating))}</div>
                         <p className="kru-admin-review-body">{review.body}</p>
                         <div className="kru-admin-card-actions">
-                          <Button size="sm" variant="soft" icon={review.moderation_status === "visible" ? EyeOff : Eye} disabled={pendingAction !== null} loading={pendingAction === `review:${review.id}`} onClick={() => handleReviewVisibility(review)}>
+                          <Button size="sm" variant="soft" icon={review.moderation_status === "visible" ? EyeOff : Eye} disabled={pendingAction !== null || queueRefreshError !== null} loading={pendingAction === `review:${review.id}`} onClick={() => handleReviewVisibility(review)}>
                             {review.moderation_status === "visible" ? "ซ่อนรีวิว" : "แสดงรีวิว"}
                           </Button>
-                          <Button size="sm" variant="ghost" icon={Trash2} disabled={pendingAction !== null} onClick={() => handleDeleteReview(review)}>
+                          <Button size="sm" variant="ghost" icon={Trash2} disabled={pendingAction !== null || queueRefreshError !== null} onClick={() => handleDeleteReview(review)}>
                             ลบรีวิว
                           </Button>
                         </div>
@@ -2044,9 +2205,9 @@ export default function AdminConsolePage() {
                     ))}
                     {reviewTotal > MODERATION_PAGE_SIZE && (
                       <div className="kru-admin-pagination" aria-label="เปลี่ยนหน้ารีวิว">
-                        <Button size="sm" variant="ghost" disabled={reviewPage === 0 || pendingAction !== null} onClick={() => void handleReviewPageChange(reviewPage - 1)}>หน้าก่อน</Button>
+                        <Button size="sm" variant="ghost" disabled={reviewPage === 0 || pendingAction !== null || queueRefreshError !== null} onClick={() => void handleReviewPageChange(reviewPage - 1)}>หน้าก่อน</Button>
                         <span>หน้า {reviewPage + 1} จาก {Math.ceil(reviewTotal / MODERATION_PAGE_SIZE)}</span>
-                        <Button size="sm" variant="ghost" disabled={(reviewPage + 1) * MODERATION_PAGE_SIZE >= reviewTotal || pendingAction !== null} onClick={() => void handleReviewPageChange(reviewPage + 1)}>หน้าถัดไป</Button>
+                        <Button size="sm" variant="ghost" disabled={(reviewPage + 1) * MODERATION_PAGE_SIZE >= reviewTotal || pendingAction !== null || queueRefreshError !== null} onClick={() => void handleReviewPageChange(reviewPage + 1)}>หน้าถัดไป</Button>
                       </div>
                     )}
                   </div>
@@ -2074,7 +2235,7 @@ export default function AdminConsolePage() {
                         {report.details && <p className="kru-admin-review-body">{report.details}</p>}
                         <label className="kru-field" style={{ maxWidth: 260 }}>
                           <span className="kru-field__label">สถานะการจัดการ</span>
-                          <select className="kru-select" value={report.status} disabled={pendingAction !== null} onChange={(event) => handleIssueStatus(report.id, event.target.value as IssueReportStatus)}>
+                          <select className="kru-select" value={report.status} disabled={pendingAction !== null || queueRefreshError !== null} onChange={(event) => handleIssueStatus(report, event.target.value as IssueReportStatus)}>
                             <option value="pending">รอตรวจสอบ</option>
                             <option value="in_progress">กำลังแก้ไข</option>
                             <option value="resolved">แก้ไขแล้ว</option>
@@ -2084,9 +2245,9 @@ export default function AdminConsolePage() {
                     ))}
                     {reportTotal > MODERATION_PAGE_SIZE && (
                       <div className="kru-admin-pagination" aria-label="เปลี่ยนหน้ารายงานปัญหา">
-                        <Button size="sm" variant="ghost" disabled={reportPage === 0 || pendingAction !== null} onClick={() => void handleReportPageChange(reportPage - 1)}>หน้าก่อน</Button>
+                        <Button size="sm" variant="ghost" disabled={reportPage === 0 || pendingAction !== null || queueRefreshError !== null} onClick={() => void handleReportPageChange(reportPage - 1)}>หน้าก่อน</Button>
                         <span>หน้า {reportPage + 1} จาก {Math.ceil(reportTotal / MODERATION_PAGE_SIZE)}</span>
-                        <Button size="sm" variant="ghost" disabled={(reportPage + 1) * MODERATION_PAGE_SIZE >= reportTotal || pendingAction !== null} onClick={() => void handleReportPageChange(reportPage + 1)}>หน้าถัดไป</Button>
+                        <Button size="sm" variant="ghost" disabled={(reportPage + 1) * MODERATION_PAGE_SIZE >= reportTotal || pendingAction !== null || queueRefreshError !== null} onClick={() => void handleReportPageChange(reportPage + 1)}>หน้าถัดไป</Button>
                       </div>
                     )}
                   </div>
@@ -2179,10 +2340,10 @@ export default function AdminConsolePage() {
                       </div>
                       {r.status === "pending" ? (
                         <div className="kru-admin-card-actions">
-                          <Button size="sm" icon={Check} disabled={!membershipMutationsReady || mutationBusy || !r.payment_reported_at} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
+                          <Button size="sm" icon={Check} disabled={!membershipMutationsReady || mutationBusy || queueRefreshError !== null || !r.payment_reported_at} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
                             {r.payment_reported_at ? `ยืนยันรับเงินจริง ${Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท` : "รอผู้สมัครแจ้งหลักฐาน"}
                           </Button>
-                          <Button size="sm" variant="ghost" icon={X} disabled={!membershipMutationsReady || mutationBusy} onClick={() => handleDeclineUpgrade(r.id)}>
+                          <Button size="sm" variant="ghost" icon={X} disabled={!membershipMutationsReady || mutationBusy || queueRefreshError !== null} onClick={() => handleDeclineUpgrade(r)}>
                             ปฏิเสธ
                           </Button>
                         </div>
@@ -2220,8 +2381,8 @@ export default function AdminConsolePage() {
                         aria-label={`สถานะคำขอ ${r.title}`}
                         style={{ minHeight: 44, width: "auto" }}
                         value={r.status}
-                        disabled={pendingAction !== null}
-                        onChange={(e) => handleRequestStatusChange(r.id, e.target.value as AdminRequest["status"])}
+                        disabled={pendingAction !== null || queueRefreshError !== null}
+                        onChange={(e) => handleRequestStatusChange(r, e.target.value as AdminRequest["status"])}
                       >
                         <option value="pending">รอพิจารณา</option>
                         <option value="in_progress">กำลังผลิต</option>
@@ -2404,6 +2565,7 @@ export default function AdminConsolePage() {
                 </div>
               )}
               {founderCapacityFull && <p className="kru-admin-payment-error" role="alert">Founder ครบ {FOUNDER_CAPACITY_LIMIT} สิทธิ์แล้ว รายการนี้ยืนยันไม่ได้</p>}
+              {queueRefreshError && <p className="kru-admin-payment-error" role="alert">รายการหลังบ้านไม่ใช่ข้อมูลล่าสุด ปิดการยืนยันชั่วคราว</p>}
               <Input
                 label="เลขอ้างอิงการชำระ"
                 value={paymentReference}
@@ -2412,7 +2574,7 @@ export default function AdminConsolePage() {
                 autoComplete="off"
                 maxLength={120}
                 required
-                disabled={pendingAction !== null || founderConfirmationBlocked}
+                disabled={pendingAction !== null || founderConfirmationBlocked || queueRefreshError !== null}
               />
               <Input
                 label="วันและเวลาที่รับชำระ"
@@ -2420,16 +2582,16 @@ export default function AdminConsolePage() {
                 value={paymentPaidAt}
                 onChange={(event) => setPaymentPaidAt(event.target.value)}
                 required
-                disabled={pendingAction !== null || founderConfirmationBlocked}
+                disabled={pendingAction !== null || founderConfirmationBlocked || queueRefreshError !== null}
               />
               <label className="kru-admin-payment-check">
-                <input type="checkbox" checked={paymentVerified} onChange={(event) => setPaymentVerified(event.target.checked)} disabled={pendingAction !== null || founderConfirmationBlocked} />
+                <input type="checkbox" checked={paymentVerified} onChange={(event) => setPaymentVerified(event.target.checked)} disabled={pendingAction !== null || founderConfirmationBlocked || queueRefreshError !== null} />
                 <span>ฉันตรวจแล้วว่ายอด {paymentTarget.amountThb.toLocaleString("th-TH")} บาทเข้าจริง และข้อมูลตรงกับรายการนี้</span>
               </label>
               {paymentError && <p className="kru-admin-payment-error" role="alert">{paymentError}</p>}
               <div className="kru-admin-dialog-actions">
                 <Button type="button" variant="ghost" onClick={closePaymentConfirmation} disabled={pendingAction !== null}>ยกเลิก</Button>
-                <Button type="submit" icon={Check} loading={pendingAction !== null} disabled={pendingAction !== null || !paymentVerified || founderConfirmationBlocked}>
+                <Button type="submit" icon={Check} loading={pendingAction !== null} disabled={pendingAction !== null || !paymentVerified || founderConfirmationBlocked || queueRefreshError !== null}>
                   ยืนยันรับเงิน {paymentTarget.amountThb.toLocaleString("th-TH")} บาท
                 </Button>
               </div>
@@ -2439,6 +2601,7 @@ export default function AdminConsolePage() {
       )}
       <style>{`
         .kru-admin-shell { display: flex; min-height: 100dvh; max-width: 100%; }
+        .kru-admin-queue-error { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-5); padding: var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg); }
         .kru-admin-sidebar { display: none; flex-direction: column; width: 256px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100dvh; }
         .kru-admin-main { flex: 1; min-width: 0; max-width: 100%; overflow-x: clip; padding: var(--sp-5) max(var(--sp-4), env(safe-area-inset-right)) calc(var(--sp-8) + env(safe-area-inset-bottom)) max(var(--sp-4), env(safe-area-inset-left)); }
         .kru-admin-main h1 { font-size: clamp(1.55rem, 7vw, var(--fs-30)) !important; overflow-wrap: anywhere; }

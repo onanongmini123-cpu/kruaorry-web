@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ADMIN_ACTION_REFRESH_INTERVAL_MS,
   adminViewHref,
+  createCoalescedAdminRefresh,
   createLatestAdminActionCountRefresh,
   installAdminActionRefresh,
   isActionableUpgradeRequest,
@@ -33,6 +34,85 @@ describe("admin console navigation", () => {
 });
 
 describe("admin action queues", () => {
+  it("serializes slow reads, coalesces bursts, and applies only the newest cross-session snapshot", async () => {
+    type Snapshot = { requests: string[]; counts: AdminActionCounts };
+    const resolvers: Array<(snapshot: Snapshot) => void> = [];
+    const applied: Snapshot[] = [];
+    let activeLoads = 0;
+    let maximumActiveLoads = 0;
+    let loadCalls = 0;
+    const refresh = createCoalescedAdminRefresh(
+      () => {
+        loadCalls += 1;
+        activeLoads += 1;
+        maximumActiveLoads = Math.max(maximumActiveLoads, activeLoads);
+        return new Promise<Snapshot>((resolve) => {
+          resolvers.push((snapshot) => {
+            activeLoads -= 1;
+            resolve(snapshot);
+          });
+        });
+      },
+      (snapshot) => { applied.push(snapshot); },
+      () => undefined,
+    );
+
+    const initialPoll = refresh.request();
+    const focusRefresh = refresh.request();
+    const menuRefresh = refresh.request();
+    expect(loadCalls).toBe(1);
+    expect(maximumActiveLoads).toBe(1);
+
+    resolvers[0]({ requests: ["old"], counts: { requests: 1, moderation: 0, upgrades: 0 } });
+    await vi.waitFor(() => expect(loadCalls).toBe(2));
+    expect(applied).toEqual([]);
+    expect(maximumActiveLoads).toBe(1);
+
+    resolvers[1]({ requests: ["old", "new-from-other-session"], counts: { requests: 2, moderation: 0, upgrades: 0 } });
+    await expect(Promise.all([initialPoll, focusRefresh, menuRefresh])).resolves.toEqual([true, true, true]);
+    expect(applied).toEqual([
+      { requests: ["old", "new-from-other-session"], counts: { requests: 2, moderation: 0, upgrades: 0 } },
+    ]);
+    expect(maximumActiveLoads).toBe(1);
+    refresh.dispose();
+  });
+
+  it("aborts a hung read at the timeout, reports unknown, and accepts a later refresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const failures: Array<{ timedOut: boolean }> = [];
+      const applied: number[] = [];
+      let attempt = 0;
+      let observedAbort = false;
+      const refresh = createCoalescedAdminRefresh(
+        (signal) => {
+          attempt += 1;
+          if (attempt === 2) return Promise.resolve(9);
+          return new Promise<number>(() => {
+            signal.addEventListener("abort", () => { observedAbort = true; }, { once: true });
+          });
+        },
+        (value) => { applied.push(value); },
+        (failure) => { failures.push(failure); },
+        250,
+      );
+
+      const timedOut = refresh.request();
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(timedOut).resolves.toBe(false);
+      expect(observedAbort).toBe(true);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ timedOut: true });
+      expect(applied).toEqual([]);
+
+      await expect(refresh.request()).resolves.toBe(true);
+      expect(applied).toEqual([9]);
+      refresh.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("loads the exact four RLS-scoped queue counts and combines moderation work", async () => {
     const calls: string[] = [];
     const result = await loadAdminActionCounts({

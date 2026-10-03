@@ -6,8 +6,11 @@ import {
   isAuthRateLimitError,
   isPlausibleEmail,
   resendSignupConfirmation,
+  SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE,
   SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
-  signupFailureRecovery,
+  SIGNUP_PENDING_MESSAGE,
+  signupConfirmationFeedback,
+  signupFailureTransition,
   thaiAuthErrorMessage,
 } from "../signupEmailConfirmation";
 
@@ -27,6 +30,8 @@ describe("signup email confirmation", () => {
     "not an origin",
   ])("rejects a non-origin callback base: %s", (origin) => {
     expect(buildSignupConfirmationRedirect(origin, "/app")).toBeNull();
+    expect(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE).toMatch(/[\u0E00-\u0E7F]/);
+    expect(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE).not.toMatch(/SMTP|Resend|Supabase|error/i);
   });
 
   it("uses safe generic Thai errors without reflecting provider details", () => {
@@ -44,6 +49,8 @@ describe("signup email confirmation", () => {
     expect(isAuthRateLimitError({ status: 429 })).toBe(true);
     expect(thaiAuthErrorMessage("resend", { status: 429, message: "provider secret" }))
       .toBe(AUTH_RATE_LIMIT_MESSAGE);
+    expect(thaiAuthErrorMessage("signup", { status: 429, message: "provider secret" }))
+      .toBe(SIGNUP_PENDING_MESSAGE);
   });
 
   it("validates the email locally before any resend call", async () => {
@@ -111,6 +118,19 @@ describe("signup email confirmation", () => {
     )).resolves.toEqual({ outcome: "accepted" });
   });
 
+  it("renders rate-limited resend exactly like an accepted resend", () => {
+    expect(signupConfirmationFeedback({ outcome: "rate-limited" }))
+      .toEqual(signupConfirmationFeedback({ outcome: "accepted" }));
+    expect(signupConfirmationFeedback({ outcome: "accepted" })).toEqual({
+      presentation: "notice",
+      message: expect.stringContaining("หากอีเมลนี้มีบัญชีที่รอยืนยัน"),
+    });
+    expect(signupConfirmationFeedback({ outcome: "invalid" })).toEqual({
+      presentation: "error",
+      message: expect.not.stringContaining("SMTP"),
+    });
+  });
+
   it("blocks provider calls for all 60 cooldown seconds, then allows exactly one resend", async () => {
     const providerDetail = "SMTP rejected secret-user@example.com with private token";
     const resend = vi.fn(async () => ({ outcome: "accepted" } as const));
@@ -121,8 +141,12 @@ describe("signup email confirmation", () => {
     });
 
     expect(recovery).toEqual({
-      message: AUTH_RATE_LIMIT_MESSAGE,
+      kind: "recovery",
+      message: SIGNUP_PENDING_MESSAGE,
+      mode: "signin",
+      clearPasswords: true,
       openConfirmationHelp: true,
+      presentation: "notice",
       resendCooldownSeconds: SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
     });
     expect(recovery.message).not.toContain(providerDetail);
@@ -149,14 +173,82 @@ describe("signup email confirmation", () => {
     expect(resend).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps non-rate-limited signup failures on the same privacy-safe recovery surface", () => {
-    const recovery = signupFailureRecovery({
-      code: "user_already_exists",
-      message: "secret-user@example.com already exists",
+  it("collapses account, SMTP, and network failures to the same privacy-safe recovery", () => {
+    const sensitiveFailures = [
+      {
+        code: "user_already_exists",
+        message: "secret-user@example.com already exists",
+      },
+      {
+        code: "unexpected_failure",
+        status: 500,
+        message: "Error sending confirmation email through smtp.resend.com",
+      },
+      new Error("network failed after secret-user@example.com was created"),
+      { code: "over_email_send_rate_limit", status: 429, message: "provider throttled" },
+      null,
+    ];
+
+    const recoveries = sensitiveFailures.map(signupFailureTransition);
+    expect(new Set(recoveries.map((recovery) => JSON.stringify(recovery))).size).toBe(1);
+    expect(recoveries[0]).toEqual({
+      kind: "recovery",
+      message: SIGNUP_PENDING_MESSAGE,
+      mode: "signin",
+      clearPasswords: true,
+      openConfirmationHelp: true,
+      presentation: "notice",
+      resendCooldownSeconds: SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+    });
+    for (const recovery of recoveries) {
+      expect(recovery.message).not.toContain("secret-user@example.com");
+      expect(recovery.message).not.toContain("SMTP");
+      expect(recovery.message).not.toContain("Resend");
+      expect(recovery.message).not.toContain("Error sending confirmation email");
+    }
+  });
+
+  it.each([
+    "weak_password",
+    "email_address_invalid",
+    "validation_failed",
+    "captcha_failed",
+    "signup_disabled",
+    "email_provider_disabled",
+  ])("keeps definitive pre-account error %s on signup with safe corrective copy", (code) => {
+    const providerDetail = "secret-user@example.com provider detail";
+    const controller = createSignupConfirmationResendController();
+    const transition = controller.applySignupFailure({ code, message: providerDetail });
+
+    expect(transition.kind).toBe("correctable");
+    expect(transition.mode).toBe("signup");
+    expect(transition.clearPasswords).toBe(false);
+    expect(transition.openConfirmationHelp).toBe(false);
+    expect(transition.presentation).toBe("error");
+    expect(transition.resendCooldownSeconds).toBe(0);
+    expect(transition.message).not.toContain(providerDetail);
+    expect(transition.message).not.toContain("secret-user@example.com");
+    expect(controller.getState()).toEqual({ cooldownSeconds: 0, resending: false });
+  });
+
+  it("immediately guards resend after an indeterminate mail-delivery failure", async () => {
+    const resend = vi.fn(async () => ({ outcome: "accepted" } as const));
+    const controller = createSignupConfirmationResendController();
+
+    const recovery = controller.applySignupFailure({
+      code: "unexpected_failure",
+      status: 500,
+      message: "Error sending confirmation email",
     });
 
-    expect(recovery.openConfirmationHelp).toBe(true);
-    expect(recovery.resendCooldownSeconds).toBe(0);
-    expect(recovery.message).not.toContain("secret-user@example.com");
+    expect(recovery.presentation).toBe("notice");
+    expect(recovery.mode).toBe("signin");
+    expect(recovery.clearPasswords).toBe(true);
+    expect(controller.getState()).toEqual({
+      cooldownSeconds: SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+      resending: false,
+    });
+    await expect(controller.requestResend(resend)).resolves.toEqual({ outcome: "blocked" });
+    expect(resend).not.toHaveBeenCalled();
   });
 });

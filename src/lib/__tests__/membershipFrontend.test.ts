@@ -36,7 +36,7 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
     expect(membership).toContain("reportMembershipPayment");
     expect(membership).toContain("ฉันส่งเลขอ้างอิงและหลักฐานแล้ว");
-    expect(membership).toContain("pendingFounderFull");
+    expect(membership).toContain("pendingFounderUnavailable");
     expect(membership).toContain("convertFounderApplicationToTeacher");
     expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher 599 บาท/ปี");
     expect(membership).toContain('const nextCapacity = await fetchFounderCapacity(supabase)');
@@ -116,6 +116,68 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("ไปพื้นที่สมาชิก");
     expect(memberApp).toContain("fetchEntitlementsResult(supabase)");
     expect(memberApp).toContain("if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements)");
+    expect(membership).toContain("fetchMembershipReturnResource");
+    expect(membership).toContain("returnResourcePlanIds");
+    expect(membership).toContain("membershipPlanUnlocksResource");
+    expect(membership).toContain("membershipReturnResourceState(returnResourceId, returnResourceRead)");
+    expect(membership).toContain("pendingPlanMismatch");
+    expect(membership).toContain("pendingPaymentBlocked");
+    expect(membership).toContain("ปิดปุ่ม LINE และการแจ้งหลักฐาน");
+  });
+
+  it("does not sell an unrelated plan for Plus-only or Lifetime-only resources", () => {
+    expect(membership).toContain("noSelectablePlanForResource");
+    expect(membership).toContain("membershipResourceHasSelectablePlan(returnResourcePlanIds)");
+    expect(membership).toContain("&& !noSelectablePlanForResource");
+    expect(membership).toContain("ไม่มีแพ็กที่เปิดขายสำหรับสื่อนี้");
+    expect(membership).toContain("ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้");
+    const legacyGuestBranch = membership.indexOf("!userId && noSelectablePlanForResource");
+    const genericGuestBranch = membership.indexOf(") : !userId ? (");
+    expect(legacyGuestBranch).toBeGreaterThan(-1);
+    expect(genericGuestBranch).toBeGreaterThan(legacyGuestBranch);
+    expect(membership).toContain("เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม");
+    expect(membership).toContain("const legacyReturnQuery = new URLSearchParams({ returnTo })");
+    expect(membership).toContain("const signInHref = `/login?next=");
+    expect(membership).toContain("เข้าสู่ระบบตรวจสอบสิทธิ์");
+    expect(membership).toContain('href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"');
+    expect(membership).toContain("ใช้สิทธิ์สมาชิกเดิม");
+    expect(membership).toContain("ตรวจสอบสิทธิ์เดิม");
+    expect(membership).toContain("ตรวจสอบสิทธิ์สมาชิกเดิม");
+    expect(membership).toContain("{!noSelectablePlanForResource && (");
+    expect(membership).toContain("ไม่ได้เปิดรับสมัครด้วยแพ็ก Founder หรือ Teacher");
+    expect(membership).toContain("const showLegacySupportOnly = noSelectablePlanForResource");
+    expect(membership).toContain("&& pendingApplication === null");
+    expect(membership).toContain("{showLegacySupportOnly ? (");
+    expect(membership).toContain("membershipApplicationPlanLabel(application.planId)");
+
+    const unlockedAction = membership.indexOf(") : hasUnlockedMembership ? (");
+    const pendingAction = membership.indexOf(") : latestApplication && hasOpenApplication ? (", unlockedAction);
+    const noSelectableAction = membership.indexOf(") : noSelectablePlanForResource ? (", pendingAction);
+    const genericActiveAction = membership.indexOf(") : hasCurrentMembership && !requestedPlanMismatch", noSelectableAction);
+    expect(unlockedAction).toBeGreaterThan(-1);
+    expect(pendingAction).toBeGreaterThan(unlockedAction);
+    expect(noSelectableAction).toBeGreaterThan(pendingAction);
+    expect(genericActiveAction).toBeGreaterThan(noSelectableAction);
+
+    const paymentStart = membership.indexOf('id="membership-payment-title"');
+    const paymentUnlocked = membership.indexOf(") : hasUnlockedMembership ? (", paymentStart);
+    const paymentBlocked = membership.indexOf(") : pendingPaymentBlocked ? (", paymentUnlocked);
+    const paymentPending = membership.indexOf(') : latestApplication?.status === "pending" ? (', paymentBlocked);
+    const paymentGenericActive = membership.indexOf(") : hasCurrentMembership && !requestedPlanMismatch", paymentPending);
+    expect(paymentStart).toBeGreaterThan(-1);
+    expect(paymentUnlocked).toBeGreaterThan(paymentStart);
+    expect(paymentBlocked).toBeGreaterThan(paymentUnlocked);
+    expect(paymentPending).toBeGreaterThan(paymentBlocked);
+    expect(paymentGenericActive).toBeGreaterThan(paymentPending);
+  });
+
+  it("fails closed on repeat Founder eligibility and warns before irreversible plan changes", () => {
+    expect(membership).toContain("fetchMyFounderHistory");
+    expect(membership).toContain("founderOfferUnavailable");
+    expect(membership).toContain("membershipPlanChangeConfirmation");
+    expect(membership).toContain("founderApplicationConversionConfirmation");
+    expect(membership).toContain("สิทธิ์ Founder 299 บาทใช้ได้เฉพาะปีแรกและครั้งแรกเท่านั้น");
+    expect(membership).toContain("สื่อที่ต้องการรองรับเฉพาะ Founder");
   });
 
   it("keeps approved applications as history while only pending work blocks another submission", () => {

@@ -10,16 +10,15 @@ import { safeAuthNext } from "@/lib/authReturnPath";
 import { LINE_OA_URL } from "@/lib/config";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
 import {
-  AUTH_RATE_LIMIT_MESSAGE,
   buildSignupConfirmationRedirect,
   canResendSignupConfirmation,
   createSignupConfirmationResendController,
   INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE,
-  isAuthRateLimitError,
   isPlausibleEmail,
   PASSWORD_RESET_REQUEST_MESSAGE,
-  RESEND_CONFIRMATION_SUCCESS_MESSAGE,
   resendSignupConfirmation,
+  signupConfirmationFeedback,
+  SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE,
   SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
   SIGNUP_PENDING_MESSAGE,
   thaiAuthErrorMessage,
@@ -74,6 +73,25 @@ function LoginForm() {
   const resendCooldown = resendState.cooldownSeconds;
   const resendingConfirmation = resendState.resending;
 
+  const applySignupFailureTransition = (failure: unknown) => {
+    const transition = resendController.applySignupFailure(failure);
+    if (transition.presentation === "error") {
+      setError(transition.message);
+      setNotice(null);
+    } else {
+      setError(null);
+      setNotice(transition.message);
+    }
+    setMode(transition.mode);
+    setConfirmationHelpOpen(transition.openConfirmationHelp);
+    if (transition.clearPasswords) {
+      setPassword("");
+      setConfirmPassword("");
+      setShowPassword(false);
+      setShowConfirmPassword(false);
+    }
+  };
+
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -113,7 +131,7 @@ function LoginForm() {
       if (mode === "signup") {
         const emailRedirectTo = buildSignupConfirmationRedirect(window.location.origin, next);
         if (!emailRedirectTo) {
-          setError(thaiAuthErrorMessage("signup", null));
+          setError(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE);
           return;
         }
         const { data, error: signUpError } = await supabase.auth.signUp({
@@ -128,11 +146,7 @@ function LoginForm() {
           // Some provider failures can happen after an unconfirmed account was
           // created. Never expose that provider detail; offer the same recovery
           // path whether the account exists or not.
-          const recovery = resendController.applySignupFailure(signUpError);
-          setError(recovery.message);
-          setConfirmationHelpOpen(recovery.openConfirmationHelp);
-          setPassword("");
-          setConfirmPassword("");
+          applySignupFailureTransition(signUpError);
           return;
         }
         if (!data.session) {
@@ -162,7 +176,15 @@ function LoginForm() {
       router.replace(next);
       router.refresh();
     } catch {
-      setError("เชื่อมต่อระบบสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      if (mode === "signup") {
+        // A disconnected response cannot prove whether Auth created the
+        // account before delivery failed. Use the same privacy-safe recovery
+        // state as a returned provider error and never ask the visitor to
+        // submit the password again.
+        applySignupFailureTransition(null);
+      } else {
+        setError("เชื่อมต่อระบบสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      }
     } finally {
       setLoading(false);
     }
@@ -191,11 +213,9 @@ function LoginForm() {
 
     if (result.outcome === "blocked") return;
 
-    if (result.outcome === "rate-limited") {
-      setError(AUTH_RATE_LIMIT_MESSAGE);
-      return;
-    }
-    setNotice(RESEND_CONFIRMATION_SUCCESS_MESSAGE);
+    const feedback = signupConfirmationFeedback(result);
+    if (feedback.presentation === "error") setError(feedback.message);
+    else setNotice(feedback.message);
   };
 
   const handleForgotPassword = async () => {
@@ -211,13 +231,9 @@ function LoginForm() {
     }
     setResetting(true);
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (isAuthRateLimitError(resetError)) {
-        setError(AUTH_RATE_LIMIT_MESSAGE);
-        return;
-      }
       setNotice(PASSWORD_RESET_REQUEST_MESSAGE);
     } catch {
       // Network/provider outcomes use the same accepted copy so this flow

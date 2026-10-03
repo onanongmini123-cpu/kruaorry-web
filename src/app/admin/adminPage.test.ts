@@ -13,15 +13,17 @@ describe("responsive admin console contracts", () => {
   });
 
   it("uses authoritative admin-only action counts and marks new work first", () => {
-    expect(pageSource).toContain("createLatestAdminActionCountRefresh");
-    expect(pageSource).toContain("loadAdminActionCounts({");
+    expect(pageSource).toContain("createCoalescedAdminRefresh");
+    expect(pageSource).toContain("loadAdminQueueSnapshot");
     expect(pageSource).toContain("installAdminActionRefresh(window");
     expect(pageSource).toContain("}, allowed)");
-    expect(pageSource).toContain("countRefresh.dispose()");
-    expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", "pending")');
+    expect(pageSource).toContain("refresh.dispose()");
+    expect(pageSource).toContain('requestRows?.filter((row) => row.status === "pending").length');
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("moderation_status", "pending")');
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", status)');
-    expect(pageSource).toContain('.not("payment_reported_at", "is", null)');
+    expect(pageSource).toContain("upgradeRows?.filter(isActionableUpgradeRequest).length");
+    expect(pageSource).toContain("setQueueRefreshError");
+    expect(pageSource).toContain("abortSignal(signal)");
     expect(pageSource).toContain("badge: navBadgeByKey[item.key as View]");
     expect(pageSource).toContain('isActionableUpgradeRequest(r) && <Badge tone="brand">ใหม่</Badge>');
     expect(pageSource).toContain('r.status === "pending" && <Badge tone="brand">ใหม่</Badge>');
@@ -45,9 +47,11 @@ describe("responsive admin console contracts", () => {
   it("writes access, featured order, moderation and benefit copy only through reviewed RPCs", () => {
     expect(pageSource).toContain('rpc("admin_save_resource"');
     expect(pageSource).toContain('rpc("set_featured_resources"');
-    expect(pageSource).toContain('rpc("admin_set_review_visibility"');
-    expect(pageSource).toContain('rpc("admin_delete_resource_review"');
-    expect(pageSource).toContain('rpc("admin_set_resource_issue_status"');
+    expect(pageSource).toContain('rpc("admin_compare_set_review_visibility"');
+    expect(pageSource).toContain('rpc("admin_compare_delete_resource_review"');
+    expect(pageSource).toContain('rpc("admin_compare_set_resource_issue_status"');
+    expect(pageSource).toContain('rpc("admin_compare_set_request_status"');
+    expect(pageSource).toContain('rpc("admin_compare_decline_upgrade_request"');
     expect(pageSource).toContain('rpc("admin_update_feature_copy"');
     expect(pageSource).not.toContain("form.is_free");
     expect(pageSource).toContain("p_access_mode: form.access_mode");
@@ -61,8 +65,8 @@ describe("responsive admin console contracts", () => {
 
   it("preserves the real vote-ranked request workflow and complete tab semantics", () => {
     expect(pageSource).toContain('.order("votes", { ascending: false })');
-    expect(pageSource).toContain("const loadTeacherRequests = async () =>");
-    expect(pageSource).toContain("loadTeacherRequests(),");
+    expect(pageSource).toContain("const loadTeacherRequests = async (signal: AbortSignal)");
+    expect(pageSource).toContain("loadTeacherRequests(signal)");
     expect(pageSource).toContain("{r.votes} โหวต");
     expect(pageSource).toContain('aria-controls="admin-reviews-panel"');
     expect(pageSource).toContain('aria-labelledby="admin-reviews-tab"');
@@ -73,8 +77,8 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).neq("moderation_status", "pending")');
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", status)');
     expect(pageSource).toContain("priorityPageSlices(counts, page, MODERATION_PAGE_SIZE)");
-    expect(pageSource).toContain("loadReviewPage(nextReviewPage)");
-    expect(pageSource).toContain("loadReportPage(nextReportPage)");
+    expect(pageSource).toContain("loadReviewPage(reviewPageToLoad, signal)");
+    expect(pageSource).toContain("loadReportPage(reportPageToLoad, signal)");
     expect(pageSource).toContain(".range(slice.from, slice.to)");
     expect(pageSource).toContain("รีวิว ({reviewTotal})");
     expect(pageSource).toContain("รายงานปัญหา ({reportTotal})");
@@ -104,12 +108,40 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain("payment_reported_at");
     expect(pageSource).toContain("resolution_reason_code");
     expect(pageSource).toContain("adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)");
-    expect(pageSource).toContain("const loadUpgradeRequests = async () =>");
+    expect(pageSource).toContain("const loadUpgradeRequests = async (signal: AbortSignal)");
     expect(pageSource).toContain("profiles!upgrade_requests_user_id_fkey(full_name, email)");
     expect(pageSource).toContain("profiles!resource_reviews_user_id_fkey(full_name, email)");
-    expect(pageSource).toContain("loadUpgradeRequests(),");
+    expect(pageSource).toContain("loadUpgradeRequests(signal)");
     expect(pageSource).toContain(".range(offset, offset + pageSize - 1)");
     expect(pageSource).toContain('.order("id", { ascending: false })');
+  });
+
+  it("refreshes queue rows and badges together on focus, menu open, interval, and admin actions", () => {
+    expect(pageSource).toContain("await refreshAdminQueues(nextReviewPage, nextReportPage)");
+    expect(pageSource).toContain('nextView === "requests" || nextView === "moderation" || nextView === "upgrades"');
+    expect(pageSource).toContain("void refreshAdminQueues();");
+    expect(pageSource).toContain("installAdminActionRefresh(window");
+    expect(pageSource).toContain("actionCounts.requests");
+    expect(pageSource).toContain("setRequests(sortAdminRequests(snapshot.requests.data ?? []))");
+  });
+
+  it("fails closed against stale queue actions and immediate double submits", () => {
+    expect(pageSource).toContain("pendingActionRef.current = action");
+    expect(pageSource).toContain("p_expected_status: request.status");
+    expect(pageSource).toContain("p_expected_revision: request.admin_revision");
+    expect(pageSource).toContain("status, admin_revision, requested_by");
+    expect(pageSource).toContain("p_expected_status: review.moderation_status");
+    expect(pageSource).toContain("p_expected_updated_at: review.updated_at");
+    expect(pageSource).toContain("p_expected_status: report.status");
+    expect(pageSource).toContain("p_expected_updated_at: report.updated_at");
+    expect(pageSource).toContain("p_expected_payment_reported_at: request.payment_reported_at");
+    expect(pageSource).toContain("p_expected_plan_id: request.plan_id");
+    expect(pageSource).toContain("p_expected_quoted_amount_thb: request.quoted_amount_thb");
+    expect(pageSource).toContain("else if (!updated)");
+    expect(pageSource).toContain("else if (!deleted)");
+    expect(pageSource).toContain("if (!declined)");
+    expect(pageSource).toContain("queueRefreshError || !beginPendingAction(action)");
+    expect(pageSource).not.toContain('rpc("decline_upgrade_request"');
   });
 
   it("fails closed for membership operations without blocking unrelated admin data", () => {
@@ -135,7 +167,7 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain("projectedFounderSeats");
     expect(pageSource).toContain("founderCapacityFull");
     expect(pageSource).toContain("founderConfirmationBlocked");
-    expect(pageSource).toContain('disabled={pendingAction !== null || !paymentVerified || founderConfirmationBlocked}');
+    expect(pageSource).toContain('disabled={pendingAction !== null || !paymentVerified || founderConfirmationBlocked || queueRefreshError !== null}');
     expect(pageSource).toContain("await fetchFounderCapacity(supabase)");
     expect(pageSource).toContain("ลองตรวจสอบอีกครั้ง");
   });
