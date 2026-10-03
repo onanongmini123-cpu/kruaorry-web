@@ -33,6 +33,118 @@ export interface PriorityPageSlice {
   to: number;
 }
 
+export const ADMIN_ACTION_REFRESH_INTERVAL_MS = 30_000;
+
+export interface AdminActionCounts {
+  requests: number | null;
+  moderation: number | null;
+  upgrades: number | null;
+}
+
+export const EMPTY_ADMIN_ACTION_COUNTS: AdminActionCounts = {
+  requests: null,
+  moderation: null,
+  upgrades: null,
+};
+
+interface AdminActionCountQueryResult {
+  count: number | null;
+  error: unknown;
+}
+
+export interface AdminActionCountQueries {
+  requests: () => PromiseLike<AdminActionCountQueryResult>;
+  reviews: () => PromiseLike<AdminActionCountQueryResult>;
+  reports: () => PromiseLike<AdminActionCountQueryResult>;
+  upgrades: () => PromiseLike<AdminActionCountQueryResult>;
+}
+
+async function runAdminActionCountQuery(
+  query: () => PromiseLike<AdminActionCountQueryResult>,
+): Promise<AdminActionCountQueryResult> {
+  try {
+    return await query();
+  } catch (error) {
+    return { count: null, error };
+  }
+}
+
+export async function loadAdminActionCounts(
+  queries: AdminActionCountQueries,
+  includeUpgrades: boolean,
+): Promise<AdminActionCounts> {
+  const [requestResult, reviewResult, reportResult, upgradeResult] = await Promise.all([
+    runAdminActionCountQuery(queries.requests),
+    runAdminActionCountQuery(queries.reviews),
+    runAdminActionCountQuery(queries.reports),
+    includeUpgrades
+      ? runAdminActionCountQuery(queries.upgrades)
+      : Promise.resolve({ count: null, error: null }),
+  ]);
+
+  return {
+    requests: requestResult.error ? null : requestResult.count ?? 0,
+    moderation: reviewResult.error || reportResult.error
+      ? null
+      : (reviewResult.count ?? 0) + (reportResult.count ?? 0),
+    upgrades: !includeUpgrades || upgradeResult.error
+      ? null
+      : upgradeResult.count ?? 0,
+  };
+}
+
+export interface LatestAdminActionCountRefresh {
+  refresh(): Promise<boolean>;
+  dispose(): void;
+}
+
+export function createLatestAdminActionCountRefresh(
+  load: () => Promise<AdminActionCounts>,
+  apply: (counts: AdminActionCounts) => void,
+): LatestAdminActionCountRefresh {
+  let latestRequest = 0;
+  let active = true;
+
+  return {
+    async refresh() {
+      const request = ++latestRequest;
+      const counts = await load();
+      if (!active || request !== latestRequest) return false;
+      apply(counts);
+      return true;
+    },
+    dispose() {
+      active = false;
+      latestRequest += 1;
+    },
+  };
+}
+
+export interface AdminActionRefreshTarget {
+  addEventListener(type: "focus", listener: () => void): void;
+  removeEventListener(type: "focus", listener: () => void): void;
+  setInterval(handler: () => void, timeout: number): number;
+  clearInterval(id: number): void;
+}
+
+export function installAdminActionRefresh(
+  target: AdminActionRefreshTarget,
+  refresh: () => void,
+  enabled: boolean,
+  intervalMs = ADMIN_ACTION_REFRESH_INTERVAL_MS,
+): () => void {
+  if (!enabled) return () => undefined;
+
+  refresh();
+  target.addEventListener("focus", refresh);
+  const intervalId = target.setInterval(refresh, intervalMs);
+
+  return () => {
+    target.removeEventListener("focus", refresh);
+    target.clearInterval(intervalId);
+  };
+}
+
 export function priorityPageSlices(groupCounts: number[], page: number, pageSize: number): PriorityPageSlice[] {
   if (!Number.isInteger(page) || page < 0 || !Number.isInteger(pageSize) || pageSize <= 0) return [];
   const pageStart = page * pageSize;

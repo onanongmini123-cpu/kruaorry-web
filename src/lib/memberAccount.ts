@@ -1,5 +1,6 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import type { UpgradeRequest } from "@/lib/data";
+import { isMembershipRenewalDue } from "@/lib/membershipRenewal";
 
 export type MemberSubscriptionStatus = "active" | "past_due" | "expired" | "cancelled" | "revoked";
 
@@ -65,10 +66,9 @@ export function isMembershipExpired(subscription: MemberSubscription, now = Date
   return Number.isFinite(end) && end <= now;
 }
 
-export function canRequestMembershipRenewal(subscription: MemberSubscription | null): boolean {
+export function canRequestMembershipRenewal(subscription: MemberSubscription | null, now = Date.now()): boolean {
   if (!subscription || subscription.source === "legacy" || subscription.billingInterval !== "year") return false;
-  if (!subscription.currentPeriodEnd || !Number.isFinite(Date.parse(subscription.currentPeriodEnd))) return false;
-  return ["active", "past_due", "expired"].includes(subscription.status);
+  return isMembershipRenewalDue(subscription.status, subscription.currentPeriodEnd, now);
 }
 
 export function preferredMembershipApplication(applications: UpgradeRequest[]): UpgradeRequest | null {

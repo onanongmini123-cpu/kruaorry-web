@@ -13,6 +13,11 @@ describe("responsive admin console contracts", () => {
   });
 
   it("uses authoritative admin-only action counts and marks new work first", () => {
+    expect(pageSource).toContain("createLatestAdminActionCountRefresh");
+    expect(pageSource).toContain("loadAdminActionCounts({");
+    expect(pageSource).toContain("installAdminActionRefresh(window");
+    expect(pageSource).toContain("}, allowed)");
+    expect(pageSource).toContain("countRefresh.dispose()");
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", "pending")');
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("moderation_status", "pending")');
     expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", status)');
@@ -33,6 +38,8 @@ describe("responsive admin console contracts", () => {
     expect(mobileNavSource).toContain("trigger?.focus()");
     expect(pageSource).toContain("env(safe-area-inset-bottom)");
     expect(pageSource).toContain("100dvh");
+    expect(mobileNavSource).toContain('ariaLabel="เมนูหลังบ้าน"');
+    expect(pageSource).toContain('ariaLabel="เมนูหลังบ้าน"');
   });
 
   it("writes access, featured order, moderation and benefit copy only through reviewed RPCs", () => {

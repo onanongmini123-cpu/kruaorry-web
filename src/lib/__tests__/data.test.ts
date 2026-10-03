@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
@@ -177,6 +177,10 @@ describe("fetchEntitlements", () => {
     } as unknown as SupabaseClient;
 
     await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+    await expect(fetchEntitlementsResult(supabase)).resolves.toEqual({
+      entitlements: { planId: "free", features: {} },
+      error: true,
+    });
   });
 });
 

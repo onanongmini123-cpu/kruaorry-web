@@ -19,6 +19,7 @@ import {
   fetchPlans,
   fetchFounderCapacity,
   fetchEntitlements,
+  fetchEntitlementsResult,
   fetchUpgradeRequestsResult,
   fetchProfile,
   fetchRequests,
@@ -49,6 +50,7 @@ import { persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import { fetchMemberSubscription, type MemberSubscription } from "@/lib/memberAccount";
 import { membershipUpgradeHref } from "@/app/resources/catalog";
+import { createLatestRefreshRunner } from "@/lib/latestRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -170,23 +172,25 @@ export default function TeacherAppPage() {
 
   useEffect(() => {
     if (!userId) return;
-    let active = true;
-    const refreshAccountStatus = () => {
-      void Promise.all([
+    const runner = createLatestRefreshRunner(
+      () => Promise.all([
         fetchMemberSubscription(supabase, userId),
         fetchUpgradeRequestsResult(supabase, userId),
-      ]).then(([subscriptionResult, applicationData]) => {
-        if (!active) return;
+        fetchEntitlementsResult(supabase),
+      ]),
+      ([subscriptionResult, applicationData, entitlementResult]) => {
         setSubscription(subscriptionResult.subscription);
         setSubscriptionError(subscriptionResult.error);
-        setUpgradeRequests(applicationData.applications);
+        if (!applicationData.error) setUpgradeRequests(applicationData.applications);
         setUpgradeRequestsError(applicationData.error);
-      });
-    };
+        if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
+      },
+    );
+    const refreshAccountStatus = () => { void runner.request(); };
     const timer = window.setInterval(refreshAccountStatus, 60_000);
     window.addEventListener("focus", refreshAccountStatus);
     return () => {
-      active = false;
+      runner.dispose();
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshAccountStatus);
     };
@@ -427,7 +431,7 @@ export default function TeacherAppPage() {
             <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-20)", color: "var(--text-strong)" }}>KruAorry</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <SideNav groups={NAV_GROUPS} value={view === "detail" ? detailReturnView : view} onChange={(k) => setView(k as View)} />
+            <SideNav groups={NAV_GROUPS} value={view === "detail" ? detailReturnView : view} ariaLabel="เมนูสมาชิก" onChange={(k) => setView(k as View)} />
           </div>
           {(profile?.role === "admin" || profile?.role === "owner") && (
             <Button size="sm" block variant="soft" icon={ShieldCheck} onClick={() => router.push("/admin")} style={{ marginTop: "var(--sp-4)" }}>
@@ -764,7 +768,7 @@ export default function TeacherAppPage() {
         </div>
       </div>
 
-      <nav className="kru-app-mobile-tabs">
+      <nav className="kru-app-mobile-tabs" aria-label="เมนูสมาชิกบนมือถือ">
         {NAV_GROUPS[0].items.map((tab) => {
           const active = view === tab.key || (view === "detail" && tab.key === detailReturnView);
           return (
@@ -772,9 +776,10 @@ export default function TeacherAppPage() {
               key={tab.key}
               type="button"
               onClick={() => setView(tab.key as View)}
+              aria-current={active ? "page" : undefined}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, border: "none", background: "transparent", color: active ? "var(--brand)" : "var(--text-muted)", fontSize: "var(--fs-12)", padding: "6px 4px", flex: 1 }}
             >
-              <tab.icon size={22} strokeWidth={1.75} />
+              <tab.icon size={22} strokeWidth={1.75} aria-hidden="true" />
               <span>{tab.label}</span>
             </button>
           );

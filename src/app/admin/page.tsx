@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
 import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search } from "lucide-react";
@@ -52,10 +52,14 @@ import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
 import {
+  EMPTY_ADMIN_ACTION_COUNTS,
   ISSUE_CATEGORY_LABEL,
   ISSUE_STATUS_LABEL,
   adminViewHref,
+  createLatestAdminActionCountRefresh,
+  installAdminActionRefresh,
   isActionableUpgradeRequest,
+  loadAdminActionCounts,
   moveFeaturedResource,
   parseAdminView,
   priorityPageSlices,
@@ -221,13 +225,6 @@ const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success
 const ROLE_LABEL: Record<AdminMember["role"], string> = { member: "สมาชิก", admin: "แอดมิน", owner: "เจ้าของระบบ" };
 const AUDIT_FIELD_LABEL: Record<AdminAuditLogRow["field"], string> = { role: "บทบาท", plan: "แพ็ก" };
 const MODERATION_PAGE_SIZE = 50;
-interface AdminActionCounts {
-  requests: number | null;
-  moderation: number | null;
-  upgrades: number | null;
-}
-
-const EMPTY_ACTION_COUNTS: AdminActionCounts = { requests: null, moderation: null, upgrades: null };
 const ADMIN_REVIEW_SELECT = "id, resource_id, user_id, rating, body, moderation_status, created_at, updated_at, resources(title), profiles!resource_reviews_user_id_fkey(full_name, email)";
 const ADMIN_REPORT_SELECT = "id, resource_id, reporter_id, category, details, status, created_at, updated_at, resources(title), profiles(full_name, email)";
 const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
@@ -267,7 +264,8 @@ export default function AdminConsolePage() {
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
   const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [issueReports, setIssueReports] = useState<AdminIssueReport[]>([]);
-  const [actionCounts, setActionCounts] = useState(EMPTY_ACTION_COUNTS);
+  const [actionCounts, setActionCounts] = useState(EMPTY_ADMIN_ACTION_COUNTS);
+  const actionCountRefreshRef = useRef<ReturnType<typeof createLatestAdminActionCountRefresh> | null>(null);
   const [reviewPage, setReviewPage] = useState(0);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [reportPage, setReportPage] = useState(0);
@@ -504,7 +502,6 @@ export default function AdminConsolePage() {
       loadReviewPage(nextReviewPage),
       loadReportPage(nextReportPage),
       supabase.from("plan_benefit_catalog").select("plan_id, feature_id, feature_name, feature_description, value_type, limit_value, sort_order").order("sort_order", { ascending: true }).order("feature_id", { ascending: true }),
-      supabase.from("requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
     ]);
     const readinessPromise = fetchMembershipSchemaReadiness(supabase);
 
@@ -516,10 +513,9 @@ export default function AdminConsolePage() {
       { data: auditRows, error: auditError },
       { data: accessRows, error: accessError },
       { data: featuredRows, error: featuredError },
-      { data: reviewRows, error: reviewError, count: reviewCount, actionCount: reviewActionCount },
-      { data: reportRows, error: reportError, count: reportCount, actionCount: reportActionCount },
+      { data: reviewRows, error: reviewError, count: reviewCount },
+      { data: reportRows, error: reportError, count: reportCount },
       { data: benefits, error: benefitError },
-      { error: requestActionCountError, count: requestActionCount },
     ] = await baseDataPromise;
 
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
@@ -553,15 +549,6 @@ export default function AdminConsolePage() {
     }
     if (benefitError) console.error("Failed to load plan benefits:", benefitError.message);
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
-    if (requestActionCountError) console.error("Failed to count actionable requests:", requestActionCountError.message);
-    setActionCounts((current) => ({
-      ...current,
-      requests: requestActionCountError ? null : requestActionCount ?? 0,
-      moderation: reviewError || reportError || reviewActionCount === null || reportActionCount === null
-        ? null
-        : reviewActionCount + reportActionCount,
-    }));
-
     const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
       .map((plan) => ({ ...plan, renewal_price_amount_thb: null }));
     setPlans(basePlanError ? [] : basePlans);
@@ -577,19 +564,15 @@ export default function AdminConsolePage() {
         { data: planRows, error: planError },
         { data: subscriptionRows, error: subscriptionError },
         { data: founderCount, error: founderCountError },
-        { error: upgradeActionCountError, count: upgradeActionCount },
       ] = await Promise.all([
         loadUpgradeRequests(),
         supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
         loadCurrentSubscriptions(),
         supabase.rpc("get_founder_capacity"),
-        supabase.from("upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending").not("payment_reported_at", "is", null),
       ]);
 
       if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
       setUpgradeRequests(upgradeError ? [] : sortAdminUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []));
-      if (upgradeActionCountError) console.error("Failed to count actionable upgrade requests:", upgradeActionCountError.message);
-      setActionCounts((current) => ({ ...current, upgrades: upgradeActionCountError ? null : upgradeActionCount ?? 0 }));
       if (planError) console.error("Failed to load membership plans:", planError.message);
       if (!planError) membershipPlans = (planRows as AdminPlanRow[]) ?? [];
       if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
@@ -604,7 +587,6 @@ export default function AdminConsolePage() {
       setSubscriptions(null);
       setFounderSeatsUsed(null);
       setPaymentTarget(null);
-      setActionCounts((current) => ({ ...current, upgrades: null }));
     }
 
     setMembershipDataError(membershipError);
@@ -615,6 +597,12 @@ export default function AdminConsolePage() {
     // loading. The catalogue fallback intentionally omits the new renewal
     // price while keeping resource-plan editing available.
     if (basePlanError && readiness !== "ready") setPlans([]);
+
+    // Keep badge writes on the single latest-only controller. This avoids an
+    // older full reload overwriting a newer focus/poll count, while preserving
+    // immediate badge updates after every successful mutation that awaits this
+    // function.
+    void actionCountRefreshRef.current?.refresh();
   };
 
   const subscriptionsByUser = useMemo(() => {
@@ -642,6 +630,15 @@ export default function AdminConsolePage() {
   const founderConfirmationBlocked = founderCapacityUnavailable || founderCapacityFull;
   const projectedFounderSeats = confirmsFounderApplication && founderSeatsUsed !== null ? founderSeatsUsed + 1 : null;
 
+  const loadCurrentAdminActionCounts = useCallback(() => {
+    return loadAdminActionCounts({
+      requests: () => supabase.from("requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      reviews: () => supabase.from("resource_reviews").select("id", { count: "exact", head: true }).eq("moderation_status", "pending"),
+      reports: () => supabase.from("resource_issue_reports").select("id", { count: "exact", head: true }).in("status", ["pending", "in_progress"]),
+      upgrades: () => supabase.from("upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending").not("payment_reported_at", "is", null),
+    }, membershipSchemaReadiness === "ready");
+  }, [membershipSchemaReadiness, supabase]);
+
   useEffect(() => {
     (async () => {
       const {
@@ -665,6 +662,20 @@ export default function AdminConsolePage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, router]);
+
+  useEffect(() => {
+    const countRefresh = createLatestAdminActionCountRefresh(loadCurrentAdminActionCounts, setActionCounts);
+    actionCountRefreshRef.current = countRefresh;
+    const uninstall = installAdminActionRefresh(window, () => {
+      void countRefresh.refresh();
+    }, allowed);
+
+    return () => {
+      uninstall();
+      countRefresh.dispose();
+      if (actionCountRefreshRef.current === countRefresh) actionCountRefreshRef.current = null;
+    };
+  }, [allowed, loadCurrentAdminActionCounts]);
 
   useEffect(() => {
     if (!viewerRole) return;
@@ -1648,7 +1659,7 @@ export default function AdminConsolePage() {
             </div>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <SideNav groups={navGroups} value={view} onChange={handleNavChange} />
+            <SideNav groups={navGroups} value={view} ariaLabel="เมนูหลังบ้าน" onChange={handleNavChange} />
           </div>
           <Button size="sm" block variant="soft" icon={Eye} onClick={() => router.push("/app?memberPreview=1")} disabled={mutationBusy} style={{ marginBottom: "var(--sp-3)" }}>
             ดูหน้าสมาชิก

@@ -19,11 +19,12 @@ interface SideNavProps {
   groups: SideNavGroup[];
   value: string;
   onChange: (key: string) => void;
+  ariaLabel?: string;
 }
 
-export function SideNav({ groups, value, onChange }: SideNavProps) {
+export function SideNav({ groups, value, onChange, ariaLabel = "เมนูหลัก" }: SideNavProps) {
   return (
-    <nav style={{ display: "flex", flexDirection: "column", gap: "var(--sp-6)" }}>
+    <nav aria-label={ariaLabel} style={{ display: "flex", flexDirection: "column", gap: "var(--sp-6)" }}>
       {groups.map((group, gi) => (
         <div key={group.label || gi}>
           {group.label && (
@@ -58,6 +59,7 @@ export function SideNav({ groups, value, onChange }: SideNavProps) {
                   onClick={() => onChange(item.key)}
                   className={`kru-sidenav__item ${active ? "kru-sidenav__item--active" : ""}`}
                   aria-label={badgeLabel}
+                  aria-current={active ? "page" : undefined}
                 >
                   <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
                   <span>{item.label}</span>

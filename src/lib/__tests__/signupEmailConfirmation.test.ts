@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUTH_RATE_LIMIT_MESSAGE,
   buildSignupConfirmationRedirect,
+  createSignupConfirmationResendController,
   isAuthRateLimitError,
   isPlausibleEmail,
   resendSignupConfirmation,
+  SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+  signupFailureRecovery,
   thaiAuthErrorMessage,
 } from "../signupEmailConfirmation";
 
@@ -106,5 +109,54 @@ describe("signup email confirmation", () => {
       "https://kruaorry-web.vercel.app",
       "/app",
     )).resolves.toEqual({ outcome: "accepted" });
+  });
+
+  it("blocks provider calls for all 60 cooldown seconds, then allows exactly one resend", async () => {
+    const providerDetail = "SMTP rejected secret-user@example.com with private token";
+    const resend = vi.fn(async () => ({ outcome: "accepted" } as const));
+    const controller = createSignupConfirmationResendController();
+    const recovery = controller.applySignupFailure({
+      code: "over_email_send_rate_limit",
+      message: providerDetail,
+    });
+
+    expect(recovery).toEqual({
+      message: AUTH_RATE_LIMIT_MESSAGE,
+      openConfirmationHelp: true,
+      resendCooldownSeconds: SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+    });
+    expect(recovery.message).not.toContain(providerDetail);
+    expect(recovery.message).not.toContain("secret-user@example.com");
+
+    for (let elapsedSeconds = 0; elapsedSeconds < SIGNUP_CONFIRMATION_COOLDOWN_SECONDS; elapsedSeconds += 1) {
+      expect(controller.getState().cooldownSeconds)
+        .toBe(SIGNUP_CONFIRMATION_COOLDOWN_SECONDS - elapsedSeconds);
+      await expect(controller.requestResend(resend)).resolves.toEqual({ outcome: "blocked" });
+      controller.elapseSecond();
+    }
+
+    expect(controller.getState()).toEqual({ cooldownSeconds: 0, resending: false });
+    expect(resend).not.toHaveBeenCalled();
+
+    await expect(controller.requestResend(resend)).resolves.toEqual({ outcome: "accepted" });
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toEqual({
+      cooldownSeconds: SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+      resending: false,
+    });
+
+    await expect(controller.requestResend(resend)).resolves.toEqual({ outcome: "blocked" });
+    expect(resend).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps non-rate-limited signup failures on the same privacy-safe recovery surface", () => {
+    const recovery = signupFailureRecovery({
+      code: "user_already_exists",
+      message: "secret-user@example.com already exists",
+    });
+
+    expect(recovery.openConfirmationHelp).toBe(true);
+    expect(recovery.resendCooldownSeconds).toBe(0);
+    expect(recovery.message).not.toContain("secret-user@example.com");
   });
 });

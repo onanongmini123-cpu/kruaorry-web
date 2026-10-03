@@ -40,6 +40,40 @@ export function thaiAuthErrorMessage(operation: AuthUiOperation, error: unknown)
   return isAuthRateLimitError(error) ? AUTH_RATE_LIMIT_MESSAGE : GENERIC_AUTH_MESSAGES[operation];
 }
 
+export interface SignupFailureRecovery {
+  message: string;
+  openConfirmationHelp: true;
+  resendCooldownSeconds: number;
+}
+
+/**
+ * Maps every sign-up failure to the same recovery surface while applying a
+ * local resend guard when Supabase reports rate limiting. Keeping this policy
+ * outside the component makes the privacy and cooldown behaviour testable
+ * without contacting Auth or sending email.
+ */
+export function signupFailureRecovery(error: unknown): SignupFailureRecovery {
+  return {
+    message: thaiAuthErrorMessage("signup", error),
+    openConfirmationHelp: true,
+    resendCooldownSeconds: isAuthRateLimitError(error) ? SIGNUP_CONFIRMATION_COOLDOWN_SECONDS : 0,
+  };
+}
+
+export function canResendSignupConfirmation(cooldownSeconds: number, resending: boolean): boolean {
+  return cooldownSeconds <= 0 && !resending;
+}
+
+export interface SignupConfirmationResendState {
+  readonly cooldownSeconds: number;
+  readonly resending: boolean;
+}
+
+export const INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE: SignupConfirmationResendState = {
+  cooldownSeconds: 0,
+  resending: false,
+};
+
 export function isPlausibleEmail(rawEmail: string): boolean {
   const email = rawEmail.trim();
   return email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -80,6 +114,84 @@ export type ResendSignupConfirmationResult =
   | { outcome: "accepted" }
   | { outcome: "rate-limited" }
   | { outcome: "invalid" };
+
+export type SignupConfirmationResendAttemptResult =
+  | ResendSignupConfirmationResult
+  | { outcome: "blocked" };
+
+export interface SignupConfirmationResendController {
+  getState(): SignupConfirmationResendState;
+  applySignupFailure(error: unknown): SignupFailureRecovery;
+  startCooldown(seconds?: number): void;
+  elapseSecond(): void;
+  requestResend(
+    resend: () => Promise<ResendSignupConfirmationResult>,
+  ): Promise<SignupConfirmationResendAttemptResult>;
+}
+
+/**
+ * Owns the resend gate synchronously so a disabled-looking CTA cannot issue a
+ * provider request through a stale render or a fast double click. React only
+ * mirrors the emitted state for presentation; this controller remains the
+ * authority for whether the effect is allowed to run.
+ */
+export function createSignupConfirmationResendController(
+  onStateChange: (state: SignupConfirmationResendState) => void = () => undefined,
+): SignupConfirmationResendController {
+  let state = INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE;
+
+  const updateState = (nextState: SignupConfirmationResendState) => {
+    if (
+      nextState.cooldownSeconds === state.cooldownSeconds
+      && nextState.resending === state.resending
+    ) return;
+
+    state = nextState;
+    onStateChange(state);
+  };
+
+  const startCooldown = (seconds = SIGNUP_CONFIRMATION_COOLDOWN_SECONDS) => {
+    const cooldownSeconds = Math.max(0, Math.ceil(seconds));
+    updateState({
+      ...state,
+      cooldownSeconds: Math.max(state.cooldownSeconds, cooldownSeconds),
+    });
+  };
+
+  return {
+    getState: () => state,
+    applySignupFailure: (error) => {
+      const recovery = signupFailureRecovery(error);
+      if (recovery.resendCooldownSeconds > 0) {
+        startCooldown(recovery.resendCooldownSeconds);
+      }
+      return recovery;
+    },
+    startCooldown,
+    elapseSecond: () => {
+      if (state.cooldownSeconds <= 0) return;
+      updateState({
+        ...state,
+        cooldownSeconds: Math.max(0, state.cooldownSeconds - 1),
+      });
+    },
+    requestResend: async (resend) => {
+      if (!canResendSignupConfirmation(state.cooldownSeconds, state.resending)) {
+        return { outcome: "blocked" };
+      }
+
+      updateState({
+        cooldownSeconds: SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+        resending: true,
+      });
+      try {
+        return await resend();
+      } finally {
+        updateState({ ...state, resending: false });
+      }
+    },
+  };
+}
 
 /**
  * Small injectable boundary around Supabase Auth. Tests pass a mock function,

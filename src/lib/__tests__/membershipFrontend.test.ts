@@ -19,14 +19,15 @@ describe("canonical manual membership flow", () => {
   });
 
   it("waits for a created pending application before exposing LINE and preserves a stable reference", () => {
-    expect(membership).toContain('applications.find((application) => application.status === "pending")');
+    expect(membership).toContain("pendingMembershipApplication(applications)");
+    expect(membership).toContain("const hasOpenApplication = pendingApplication !== null");
     expect(membership).toContain("await createMembershipApplication");
     expect(membership).toContain("latestApplication?.status === \"pending\"");
     expect(membership).toContain("referenceCode");
     expect(membership).toContain("LINE_OA_URL");
     expect(membership).toContain("navigator.clipboard.writeText");
-    expect(membership).toContain("fetchUpgradeRequests(supabase, userId)");
-    expect(membership).toContain('nextApplications.some((application) => application.status === "pending")');
+    expect(membership).toContain("fetchUpgradeRequestsResult(supabase, userId)");
+    expect(membership).toContain('applicationResult.applications.some((application) => application.status === "pending")');
   });
 
   it("separates payment reporting from review and safely converts a full pending Founder application", () => {
@@ -80,7 +81,7 @@ describe("canonical manual membership flow", () => {
   });
 
   it("keeps membership public, sends auth back safely, and redirects the old payment route", () => {
-    expect(membership).toContain("safeUpgradeReturnPath");
+    expect(membership).toContain("membershipReturnTarget");
     expect(membership).toContain("new URLSearchParams({ plan: applicationPlanId, returnTo })");
     expect(membership).toContain('const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?${membershipReturnQuery.toString()}`)}`');
     expect(membership.match(/href=\{signupHref\}/g)).toHaveLength(2);
@@ -101,9 +102,27 @@ describe("canonical manual membership flow", () => {
 
   it("preserves founder and teacher selection in membership URLs", () => {
     expect(membership).toContain('useSearchParams()');
-    expect(membership).toContain('requestedPlan === "teacher" || requestedPlan === "founder"');
+    expect(membership).toContain("requestedMembershipPlan(requestedPlan)");
     expect(membership).toContain('nextUrl.searchParams.set("plan", planId)');
     expect(membership).toContain('searchParams.getAll("returnTo")');
+  });
+
+  it("refreshes live membership access and returns an approved member to the validated resource", () => {
+    expect(membership).toContain("fetchMemberSubscription");
+    expect(membership.match(/fetchEntitlementsResult\(supabase\)/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(membership).toContain("membershipAutoReturnDestination");
+    expect(membership).toContain("router.replace(destination)");
+    expect(membership).toContain("กลับไปเปิดสื่อ");
+    expect(membership).toContain("ไปพื้นที่สมาชิก");
+    expect(memberApp).toContain("fetchEntitlementsResult(supabase)");
+    expect(memberApp).toContain("if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements)");
+  });
+
+  it("keeps approved applications as history while only pending work blocks another submission", () => {
+    expect(membership).toContain("pendingMembershipApplication(applications)");
+    expect(membership).toContain("รายการนี้เป็นประวัติที่อนุมัติแล้ว");
+    expect(membership).not.toContain('latestApplication?.status === "pending" || latestApplication?.status === "approved"');
+    expect(membership).toContain("สิทธิ์สมาชิกที่ใช้งานอยู่แล้ว");
   });
 
   it("uses explicit payment confirmation and records the audit fields in admin", () => {

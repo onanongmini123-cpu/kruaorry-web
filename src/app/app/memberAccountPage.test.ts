@@ -30,4 +30,10 @@ describe("member account integration", () => {
     expect(pageSource).toContain("คำขออัปเกรดอยู่ระหว่างดำเนินการ");
     expect(pageSource).toContain("ติดตามคำขออัปเกรด");
   });
+
+  it("exposes the current member destination in both desktop and mobile navigation", () => {
+    expect(pageSource).toContain('ariaLabel="เมนูสมาชิก"');
+    expect(pageSource).toContain('aria-label="เมนูสมาชิกบนมือถือ"');
+    expect(pageSource).toContain('aria-current={active ? "page" : undefined}');
+  });
 });

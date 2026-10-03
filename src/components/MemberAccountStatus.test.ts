@@ -31,6 +31,8 @@ const pendingApplication: UpgradeRequest = {
   createdAt: "2098-10-02T00:00:00.000Z",
 };
 
+const now = Date.parse("2099-09-25T00:00:00.000Z");
+
 describe("MemberAccountStatus", () => {
   it("shows plan, request, expiry, remaining days and the renewal action", () => {
     const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
@@ -40,6 +42,7 @@ describe("MemberAccountStatus", () => {
       subscriptionError: false,
       applications: [pendingApplication],
       applicationsError: false,
+      now,
     }));
 
     expect(markup).toContain("แพ็กปัจจุบัน");
@@ -51,6 +54,56 @@ describe("MemberAccountStatus", () => {
     expect(markup).toContain("ขอรหัสอ้างอิงต่ออายุทาง LINE");
     expect(markup).toContain("ขอรหัสอ้างอิงต่ออายุจากทีมงานก่อน");
     expect(markup).toContain('target="_blank"');
+  });
+
+  it("only offers active renewal inside the seven-day window", () => {
+    const atEightDays = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "teacher",
+      plans: [{ id: "teacher", name: "Teacher" }],
+      subscription: { ...subscription, currentPeriodEnd: "2099-10-03T00:00:00.000Z" },
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+      now,
+    }));
+    const atSevenDays = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "teacher",
+      plans: [{ id: "teacher", name: "Teacher" }],
+      subscription: { ...subscription, currentPeriodEnd: "2099-10-02T00:00:00.000Z" },
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+      now,
+    }));
+
+    expect(atEightDays).not.toContain("ขอรหัสอ้างอิงต่ออายุทาง LINE");
+    expect(atSevenDays).toContain("ขอรหัสอ้างอิงต่ออายุทาง LINE");
+  });
+
+  it("clearly distinguishes past-due and expired memberships", () => {
+    const pastDue = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "teacher",
+      plans: [{ id: "teacher", name: "Teacher" }],
+      subscription: { ...subscription, status: "past_due" },
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+      now,
+    }));
+    const expired = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "teacher",
+      plans: [{ id: "teacher", name: "Teacher" }],
+      subscription: { ...subscription, status: "expired", currentPeriodEnd: "2099-09-24T00:00:00.000Z" },
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+      now,
+    }));
+
+    expect(pastDue).toContain("รอต่ออายุ");
+    expect(pastDue).toContain("ขอรหัสอ้างอิงต่ออายุทาง LINE");
+    expect(expired).toContain("หมดอายุ");
+    expect(expired).toContain("ขอรหัสอ้างอิงต่ออายุทาง LINE");
   });
 
   it("offers the membership page to Free accounts", () => {

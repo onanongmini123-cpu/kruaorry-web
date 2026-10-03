@@ -94,6 +94,7 @@ export function AdminMobileNav({ groups, value, disabled, onChange, onMemberPrev
               <SideNav
                 groups={groups}
                 value={value}
+                ariaLabel="เมนูหลังบ้าน"
                 onChange={(key) => {
                   onChange(key);
                   close();

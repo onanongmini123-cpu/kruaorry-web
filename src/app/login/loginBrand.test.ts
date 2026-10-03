@@ -15,12 +15,4 @@ describe("login and signup branding", () => {
     expect(loginSource).toContain(".kru-login-form-brand { display: none; }");
     expect(loginSource).toContain(".kru-login-brand { display: flex !important; }");
   });
-
-  it("keeps account recovery UI independent from provider account state", () => {
-    expect(loginSource).toContain("setConfirmationHelpOpen(true);");
-    expect(loginSource).not.toContain("isEmailNotConfirmedError");
-    expect(loginSource).toContain('result.outcome === "rate-limited"');
-    expect(loginSource).toContain("setNotice(RESEND_CONFIRMATION_SUCCESS_MESSAGE)");
-    expect(loginSource.match(/setNotice\(PASSWORD_RESET_REQUEST_MESSAGE\)/g)).toHaveLength(2);
-  });
 });

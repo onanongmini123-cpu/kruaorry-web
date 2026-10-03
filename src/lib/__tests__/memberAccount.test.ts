@@ -53,12 +53,22 @@ describe("member account membership dates", () => {
     expect(isMembershipExpired(subscription({ status: "revoked" }), now)).toBe(true);
   });
 
-  it("offers renewal only for dated, non-legacy annual memberships", () => {
-    expect(canRequestMembershipRenewal(subscription())).toBe(true);
-    expect(canRequestMembershipRenewal(subscription({ status: "expired" }))).toBe(true);
-    expect(canRequestMembershipRenewal(subscription({ source: "legacy", currentPeriodEnd: null }))).toBe(false);
-    expect(canRequestMembershipRenewal(subscription({ billingInterval: "one_time", currentPeriodEnd: null }))).toBe(false);
-    expect(canRequestMembershipRenewal(null)).toBe(false);
+  it("offers active renewal at seven days, but not at eight days", () => {
+    expect(canRequestMembershipRenewal(subscription({ currentPeriodEnd: "2026-10-10T00:00:00.000Z" }), now)).toBe(false);
+    expect(canRequestMembershipRenewal(subscription({ currentPeriodEnd: "2026-10-09T00:00:00.000Z" }), now)).toBe(true);
+    expect(canRequestMembershipRenewal(subscription({ currentPeriodEnd: "2026-10-02T00:00:00.000Z" }), now)).toBe(true);
+  });
+
+  it("keeps past-due and expired annual memberships renewable", () => {
+    expect(canRequestMembershipRenewal(subscription({ status: "past_due" }), now)).toBe(true);
+    expect(canRequestMembershipRenewal(subscription({ status: "expired" }), now)).toBe(true);
+  });
+
+  it("never renews non-renewable membership records", () => {
+    expect(canRequestMembershipRenewal(subscription({ source: "legacy", currentPeriodEnd: null }), now)).toBe(false);
+    expect(canRequestMembershipRenewal(subscription({ billingInterval: "one_time", currentPeriodEnd: null }), now)).toBe(false);
+    expect(canRequestMembershipRenewal(subscription({ status: "cancelled" }), now)).toBe(false);
+    expect(canRequestMembershipRenewal(null, now)).toBe(false);
   });
 });
 

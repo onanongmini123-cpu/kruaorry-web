@@ -12,6 +12,9 @@ import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
 import {
   AUTH_RATE_LIMIT_MESSAGE,
   buildSignupConfirmationRedirect,
+  canResendSignupConfirmation,
+  createSignupConfirmationResendController,
+  INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE,
   isAuthRateLimitError,
   isPlausibleEmail,
   PASSWORD_RESET_REQUEST_MESSAGE,
@@ -63,8 +66,13 @@ function LoginForm() {
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [confirmationHelpOpen, setConfirmationHelpOpen] = useState(hasConfirmationError);
-  const [resendingConfirmation, setResendingConfirmation] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendState, setResendState] = useState(INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE);
+  const resendController = useMemo(
+    () => createSignupConfirmationResendController(setResendState),
+    [],
+  );
+  const resendCooldown = resendState.cooldownSeconds;
+  const resendingConfirmation = resendState.resending;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -78,10 +86,10 @@ function LoginForm() {
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const timer = window.setTimeout(() => {
-      setResendCooldown((seconds) => Math.max(0, seconds - 1));
+      resendController.elapseSecond();
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [resendCooldown]);
+  }, [resendController, resendCooldown]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,8 +128,9 @@ function LoginForm() {
           // Some provider failures can happen after an unconfirmed account was
           // created. Never expose that provider detail; offer the same recovery
           // path whether the account exists or not.
-          setError(thaiAuthErrorMessage("signup", signUpError));
-          setConfirmationHelpOpen(true);
+          const recovery = resendController.applySignupFailure(signUpError);
+          setError(recovery.message);
+          setConfirmationHelpOpen(recovery.openConfirmationHelp);
           setPassword("");
           setConfirmPassword("");
           return;
@@ -130,7 +139,7 @@ function LoginForm() {
           setNotice(SIGNUP_PENDING_MESSAGE);
           setMode("signin");
           setConfirmationHelpOpen(true);
-          setResendCooldown(SIGNUP_CONFIRMATION_COOLDOWN_SECONDS);
+          resendController.startCooldown(SIGNUP_CONFIRMATION_COOLDOWN_SECONDS);
           setPassword("");
           setConfirmPassword("");
           setShowPassword(false);
@@ -171,19 +180,16 @@ function LoginForm() {
       setError("กรอกอีเมลให้ถูกต้องก่อนส่งอีเมลยืนยัน");
       return;
     }
-    if (resendCooldown > 0 || resendingConfirmation) return;
-
-    setResendingConfirmation(true);
-    // Start the local guard before awaiting the network so a double click
-    // cannot create two provider requests.
-    setResendCooldown(SIGNUP_CONFIRMATION_COOLDOWN_SECONDS);
-    const result = await resendSignupConfirmation(
-      (credentials) => supabase.auth.resend(credentials),
-      email,
-      window.location.origin,
-      next,
+    const result = await resendController.requestResend(
+      () => resendSignupConfirmation(
+        (credentials) => supabase.auth.resend(credentials),
+        email,
+        window.location.origin,
+        next,
+      ),
     );
-    setResendingConfirmation(false);
+
+    if (result.outcome === "blocked") return;
 
     if (result.outcome === "rate-limited") {
       setError(AUTH_RATE_LIMIT_MESSAGE);
@@ -374,7 +380,7 @@ function LoginForm() {
                 size="sm"
                 block
                 loading={resendingConfirmation}
-                disabled={!isSupabaseConfigured || resendCooldown > 0}
+                disabled={!isSupabaseConfigured || !canResendSignupConfirmation(resendCooldown, resendingConfirmation)}
                 onClick={handleResendConfirmation}
               >
                 {resendCooldown > 0 ? `ส่งใหม่ได้ใน ${resendCooldown} วินาที` : "ส่งอีเมลยืนยันอีกครั้ง"}

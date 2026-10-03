@@ -18,6 +18,7 @@ interface MemberAccountStatusProps {
   subscriptionError: boolean;
   applications: UpgradeRequest[];
   applicationsError: boolean;
+  now?: number;
 }
 
 function formatThaiDate(value: string): string {
@@ -27,10 +28,10 @@ function formatThaiDate(value: string): string {
     : "ตรวจสอบไม่ได้";
 }
 
-function subscriptionStatus(subscription: MemberSubscription | null): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
+function subscriptionStatus(subscription: MemberSubscription | null, now?: number): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
   if (!subscription) return { label: "บัญชีฟรี", tone: "neutral" };
-  if (isMembershipExpired(subscription)) return { label: "หมดอายุ", tone: "danger" };
   if (subscription.status === "past_due") return { label: "รอต่ออายุ", tone: "warning" };
+  if (isMembershipExpired(subscription, now)) return { label: "หมดอายุ", tone: "danger" };
   return { label: "ใช้งานอยู่", tone: "success" };
 }
 
@@ -42,16 +43,16 @@ function applicationStatus(application: UpgradeRequest): { label: string; tone: 
     : { label: "รอแจ้งชำระ", tone: "warning" };
 }
 
-export function MemberAccountStatus({ currentPlanId, plans, subscription, subscriptionError, applications, applicationsError }: MemberAccountStatusProps) {
+export function MemberAccountStatus({ currentPlanId, plans, subscription, subscriptionError, applications, applicationsError, now }: MemberAccountStatusProps) {
   const planNameById = new Map(plans.map((plan) => [plan.id, plan.name]));
   const currentPlanName = planNameById.get(currentPlanId)
     ?? (subscription?.planId === currentPlanId ? subscription.planName : null)
     ?? (currentPlanId === "free" ? "Free" : currentPlanId);
   const request = preferredMembershipApplication(applications);
   const requestStatus = request ? applicationStatus(request) : null;
-  const status = subscriptionStatus(subscription);
-  const daysRemaining = membershipDaysRemaining(subscription?.currentPeriodEnd ?? null);
-  const canRenew = canRequestMembershipRenewal(subscription);
+  const status = subscriptionStatus(subscription, now);
+  const daysRemaining = membershipDaysRemaining(subscription?.currentPeriodEnd ?? null, now);
+  const canRenew = canRequestMembershipRenewal(subscription, now);
   const expirationCopy = subscription?.currentPeriodEnd
     ? formatThaiDate(subscription.currentPeriodEnd)
     : subscription

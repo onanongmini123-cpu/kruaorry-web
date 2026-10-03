@@ -287,11 +287,16 @@ interface EntitlementRow {
   limit_value: number | null;
 }
 
-export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+export interface EntitlementsResult {
+  entitlements: EntitlementSnapshot;
+  error: boolean;
+}
+
+export async function fetchEntitlementsResult(supabase: SupabaseClient): Promise<EntitlementsResult> {
   const { data, error } = await supabase.rpc("get_my_entitlements");
   if (error) {
     logError("fetchEntitlements failed", error);
-    return EMPTY_ENTITLEMENTS;
+    return { entitlements: EMPTY_ENTITLEMENTS, error: true };
   }
 
   const rows = (data ?? []) as EntitlementRow[];
@@ -299,7 +304,11 @@ export async function fetchEntitlements(supabase: SupabaseClient): Promise<Entit
   const features = Object.fromEntries(
     rows.map((row) => [row.feature_id, { enabled: row.enabled, limit: row.limit_value }]),
   );
-  return { planId, features };
+  return { entitlements: { planId, features }, error: false };
+}
+
+export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+  return (await fetchEntitlementsResult(supabase)).entitlements;
 }
 
 export interface TeacherRequest {
