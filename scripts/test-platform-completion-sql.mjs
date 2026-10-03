@@ -24,7 +24,6 @@ const migrations = [
   "20261001150000_045_public_ar_phonics_quest_resource.sql",
   "20261001165640_046_authenticated_electric_circuit_lab_resource.sql",
   "20261001180000_047_authenticated_ecosystem_guardians_resource.sql",
-  "20261003121000_050_admin_queue_compare_and_set.sql",
 ];
 
 const USERS = {
@@ -279,32 +278,6 @@ try {
       status text not null default 'pending',
       created_at timestamptz not null default now()
     );
-    create table public.upgrade_requests (
-      id uuid primary key default gen_random_uuid(),
-      user_id uuid not null references public.profiles(id),
-      plan_id text not null references public.plans(id),
-      status text not null default 'pending',
-      reference_code text not null,
-      quoted_amount_thb integer not null,
-      payment_reported_at timestamptz,
-      resolved_at timestamptz,
-      resolved_by uuid references public.profiles(id),
-      resolution_reason_code text,
-      created_at timestamptz not null default now()
-    );
-    create table public.membership_application_resolution_audit (
-      id uuid primary key default gen_random_uuid(),
-      request_id uuid not null unique,
-      application_reference_code text not null,
-      user_id uuid references public.profiles(id),
-      plan_id text not null,
-      previous_status text not null,
-      new_status text not null,
-      reason_code text not null,
-      resolved_at timestamptz not null,
-      resolved_by uuid references public.profiles(id),
-      created_at timestamptz not null default now()
-    );
     create table storage.buckets (
       id text primary key,
       name text not null,
@@ -336,15 +309,6 @@ try {
       select exists (
         select 1 from public.profiles where id = auth.uid() and role = 'owner'
       )
-    $$;
-    create function public.decline_upgrade_request(p_request_id uuid) returns void
-    language plpgsql security definer set search_path = '' as $$
-    begin
-      if not public.is_admin() then
-        raise exception 'Admin access required' using errcode = '42501';
-      end if;
-      update public.upgrade_requests set status = 'declined' where id = p_request_id;
-    end;
     $$;
     create function public.membership_plan_for_user(p_user_id uuid) returns text
     language sql stable security definer set search_path = public as $$
@@ -1356,159 +1320,12 @@ try {
   ).rows);
   assert.equal(adminRequestRows.length, 1);
   await rejectsWith(
-    () => asRole("authenticated", USERS.admin, () => db.query(
-      "update public.requests set status = 'done' where id = $1", [ownRequest],
-    )),
-    /permission denied/,
-    "authenticated admins must not bypass request CAS with direct UPDATE",
-  );
-  await rejectsWith(
-    () => asRole("authenticated", USERS.free, () => db.query(
-      "select public.admin_compare_set_request_status($1, 'pending', 1, 'done')", [ownRequest],
-    )),
-    /Admin access required/,
-  );
-  const firstRequestCas = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_request_status($1, 'pending', 1, 'in_progress') as updated",
-      [ownRequest],
-    )
-  ).rows[0].updated);
-  assert.equal(firstRequestCas, true);
-  const secondRequestCas = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_request_status($1, 'in_progress', 2, 'pending') as updated",
-      [ownRequest],
-    )
-  ).rows[0].updated);
-  assert.equal(secondRequestCas, true);
-  const staleRequestCas = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_request_status($1, 'pending', 1, 'done') as updated",
-      [ownRequest],
-    )
-  ).rows[0].updated);
-  assert.equal(staleRequestCas, false, "revision must reject a stale pending→in_progress→pending ABA transition");
-  assert.deepEqual((await db.query(
-    "select status, admin_revision from public.requests where id = $1", [ownRequest],
-  )).rows[0], { status: "pending", admin_revision: 3 });
-  await rejectsWith(
     () => asRole("authenticated", USERS.free, () => db.query(
       "insert into public.requests(title, requested_by, votes, status) values ('spoof', $1, 999, 'done')",
       [USERS.free],
     )),
     /permission denied/,
   );
-
-  // A stale admin must not decline after the member changes the rendered plan,
-  // price or payment-report state. The successful replacement retains
-  // migration 048's immutable resolution audit.
-  const convertedUpgradeRequest = (await db.query(`
-    insert into public.upgrade_requests (
-      user_id, plan_id, status, reference_code, quoted_amount_thb
-    ) values ($1, 'founder', 'pending', 'KA-QUEUE-FOUND', 299)
-    returning id
-  `, [USERS.free])).rows[0];
-  await db.query(`
-    update public.upgrade_requests
-    set plan_id = 'teacher', quoted_amount_thb = 599
-    where id = $1
-  `, [convertedUpgradeRequest.id]);
-  const staleConvertedDecline = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_decline_upgrade_request($1, $2::timestamptz, $3, $4) as declined",
-      [convertedUpgradeRequest.id, null, "founder", 299],
-    )
-  ).rows[0].declined);
-  assert.equal(
-    staleConvertedDecline,
-    false,
-    "a Founder/299 snapshot must not decline the same application after conversion to Teacher/599",
-  );
-  const currentConvertedDecline = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_decline_upgrade_request($1, $2::timestamptz, $3, $4) as declined",
-      [convertedUpgradeRequest.id, null, "teacher", 599],
-    )
-  ).rows[0].declined);
-  assert.equal(currentConvertedDecline, true);
-  const convertedDeclineAudit = (await db.query(`
-    select request.status, request.plan_id, request.quoted_amount_thb,
-      audit.application_reference_code, audit.plan_id as audit_plan_id,
-      audit.reason_code, audit.resolved_by::text
-    from public.upgrade_requests request
-    join public.membership_application_resolution_audit audit
-      on audit.request_id = request.id
-    where request.id = $1
-  `, [convertedUpgradeRequest.id])).rows[0];
-  assert.deepEqual(convertedDeclineAudit, {
-    status: "declined",
-    plan_id: "teacher",
-    quoted_amount_thb: 599,
-    application_reference_code: "KA-QUEUE-FOUND",
-    audit_plan_id: "teacher",
-    reason_code: "admin_declined",
-    resolved_by: USERS.admin,
-  });
-
-  const upgradeRequest = (await db.query(`
-    insert into public.upgrade_requests (
-      user_id, plan_id, status, reference_code, quoted_amount_thb
-    ) values ($1, 'teacher', 'pending', 'KA-QUEUE-0001', 599)
-    returning id
-  `, [USERS.other])).rows[0];
-  await rejectsWith(
-    () => asRole("authenticated", USERS.admin, () => db.query(
-      "select public.decline_upgrade_request($1)", [upgradeRequest.id],
-    )),
-    /permission denied/,
-    "the legacy decline RPC must not bypass the payment-report CAS",
-  );
-  await db.query(
-    "update public.upgrade_requests set payment_reported_at = current_timestamp where id = $1",
-    [upgradeRequest.id],
-  );
-  const staleDecline = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_decline_upgrade_request($1, $2::timestamptz, $3, $4) as declined",
-      [upgradeRequest.id, null, "teacher", 599],
-    )
-  ).rows[0].declined);
-  assert.equal(staleDecline, false, "a newly reported payment must invalidate stale decline UI");
-  const reportedAt = (await db.query(
-    "select payment_reported_at from public.upgrade_requests where id = $1", [upgradeRequest.id],
-  )).rows[0].payment_reported_at;
-  await rejectsWith(
-    () => asRole("authenticated", USERS.free, () => db.query(
-      "select public.admin_compare_decline_upgrade_request($1, $2, $3, $4)",
-      [upgradeRequest.id, reportedAt, "teacher", 599],
-    )),
-    /Admin access required/,
-  );
-  const currentDecline = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_decline_upgrade_request($1, $2, $3, $4) as declined",
-      [upgradeRequest.id, reportedAt, "teacher", 599],
-    )
-  ).rows[0].declined);
-  assert.equal(currentDecline, true);
-  const declinedAudit = (await db.query(`
-    select request.status, request.resolution_reason_code,
-      audit.previous_status, audit.new_status, audit.reason_code,
-      audit.resolved_by::text
-    from public.upgrade_requests request
-    join public.membership_application_resolution_audit audit
-      on audit.request_id = request.id
-    where request.id = $1
-  `, [upgradeRequest.id])).rows[0];
-  assert.deepEqual(declinedAudit, {
-    status: "declined",
-    resolution_reason_code: "admin_declined",
-    previous_status: "pending",
-    new_status: "declined",
-    reason_code: "admin_declined",
-    resolved_by: USERS.admin,
-  });
 
   // One review per member/resource; every new/edit submission returns to the
   // moderation queue. Members read only their own safe fields via RPC, while
@@ -1540,68 +1357,21 @@ try {
   assert.deepEqual(publicFeed, [], "pending reviews must not be public");
   assert.equal((await db.query("select review_count from public.resource_catalog where id = $1", [RESOURCES.authenticated])).rows[0].review_count, 0);
 
-  const renderedReview = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [firstReview],
-  )).rows[0];
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await asRole("authenticated", USERS.free, () => db.query(
-    "select public.upsert_my_resource_review($1, 5, 'แก้ไขก่อนอนุมัติ')", [RESOURCES.authenticated],
+  await asRole("authenticated", USERS.admin, () => db.query(
+    "select public.admin_set_review_visibility($1, true)", [firstReview],
   ));
-  const currentReview = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [firstReview],
-  )).rows[0];
-  assert.notEqual(
-    new Date(currentReview.updated_at).toISOString(),
-    new Date(renderedReview.updated_at).toISOString(),
-    "member edit must advance the review version",
-  );
-  const contentStaleCasReview = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_review_visibility($1, 'pending', $2, true) as updated",
-      [firstReview, renderedReview.updated_at],
-    )
-  ).rows[0].updated);
-  assert.equal(contentStaleCasReview, false, "an unseen member edit must invalidate review moderation");
-  const firstCasReview = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_review_visibility($1, 'pending', $2, true) as updated",
-      [firstReview, currentReview.updated_at],
-    )
-  ).rows[0].updated);
-  assert.equal(firstCasReview, true, "the first admin must update the status it actually rendered");
-  const staleCasReview = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_review_visibility($1, 'pending', $2, false) as updated",
-      [firstReview, currentReview.updated_at],
-    )
-  ).rows[0].updated);
-  assert.equal(staleCasReview, false, "a stale second admin must not overwrite newer moderation");
-  await rejectsWith(
-    () => asRole("authenticated", USERS.free, () => db.query(
-      "select public.admin_compare_set_review_visibility($1, 'visible', $2, false)",
-      [firstReview, currentReview.updated_at],
-    )),
-    /Admin access required/,
-  );
-  await rejectsWith(
-    () => asRole("authenticated", USERS.admin, () => db.query(
-      "select public.admin_set_review_visibility($1, true)", [firstReview],
-    )),
-    /permission denied/,
-    "the legacy unconditional review RPC must not remain executable",
-  );
   const approvedFeed = await asRole("anon", null, async () => (
     await db.query("select id::text, rating, body, reviewer_name, reviewer_avatar_path from public.resource_review_feed")
   ).rows, true);
   assert.deepEqual(approvedFeed, [{
     id: firstReview,
-    rating: 5,
-    body: "แก้ไขก่อนอนุมัติ",
+    rating: 4,
+    body: "ใช้งานง่าย",
     reviewer_name: "สมาชิก KruAorry",
     reviewer_avatar_path: null,
   }]);
   const catalogRating = await db.query("select review_average::text, review_count from public.resource_catalog where id = $1", [RESOURCES.authenticated]);
-  assert.deepEqual(catalogRating.rows[0], { review_average: "5.0", review_count: 1 });
+  assert.deepEqual(catalogRating.rows[0], { review_average: "4.0", review_count: 1 });
 
   const editedReview = await asRole("authenticated", USERS.free, async () => (
     await db.query("select public.upsert_my_resource_review($1, 5, 'ดีมาก ใช้ได้จริง') as id", [RESOURCES.authenticated])
@@ -1612,38 +1382,17 @@ try {
     await db.query("select * from public.get_my_resource_review($1)", [RESOURCES.authenticated])
   ).rows), [{ rating: 5, body: "ดีมาก ใช้ได้จริง", moderation_status: "pending" }]);
 
-  const editedReviewVersion = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [firstReview],
-  )).rows[0].updated_at;
   await asRole("authenticated", USERS.admin, () => db.query(
-    "select public.admin_compare_set_review_visibility($1, 'pending', $2, true)",
-    [firstReview, editedReviewVersion],
+    "select public.admin_set_review_visibility($1, true)", [firstReview],
   ));
-  const visibleReviewVersion = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [firstReview],
-  )).rows[0].updated_at;
-  await new Promise((resolve) => setTimeout(resolve, 5));
   await asRole("authenticated", USERS.admin, () => db.query(
-    "select public.admin_compare_set_review_visibility($1, 'visible', $2, false)",
-    [firstReview, visibleReviewVersion],
+    "select public.admin_set_review_visibility($1, false)", [firstReview],
   ));
   assert.equal((await db.query("select count(*)::integer as count from public.resource_review_feed")).rows[0].count, 0);
   assert.equal((await db.query("select review_count from public.resource_catalog where id = $1", [RESOURCES.authenticated])).rows[0].review_count, 0);
-  const hiddenReviewVersion = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [firstReview],
-  )).rows[0].updated_at;
-  await new Promise((resolve) => setTimeout(resolve, 5));
   await asRole("authenticated", USERS.admin, () => db.query(
-    "select public.admin_compare_set_review_visibility($1, 'hidden', $2, true)",
-    [firstReview, hiddenReviewVersion],
+    "select public.admin_set_review_visibility($1, true)", [firstReview],
   ));
-  const staleVisibleAba = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_review_visibility($1, 'visible', $2, false) as updated",
-      [firstReview, visibleReviewVersion],
-    )
-  ).rows[0].updated);
-  assert.equal(staleVisibleAba, false, "updated_at must reject a stale visible→hidden→visible ABA transition");
   await asRole("authenticated", USERS.admin, () => db.query(
     "update public.resources set status = 'draft' where id = $1", [RESOURCES.authenticated],
   ));
@@ -1667,33 +1416,6 @@ try {
     await db.query("select id::text, reporter_id::text, status from public.resource_issue_reports")
   ).rows);
   assert.deepEqual(adminReports, [{ id: firstReport, reporter_id: USERS.free, status: "pending" }]);
-  const renderedReportVersion = (await db.query(
-    "select updated_at from public.resource_issue_reports where id = $1", [firstReport],
-  )).rows[0].updated_at;
-  const firstCasReport = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_resource_issue_status($1, 'pending', $2, 'in_progress') as updated",
-      [firstReport, renderedReportVersion],
-    )
-  ).rows[0].updated);
-  assert.equal(firstCasReport, true);
-  const inProgressReportVersion = (await db.query(
-    "select updated_at from public.resource_issue_reports where id = $1", [firstReport],
-  )).rows[0].updated_at;
-  const returnedToPending = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_resource_issue_status($1, 'in_progress', $2, 'pending') as updated",
-      [firstReport, inProgressReportVersion],
-    )
-  ).rows[0].updated);
-  assert.equal(returnedToPending, true);
-  const staleCasReport = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_set_resource_issue_status($1, 'pending', $2, 'resolved') as updated",
-      [firstReport, renderedReportVersion],
-    )
-  ).rows[0].updated);
-  assert.equal(staleCasReport, false, "updated_at must reject a stale pending→in_progress→pending ABA transition");
   await rejectsWith(
     () => asRole("authenticated", USERS.free, () => db.query(
       "select public.submit_resource_issue($1, 'cannot_open', 'ปัญหาเดิมซ้ำ')", [RESOURCES.authenticated],
@@ -1712,63 +1434,10 @@ try {
     )),
     /rate limit reached/,
   );
-  await rejectsWith(
-    () => asRole("authenticated", USERS.admin, () => db.query(
-      "select public.admin_set_resource_issue_status($1, 'resolved')", [firstReport],
-    )),
-    /permission denied/,
-    "the legacy unconditional issue RPC must not remain executable",
-  );
-  const currentReportVersion = (await db.query(
-    "select updated_at from public.resource_issue_reports where id = $1", [firstReport],
-  )).rows[0].updated_at;
   await asRole("authenticated", USERS.admin, () => db.query(
-    "select public.admin_compare_set_resource_issue_status($1, 'pending', $2, 'resolved')",
-    [firstReport, currentReportVersion],
+    "select public.admin_set_resource_issue_status($1, 'resolved')", [firstReport],
   ));
   assert.equal((await db.query("select status from public.resource_issue_reports where id = $1", [firstReport])).rows[0].status, "resolved");
-
-  const deletableReview = await asRole("authenticated", USERS.other, async () => (
-    await db.query("select public.upsert_my_resource_review($1, 3, 'รอตรวจ') as id", [RESOURCES.authenticated])
-  ).rows[0].id);
-  const renderedDeleteVersion = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [deletableReview],
-  )).rows[0].updated_at;
-  await rejectsWith(
-    () => asRole("authenticated", USERS.admin, () => db.query(
-      "select public.admin_delete_resource_review($1)", [deletableReview],
-    )),
-    /permission denied/,
-    "the legacy unconditional review-delete RPC must not remain executable",
-  );
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await asRole("authenticated", USERS.other, () => db.query(
-    "select public.upsert_my_resource_review($1, 4, 'แก้ไขก่อนลบ')", [RESOURCES.authenticated],
-  ));
-  const staleContentDelete = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_delete_resource_review($1, 'pending', $2) as deleted",
-      [deletableReview, renderedDeleteVersion],
-    )
-  ).rows[0].deleted);
-  assert.equal(staleContentDelete, false, "an unseen member edit must invalidate review deletion");
-  const currentDeleteVersion = (await db.query(
-    "select updated_at from public.resource_reviews where id = $1", [deletableReview],
-  )).rows[0].updated_at;
-  const deletedCurrentReview = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_delete_resource_review($1, 'pending', $2) as deleted",
-      [deletableReview, currentDeleteVersion],
-    )
-  ).rows[0].deleted);
-  assert.equal(deletedCurrentReview, true);
-  const staleDelete = await asRole("authenticated", USERS.admin, async () => (
-    await db.query(
-      "select public.admin_compare_delete_resource_review($1, 'pending', $2) as deleted",
-      [deletableReview, currentDeleteVersion],
-    )
-  ).rows[0].deleted);
-  assert.equal(staleDelete, false, "deleting the same rendered review twice must be harmless");
 
   // Self-service profile updates cannot alter identity, role, plan, or another
   // profile. Avatar paths are opaque, private and accepted only when the

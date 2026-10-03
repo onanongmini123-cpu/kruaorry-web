@@ -51,6 +51,7 @@ import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import { fetchMemberSubscription, type MemberSubscription } from "@/lib/memberAccount";
 import { membershipUpgradeHref } from "@/app/resources/catalog";
 import { createLatestRefreshRunner } from "@/lib/latestRefresh";
+import { planDisplayName } from "@/lib/planDisplay";
 
 export const dynamic = "force-dynamic";
 
@@ -357,6 +358,10 @@ export default function TeacherAppPage() {
   );
   const favoriteResources = filtered.filter((resource) => saved.includes(resource.id));
   const hasActiveFilters = Boolean(query.trim() || category || grade);
+  const currentPlanDisplayName = planDisplayName(
+    entitlements.planId,
+    plans.find((plan) => plan.id === entitlements.planId)?.name,
+  );
 
   const clearFilters = () => {
     setQuery("");
@@ -474,7 +479,7 @@ export default function TeacherAppPage() {
                 <ProfileAvatar supabase={supabase} avatarPath={profile.avatarPath} name={profile.fullName || profile.email} size={36} />
                 <span className="kru-app-header-account__copy">
                   <strong>{profile.fullName || profile.email}</strong>
-                  <small>แพ็ก {entitlements.planId}</small>
+                  <small>แพ็ก {currentPlanDisplayName}</small>
                 </span>
               </button>
             )}

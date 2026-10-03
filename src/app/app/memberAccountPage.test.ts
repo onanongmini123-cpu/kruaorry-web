@@ -13,6 +13,12 @@ describe("member account integration", () => {
     expect(pageSource).toContain("membershipSummary={(");
   });
 
+  it("renders the member plan through the shared display-name policy", () => {
+    expect(pageSource).toContain("planDisplayName(");
+    expect(pageSource).toContain("<small>แพ็ก {currentPlanDisplayName}</small>");
+    expect(pageSource).not.toContain("<small>แพ็ก {entitlements.planId}</small>");
+  });
+
   it("uses a large labelled home link in the responsive member hero", () => {
     expect(pageSource).toContain('<BrandLogo href="/" mascotSize="clamp(96px, 24vw, 144px)"');
     expect(pageSource).toContain(".kru-member-hero__mascot { min-height: 180px;");

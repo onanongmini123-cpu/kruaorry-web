@@ -10,6 +10,7 @@ import {
   fetchMembershipSchemaReadiness,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
+import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -152,7 +153,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
       gradeLevels: r.grade_levels ?? [],
       accessMode,
       requiredPlanIds: r.required_plan_ids ?? [],
-      requiredPlanNames: r.required_plan_names ?? [],
+      requiredPlanNames: planDisplayNames(r.required_plan_ids ?? [], r.required_plan_names ?? []),
       free: accessMode === "public" || accessMode === "authenticated",
       isNew: r.is_new === true,
       fileSize: r.file_size,
@@ -237,7 +238,7 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
 
   return data.map((p) => ({
     id: p.id,
-    name: p.name,
+    name: planDisplayName(p.id, p.name),
     priceLabel: p.price_label,
     note: p.note,
     benefits: benefitRows

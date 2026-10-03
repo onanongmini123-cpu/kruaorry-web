@@ -8,6 +8,7 @@ import {
   hasCurrentPaidMembership,
   membershipApplicationPlanMismatch,
   membershipAutoReturnDestination,
+  membershipDisplayError,
   membershipPlanChangeConfirmation,
   membershipPlanUnlocksResource,
   membershipResourceHasSelectablePlan,
@@ -137,13 +138,13 @@ describe("membership journey state", () => {
     });
   });
 
-  it("uses all actual resource plans for shared resources and rejects a Teacher conversion for Founder-only media", () => {
+  it("uses all actual resource plans and preserves Founder renewal for Founder-only media", () => {
     expect(membershipPlanUnlocksResource("teacher", ["founder", "teacher"])).toBe(true);
     expect(membershipPlanUnlocksResource("founder", ["founder", "teacher"])).toBe(true);
     expect(membershipPlanUnlocksResource("plus", ["plus", "teacher"])).toBe(true);
     expect(membershipPlanUnlocksResource("teacher", ["founder"])).toBe(false);
     expect(resolveMembershipPlanSelection("teacher", ["founder"], true, true, false)).toBe("founder");
-    expect(resolveMembershipPlanSelection("teacher", ["founder"], true, true, true)).toBe("teacher");
+    expect(resolveMembershipPlanSelection("teacher", ["founder"], true, true, true)).toBe("founder");
     expect(resolveMembershipPlanSelection("founder", ["founder", "teacher"], true, true, true)).toBe("teacher");
   });
 
@@ -178,5 +179,14 @@ describe("membership journey state", () => {
     expect(membershipPlanChangeConfirmation(subscription(), "teacher")).toBeNull();
     expect(founderApplicationConversionConfirmation(null)).toContain("ยังไม่เปลี่ยนสิทธิ์สมาชิกปัจจุบัน");
     expect(founderApplicationConversionConfirmation(founder)).toContain("สิทธิ์ Founder ราคาเดิม");
+  });
+
+  it("normalizes legacy Teacher wording in server errors without duplicating the new name", () => {
+    expect(membershipDisplayError("Convert this application to Teacher", "fallback"))
+      .toBe("Convert this application to Teacher Pro");
+    expect(membershipDisplayError("Teacher Pro is unavailable", "fallback"))
+      .toBe("Teacher Pro is unavailable");
+    expect(membershipDisplayError(null, "เกิดข้อผิดพลาด"))
+      .toBe("เกิดข้อผิดพลาด");
   });
 });

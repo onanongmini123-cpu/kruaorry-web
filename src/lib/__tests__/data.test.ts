@@ -573,8 +573,8 @@ describe("public catalog reads", () => {
         tags: [],
         grade_levels: [],
         access_mode: "authenticated",
-        required_plan_ids: [],
-        required_plan_names: [],
+        required_plan_ids: ["teacher_pro", "teacher"],
+        required_plan_names: ["Teacher"],
         is_free: true,
         is_new: true,
         file_size: 100,
@@ -586,7 +586,12 @@ describe("public catalog reads", () => {
     const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: rows, error: null }) };
     const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
 
-    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง", isNew: true }]);
+    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{
+      id: "one",
+      title: "แบบฝึกจริง",
+      isNew: true,
+      requiredPlanNames: ["Teacher Pro (แพ็กเดิม)", "Teacher Pro"],
+    }]);
     expect(client.from).toHaveBeenCalledWith("resource_catalog");
     expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
     expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*access_mode.*required_plan_ids.*required_plan_names.*is_new.*featured_rank.*review_average.*review_count/));
@@ -615,6 +620,33 @@ describe("public catalog reads", () => {
     await expect(result).resolves.toEqual([]);
     expect(client.from).toHaveBeenCalledWith("plans");
     expect(client.from).toHaveBeenCalledWith("plan_benefit_catalog");
+  });
+
+  it("uses customer-facing labels while keeping canonical plan ids unchanged", async () => {
+    const planQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({
+        data: [
+          { id: "teacher", name: "Teacher", price_label: "599 บาท/ปี", note: null, is_popular: true, billing_interval: "year" },
+          { id: "teacher_pro", name: "Teacher Pro", price_label: "แพ็กเดิม", note: null, is_popular: false, billing_interval: "year" },
+        ],
+        error: null,
+      }),
+    };
+    const benefitQuery = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn(),
+    };
+    benefitQuery.order.mockReturnValueOnce(benefitQuery).mockResolvedValueOnce({ data: [], error: null });
+    const client = {
+      from: vi.fn((table: string) => table === "plans" ? planQuery : benefitQuery),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchPlans(client)).resolves.toMatchObject([
+      { id: "teacher", name: "Teacher Pro" },
+      { id: "teacher_pro", name: "Teacher Pro (แพ็กเดิม)" },
+    ]);
   });
 });
 

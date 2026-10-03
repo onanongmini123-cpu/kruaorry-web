@@ -44,14 +44,14 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain('ariaLabel="เมนูหลังบ้าน"');
   });
 
-  it("writes access, featured order, moderation and benefit copy only through reviewed RPCs", () => {
+  it("writes access, featured order, moderation and benefit copy through the reviewed legacy paths", () => {
     expect(pageSource).toContain('rpc("admin_save_resource"');
     expect(pageSource).toContain('rpc("set_featured_resources"');
-    expect(pageSource).toContain('rpc("admin_compare_set_review_visibility"');
-    expect(pageSource).toContain('rpc("admin_compare_delete_resource_review"');
-    expect(pageSource).toContain('rpc("admin_compare_set_resource_issue_status"');
-    expect(pageSource).toContain('rpc("admin_compare_set_request_status"');
-    expect(pageSource).toContain('rpc("admin_compare_decline_upgrade_request"');
+    expect(pageSource).toContain('rpc("admin_set_review_visibility"');
+    expect(pageSource).toContain('rpc("admin_delete_resource_review"');
+    expect(pageSource).toContain('rpc("admin_set_resource_issue_status"');
+    expect(pageSource).toContain('.from("requests").update({ status }).eq("id", latest.id)');
+    expect(pageSource).toContain('rpc("decline_upgrade_request"');
     expect(pageSource).toContain('rpc("admin_update_feature_copy"');
     expect(pageSource).not.toContain("form.is_free");
     expect(pageSource).toContain("p_access_mode: form.access_mode");
@@ -61,6 +61,9 @@ describe("responsive admin console contracts", () => {
   it("keeps hidden legacy plans selectable for new premium resources", () => {
     expect(pageSource).toContain("{plans.map((plan) => (");
     expect(pageSource).toContain("แพ็กเดิม/ไม่เปิดขาย");
+    expect(pageSource).toContain("name: planDisplayName(plan.id, plan.name)");
+    expect(pageSource).toContain("userFacingAdminError(errorMessage)");
+    expect(pageSource).toContain(String.raw`/\bTeacher\b(?!\s+Pro\b)/g`);
   });
 
   it("preserves the real vote-ranked request workflow and complete tab semantics", () => {
@@ -116,32 +119,28 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain('.order("id", { ascending: false })');
   });
 
-  it("refreshes queue rows and badges together on focus, menu open, interval, and admin actions", () => {
+  it("refreshes queue rows and badges together on load, focus, menu open, manual refresh, and actions", () => {
     expect(pageSource).toContain("await refreshAdminQueues(nextReviewPage, nextReportPage)");
     expect(pageSource).toContain('nextView === "requests" || nextView === "moderation" || nextView === "upgrades"');
     expect(pageSource).toContain("void refreshAdminQueues();");
     expect(pageSource).toContain("installAdminActionRefresh(window");
+    expect(pageSource).toContain("handleManualAdminRefresh");
+    expect(pageSource).toContain("รีเฟรชข้อมูล");
     expect(pageSource).toContain("actionCounts.requests");
     expect(pageSource).toContain("setRequests(sortAdminRequests(snapshot.requests.data ?? []))");
   });
 
-  it("fails closed against stale queue actions and immediate double submits", () => {
+  it("refreshes and compares rendered rows before queue actions and blocks immediate double submits", () => {
     expect(pageSource).toContain("pendingActionRef.current = action");
-    expect(pageSource).toContain("p_expected_status: request.status");
-    expect(pageSource).toContain("p_expected_revision: request.admin_revision");
-    expect(pageSource).toContain("status, admin_revision, requested_by");
-    expect(pageSource).toContain("p_expected_status: review.moderation_status");
-    expect(pageSource).toContain("p_expected_updated_at: review.updated_at");
-    expect(pageSource).toContain("p_expected_status: report.status");
-    expect(pageSource).toContain("p_expected_updated_at: report.updated_at");
-    expect(pageSource).toContain("p_expected_payment_reported_at: request.payment_reported_at");
-    expect(pageSource).toContain("p_expected_plan_id: request.plan_id");
-    expect(pageSource).toContain("p_expected_quoted_amount_thb: request.quoted_amount_thb");
-    expect(pageSource).toContain("else if (!updated)");
-    expect(pageSource).toContain("else if (!deleted)");
-    expect(pageSource).toContain("if (!declined)");
-    expect(pageSource).toContain("queueRefreshError || !beginPendingAction(action)");
-    expect(pageSource).not.toContain('rpc("decline_upgrade_request"');
+    expect(pageSource).toContain("refreshAndMatchQueueRow");
+    expect(pageSource).toContain('refreshAndMatchQueueRow("requests", request, sameAdminRequestVersion)');
+    expect(pageSource).toContain('refreshAndMatchQueueRow("upgrades", request, sameAdminUpgradeVersion)');
+    expect(pageSource).toContain('refreshAndMatchQueueRow("reviews", review, sameAdminReviewVersion)');
+    expect(pageSource).toContain('refreshAndMatchQueueRow("reports", report, sameAdminReportVersion)');
+    expect(pageSource).toContain("sameAdminSubscriptionVersion(paymentTarget.subscription");
+    expect(pageSource).toContain("ข้อมูลรายการนี้มีการเปลี่ยนแปลง");
+    expect(pageSource).not.toContain("admin_revision");
+    expect(pageSource).not.toContain("admin_compare_");
   });
 
   it("fails closed for membership operations without blocking unrelated admin data", () => {

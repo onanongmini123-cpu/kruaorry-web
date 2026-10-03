@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
-import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search } from "lucide-react";
+import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search, RefreshCw } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -48,6 +48,7 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FOUNDER_CAPACITY_LIMIT, normalizeFounderCapacity } from "@/lib/founderCapacity";
+import { planDisplayName } from "@/lib/planDisplay";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
@@ -63,6 +64,11 @@ import {
   parseAdminView,
   priorityPageSlices,
   resourceAccessLabel,
+  sameAdminReportVersion,
+  sameAdminRequestVersion,
+  sameAdminReviewVersion,
+  sameAdminSubscriptionVersion,
+  sameAdminUpgradeVersion,
   sortAdminReports,
   sortAdminRequests,
   sortAdminReviews,
@@ -116,7 +122,6 @@ interface AdminRequest {
   title: string;
   votes: number;
   status: "pending" | "in_progress" | "done";
-  admin_revision: number;
   requested_by: string | null;
   created_at: string;
   profiles: { full_name: string | null; email: string } | null;
@@ -153,6 +158,10 @@ function newIdempotencyKey(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `manual-payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function userFacingAdminError(message: string): string {
+  return message.replace(/\bTeacher\b(?!\s+Pro\b)/g, "Teacher Pro");
 }
 
 interface AdminReview {
@@ -285,6 +294,7 @@ export default function AdminConsolePage() {
   const adminQueueRefreshRef = useRef<ReturnType<typeof createCoalescedAdminRefresh<AdminQueueSnapshot>> | null>(null);
   const adminQueueLoaderRef = useRef<(signal: AbortSignal) => Promise<AdminQueueSnapshot>>(() => Promise.reject(new Error("Admin queue loader is not ready")));
   const adminQueueApplyRef = useRef<(snapshot: AdminQueueSnapshot) => void>(() => undefined);
+  const adminQueueSnapshotRef = useRef<AdminQueueSnapshot | null>(null);
   const reviewPageRef = useRef(0);
   const reportPageRef = useRef(0);
   const membershipSchemaReadinessRef = useRef<MembershipSchemaReadiness>("checking");
@@ -434,7 +444,7 @@ export default function AdminConsolePage() {
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase.from("requests")
-        .select("id, title, votes, status, admin_revision, requested_by, created_at, profiles(full_name, email)")
+        .select("id, title, votes, status, requested_by, created_at, profiles(full_name, email)")
         .order("votes", { ascending: false })
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
@@ -560,6 +570,7 @@ export default function AdminConsolePage() {
   };
 
   const applyAdminQueueSnapshot = (snapshot: AdminQueueSnapshot) => {
+    adminQueueSnapshotRef.current = snapshot;
     const failures: string[] = [];
     if (snapshot.requests.error) {
       failures.push("คำขอจากครู");
@@ -610,6 +621,7 @@ export default function AdminConsolePage() {
       (signal) => adminQueueLoaderRef.current(signal),
       (snapshot) => adminQueueApplyRef.current(snapshot),
       ({ timedOut }) => {
+        adminQueueSnapshotRef.current = null;
         setActionCounts(EMPTY_ADMIN_ACTION_COUNTS);
         setQueueRefreshError(timedOut
           ? "การอัปเดตรายการหลังบ้านใช้เวลานานเกินไป ตัวเลขจะแสดงเป็น — และปิดการดำเนินการกับข้อมูลเดิมชั่วคราว"
@@ -630,6 +642,28 @@ export default function AdminConsolePage() {
     reviewPageRef.current = nextReviewPage;
     reportPageRef.current = nextReportPage;
     return adminQueueRefreshRef.current?.request() ?? Promise.resolve(false);
+  };
+
+  const refreshAndMatchQueueRow = async <T extends { id: string },>(
+    queue: "requests" | "reviews" | "reports" | "upgrades",
+    rendered: T,
+    sameVersion: (renderedRow: T, latestRow: T) => boolean,
+    notify: (message: string) => void = (message) => window.alert(message),
+  ): Promise<T | null> => {
+    const refreshed = await refreshAdminQueues();
+    const snapshot = adminQueueSnapshotRef.current;
+    const result = snapshot?.[queue] as AdminQueueResult<T> | undefined;
+    if (!refreshed || !result || result.error || !result.data) {
+      notify("รีเฟรชข้อมูลล่าสุดไม่สำเร็จ ระบบยังไม่ได้ดำเนินการ กรุณากดรีเฟรชข้อมูลแล้วลองอีกครั้ง");
+      return null;
+    }
+
+    const latest = result.data.find((row) => row.id === rendered.id);
+    if (!latest || !sameVersion(rendered, latest)) {
+      notify("ข้อมูลรายการนี้มีการเปลี่ยนแปลง ระบบยังไม่ได้ดำเนินการ กรุณาตรวจข้อมูลล่าสุดแล้วลองอีกครั้ง");
+      return null;
+    }
+    return latest;
   };
 
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
@@ -678,7 +712,7 @@ export default function AdminConsolePage() {
     if (benefitError) console.error("Failed to load plan benefits:", benefitError.message);
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
     const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
-      .map((plan) => ({ ...plan, renewal_price_amount_thb: null }));
+      .map((plan) => ({ ...plan, name: planDisplayName(plan.id, plan.name), renewal_price_amount_thb: null }));
     setPlans(basePlanError ? [] : basePlans);
 
     const readiness = await readinessPromise;
@@ -698,7 +732,10 @@ export default function AdminConsolePage() {
       ]);
 
       if (planError) console.error("Failed to load membership plans:", planError.message);
-      if (!planError) membershipPlans = (planRows as AdminPlanRow[]) ?? [];
+      if (!planError) {
+        membershipPlans = ((planRows as AdminPlanRow[]) ?? [])
+          .map((plan) => ({ ...plan, name: planDisplayName(plan.id, plan.name) }));
+      }
       if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
       setSubscriptions(subscriptionError || planError ? null : ((subscriptionRows as AdminSubscription[]) ?? []));
       if (founderCountError) console.error("Failed to load Founder seat count:", founderCountError.message);
@@ -823,6 +860,19 @@ export default function AdminConsolePage() {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
+  };
+
+  const handleManualAdminRefresh = async () => {
+    const action = "queue-refresh";
+    if (!beginPendingAction(action)) return;
+    try {
+      const refreshed = await refreshAdminQueues();
+      if (!refreshed) {
+        window.alert("รีเฟรชข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง");
+      }
+    } finally {
+      finishPendingAction(action);
+    }
   };
 
   const handleNavChange = (key: string) => {
@@ -1351,18 +1401,13 @@ export default function AdminConsolePage() {
 
   const handleRequestStatusChange = async (request: AdminRequest, status: AdminRequest["status"]) => {
     const action = `request:${request.id}`;
-    if (queueRefreshError || !beginPendingAction(action)) return;
+    if (!beginPendingAction(action)) return;
     try {
-      const { data: updated, error } = await supabase.rpc("admin_compare_set_request_status", {
-        p_request_id: request.id,
-        p_expected_status: request.status,
-        p_expected_revision: request.admin_revision,
-        p_status: status,
-      });
+      const latest = await refreshAndMatchQueueRow("requests", request, sameAdminRequestVersion);
+      if (!latest) return;
+      const { error } = await supabase.from("requests").update({ status }).eq("id", latest.id);
       if (error) {
         window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
-      } else if (!updated) {
-        window.alert("รายการนี้ถูกเปลี่ยนจากอีกหน้าต่างแล้ว ระบบจะโหลดข้อมูลล่าสุดก่อนดำเนินการต่อ");
       }
       await refreshAdminQueues();
     } finally {
@@ -1451,6 +1496,30 @@ export default function AdminConsolePage() {
     if (!beginPendingAction(actionId)) return;
     setPaymentError(null);
     try {
+      if (paymentTarget.kind === "application") {
+        const latest = await refreshAndMatchQueueRow(
+          "upgrades",
+          paymentTarget.request,
+          sameAdminUpgradeVersion,
+          setPaymentError,
+        );
+        if (!latest) return;
+      } else {
+        const { data: latestSubscription, error: subscriptionError } = await supabase
+          .from("subscriptions")
+          .select("id, user_id, plan_id, status, source, billing_interval, current_period_end, founder_status, founder_price_lock")
+          .eq("id", paymentTarget.subscription.id)
+          .maybeSingle();
+        if (subscriptionError || !latestSubscription) {
+          setPaymentError("รีเฟรชข้อมูลสมาชิกไม่สำเร็จ ระบบยังไม่ได้ดำเนินการ กรุณาปิดหน้าต่างนี้ รีเฟรชข้อมูล แล้วลองอีกครั้ง");
+          return;
+        }
+        if (!sameAdminSubscriptionVersion(paymentTarget.subscription, latestSubscription as AdminSubscription)) {
+          setPaymentError("ข้อมูลสมาชิกนี้มีการเปลี่ยนแปลง ระบบยังไม่ได้ดำเนินการ กรุณาปิดหน้าต่างนี้ ตรวจข้อมูลล่าสุด แล้วลองอีกครั้ง");
+          return;
+        }
+      }
+
       const confirmation = {
         amountThb: paymentTarget.amountThb,
         paymentReference: normalizedReference,
@@ -1461,9 +1530,10 @@ export default function AdminConsolePage() {
         ? await confirmMembershipPayment(supabase, paymentTarget.request.id, confirmation)
         : await confirmSubscriptionRenewal(supabase, paymentTarget.subscription.id, confirmation);
       if (errorMessage) {
-        setPaymentError(/Founder 100 is full/i.test(errorMessage)
+        const friendlyError = userFacingAdminError(errorMessage);
+        setPaymentError(/Founder 100 is full/i.test(friendlyError)
           ? "Founder ครบ 100 สิทธิ์แล้ว ระบบไม่ได้อนุมัติรายการนี้"
-          : `ยืนยันการชำระไม่สำเร็จ: ${errorMessage}`);
+          : `ยืนยันการชำระไม่สำเร็จ: ${friendlyError}`);
         // The payment RPC locks and re-checks pending state server-side. A
         // stale second-session action therefore fails closed; refresh the
         // whole queue immediately so the rejected row cannot be acted on again.
@@ -1473,7 +1543,7 @@ export default function AdminConsolePage() {
       await reloadAdminData();
       setPaymentTarget(null);
     } catch (error) {
-      setPaymentError(`ยืนยันการชำระไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
+      setPaymentError(`ยืนยันการชำระไม่สำเร็จ: ${error instanceof Error ? userFacingAdminError(error.message) : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
     } finally {
       finishPendingAction(actionId);
     }
@@ -1509,19 +1579,13 @@ export default function AdminConsolePage() {
     const action = `upgrade:${request.id}`;
     if (queueRefreshError || paymentTarget || !window.confirm("ปฏิเสธใบสมัครนี้ใช่หรือไม่? ผู้สมัครจะเห็นสถานะว่าไม่ผ่านการตรวจสอบ") || !beginPendingAction(action)) return;
     try {
-      const { data: declined, error } = await supabase.rpc("admin_compare_decline_upgrade_request", {
-        p_request_id: request.id,
-        p_expected_payment_reported_at: request.payment_reported_at,
-        p_expected_plan_id: request.plan_id,
-        p_expected_quoted_amount_thb: request.quoted_amount_thb,
-      });
+      const latest = await refreshAndMatchQueueRow("upgrades", request, sameAdminUpgradeVersion);
+      if (!latest) return;
+      const { error } = await supabase.rpc("decline_upgrade_request", { p_request_id: latest.id });
       if (error) {
         window.alert(`อัปเดตไม่สำเร็จ: ${error.message}`);
         await refreshAdminQueues();
         return;
-      }
-      if (!declined) {
-        window.alert("ใบสมัครนี้ถูกเปลี่ยนหรือเพิ่งแจ้งชำระจากอีกหน้าต่าง ระบบไม่ได้ปฏิเสธและจะโหลดข้อมูลล่าสุด");
       }
       await refreshAdminQueues();
     } finally {
@@ -1547,16 +1611,15 @@ export default function AdminConsolePage() {
 
   const handleReviewVisibility = async (review: AdminReview) => {
     const action = `review:${review.id}`;
-    if (queueRefreshError || !beginPendingAction(action)) return;
+    if (!beginPendingAction(action)) return;
     try {
-      const { data: updated, error } = await supabase.rpc("admin_compare_set_review_visibility", {
-        p_review_id: review.id,
-        p_expected_status: review.moderation_status,
-        p_expected_updated_at: review.updated_at,
-        p_visible: review.moderation_status !== "visible",
+      const latest = await refreshAndMatchQueueRow("reviews", review, sameAdminReviewVersion);
+      if (!latest) return;
+      const { error } = await supabase.rpc("admin_set_review_visibility", {
+        p_review_id: latest.id,
+        p_visible: latest.moderation_status !== "visible",
       });
       if (error) window.alert(`อัปเดตรีวิวไม่สำเร็จ: ${error.message}`);
-      else if (!updated) window.alert("รีวิวนี้ถูกเปลี่ยนจากอีกหน้าต่างแล้ว ระบบไม่ได้ทับสถานะใหม่และจะโหลดข้อมูลล่าสุด");
       await refreshAdminQueues();
     } finally {
       finishPendingAction(action);
@@ -1585,15 +1648,12 @@ export default function AdminConsolePage() {
 
   const handleDeleteReview = async (review: AdminReview) => {
     const action = `review:${review.id}`;
-    if (queueRefreshError || !window.confirm("ลบรีวิวนี้ถาวรใช่หรือไม่?") || !beginPendingAction(action)) return;
+    if (!window.confirm("ลบรีวิวนี้ถาวรใช่หรือไม่?") || !beginPendingAction(action)) return;
     try {
-      const { data: deleted, error } = await supabase.rpc("admin_compare_delete_resource_review", {
-        p_review_id: review.id,
-        p_expected_status: review.moderation_status,
-        p_expected_updated_at: review.updated_at,
-      });
+      const latest = await refreshAndMatchQueueRow("reviews", review, sameAdminReviewVersion);
+      if (!latest) return;
+      const { error } = await supabase.rpc("admin_delete_resource_review", { p_review_id: latest.id });
       if (error) window.alert(`ลบรีวิวไม่สำเร็จ: ${error.message}`);
-      else if (!deleted) window.alert("รีวิวนี้ถูกเปลี่ยนหรือลบจากอีกหน้าต่างแล้ว ระบบไม่ได้ลบซ้ำและจะโหลดข้อมูลล่าสุด");
       await refreshAdminQueues(reviews.length === 1 ? Math.max(0, reviewPage - 1) : reviewPage, reportPage);
     } finally {
       finishPendingAction(action);
@@ -1602,16 +1662,15 @@ export default function AdminConsolePage() {
 
   const handleIssueStatus = async (report: AdminIssueReport, status: IssueReportStatus) => {
     const action = `report:${report.id}`;
-    if (queueRefreshError || !beginPendingAction(action)) return;
+    if (!beginPendingAction(action)) return;
     try {
-      const { data: updated, error } = await supabase.rpc("admin_compare_set_resource_issue_status", {
-        p_report_id: report.id,
-        p_expected_status: report.status,
-        p_expected_updated_at: report.updated_at,
+      const latest = await refreshAndMatchQueueRow("reports", report, sameAdminReportVersion);
+      if (!latest) return;
+      const { error } = await supabase.rpc("admin_set_resource_issue_status", {
+        p_report_id: latest.id,
         p_status: status,
       });
       if (error) window.alert(`อัปเดตรายงานไม่สำเร็จ: ${error.message}`);
-      else if (!updated) window.alert("รายงานนี้ถูกเปลี่ยนจากอีกหน้าต่างแล้ว ระบบไม่ได้ทับสถานะใหม่และจะโหลดข้อมูลล่าสุด");
       await refreshAdminQueues();
     } finally {
       finishPendingAction(action);
@@ -1825,6 +1884,19 @@ export default function AdminConsolePage() {
         </aside>
 
         <main className="kru-admin-main">
+          <div className="kru-admin-refresh-row">
+            <Button
+              type="button"
+              size="sm"
+              variant="soft"
+              icon={RefreshCw}
+              onClick={() => void handleManualAdminRefresh()}
+              loading={pendingAction === "queue-refresh"}
+              disabled={mutationBusy && pendingAction !== "queue-refresh"}
+            >
+              รีเฟรชข้อมูล
+            </Button>
+          </div>
           {queueRefreshError && (
             <div className="kru-admin-queue-error" role="alert">
               <span>{queueRefreshError}</span>
@@ -2602,6 +2674,7 @@ export default function AdminConsolePage() {
       <style>{`
         .kru-admin-shell { display: flex; min-height: 100dvh; max-width: 100%; }
         .kru-admin-queue-error { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-5); padding: var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg); }
+        .kru-admin-refresh-row { display: flex; justify-content: flex-end; margin-bottom: var(--sp-4); }
         .kru-admin-sidebar { display: none; flex-direction: column; width: 256px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100dvh; }
         .kru-admin-main { flex: 1; min-width: 0; max-width: 100%; overflow-x: clip; padding: var(--sp-5) max(var(--sp-4), env(safe-area-inset-right)) calc(var(--sp-8) + env(safe-area-inset-bottom)) max(var(--sp-4), env(safe-area-inset-left)); }
         .kru-admin-main h1 { font-size: clamp(1.55rem, 7vw, var(--fs-30)) !important; overflow-wrap: anywhere; }

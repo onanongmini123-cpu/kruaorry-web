@@ -75,14 +75,46 @@ describe("public resource showcase", () => {
     expect(item).toMatchObject({
       coverImageUrl: null,
       gradeLevels: ["p4"],
-      requiredPlanNames: ["Founder 100", "Teacher"],
+      requiredPlanNames: ["Founder 100", "Teacher Pro"],
       requiredPlanIds: ["founder", "teacher"],
       isNew: true,
       featuredRank: 1,
       reviewAverage: 4.5,
       reviewCount: 2,
     });
-    expect(requiredPlansLabel(item!)).toBe("Founder 100 หรือ Teacher");
+    expect(requiredPlansLabel(item!)).toBe("Founder 100 หรือ Teacher Pro");
+  });
+
+  it("keeps hidden legacy and saleable Teacher plans distinct when name arrays are misaligned", () => {
+    const item = toPublicResource({
+      ...base,
+      access_mode: "plans",
+      required_plan_ids: ["teacher_pro", "teacher"],
+      required_plan_names: ["Teacher"],
+    });
+
+    expect(item?.requiredPlanIds).toEqual(["teacher_pro", "teacher"]);
+    expect(item?.requiredPlanNames).toEqual(["Teacher Pro (แพ็กเดิม)", "Teacher Pro"]);
+    expect(membershipUpgradeHref(item!)).toContain("plan=teacher");
+  });
+
+  it("routes retired-plan-only media to an existing-rights check without advertising a saleable pack", () => {
+    const item = toPublicResource({
+      ...base,
+      access_mode: "plans",
+      required_plan_ids: ["plus", "lifetime"],
+      required_plan_names: ["Plus", "Lifetime"],
+    })!;
+
+    expect(publicResourceAction(item, {
+      authenticated: false,
+      role: null,
+      entitlements: EMPTY_ENTITLEMENTS,
+    })).toMatchObject({
+      label: "เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม",
+      href: `/membership?returnTo=${encodeURIComponent(`/resources/${id}`)}`,
+      locked: true,
+    });
   });
 
   it("fails closed for drafts and invalid ids", () => {

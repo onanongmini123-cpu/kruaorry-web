@@ -33,7 +33,6 @@ export interface PriorityPageSlice {
   to: number;
 }
 
-export const ADMIN_ACTION_REFRESH_INTERVAL_MS = 30_000;
 export const ADMIN_ACTION_REFRESH_TIMEOUT_MS = 10_000;
 
 export interface AdminActionCounts {
@@ -48,57 +47,6 @@ export const EMPTY_ADMIN_ACTION_COUNTS: AdminActionCounts = {
   upgrades: null,
 };
 
-interface AdminActionCountQueryResult {
-  count: number | null;
-  error: unknown;
-}
-
-export interface AdminActionCountQueries {
-  requests: () => PromiseLike<AdminActionCountQueryResult>;
-  reviews: () => PromiseLike<AdminActionCountQueryResult>;
-  reports: () => PromiseLike<AdminActionCountQueryResult>;
-  upgrades: () => PromiseLike<AdminActionCountQueryResult>;
-}
-
-async function runAdminActionCountQuery(
-  query: () => PromiseLike<AdminActionCountQueryResult>,
-): Promise<AdminActionCountQueryResult> {
-  try {
-    return await query();
-  } catch (error) {
-    return { count: null, error };
-  }
-}
-
-export async function loadAdminActionCounts(
-  queries: AdminActionCountQueries,
-  includeUpgrades: boolean,
-): Promise<AdminActionCounts> {
-  const [requestResult, reviewResult, reportResult, upgradeResult] = await Promise.all([
-    runAdminActionCountQuery(queries.requests),
-    runAdminActionCountQuery(queries.reviews),
-    runAdminActionCountQuery(queries.reports),
-    includeUpgrades
-      ? runAdminActionCountQuery(queries.upgrades)
-      : Promise.resolve({ count: null, error: null }),
-  ]);
-
-  return {
-    requests: requestResult.error ? null : requestResult.count ?? 0,
-    moderation: reviewResult.error || reportResult.error
-      ? null
-      : (reviewResult.count ?? 0) + (reportResult.count ?? 0),
-    upgrades: !includeUpgrades || upgradeResult.error
-      ? null
-      : upgradeResult.count ?? 0,
-  };
-}
-
-export interface LatestAdminActionCountRefresh {
-  refresh(): Promise<boolean>;
-  dispose(): void;
-}
-
 export type AdminRefreshFailure = {
   error: unknown;
   timedOut: boolean;
@@ -111,8 +59,8 @@ export interface CoalescedAdminRefresh {
 
 /**
  * Runs at most one admin queue read at a time. Calls received while a read is
- * active are coalesced into one immediate follow-up read, so a slow poll
- * cannot overlap another poll or starve a later focus/action refresh. Only the
+ * active are coalesced into one immediate follow-up read, so a slow refresh
+ * cannot overlap another read or starve a later focus/action refresh. Only the
  * newest requested snapshot is applied. A timeout aborts PostgREST requests
  * that honour AbortSignal and releases every caller with a failed result.
  */
@@ -210,51 +158,70 @@ export function createCoalescedAdminRefresh<T>(
   };
 }
 
-export function createLatestAdminActionCountRefresh(
-  load: () => Promise<AdminActionCounts>,
-  apply: (counts: AdminActionCounts) => void,
-): LatestAdminActionCountRefresh {
-  let latestRequest = 0;
-  let active = true;
-
-  return {
-    async refresh() {
-      const request = ++latestRequest;
-      const counts = await load();
-      if (!active || request !== latestRequest) return false;
-      apply(counts);
-      return true;
-    },
-    dispose() {
-      active = false;
-      latestRequest += 1;
-    },
-  };
-}
-
 export interface AdminActionRefreshTarget {
   addEventListener(type: "focus", listener: () => void): void;
   removeEventListener(type: "focus", listener: () => void): void;
-  setInterval(handler: () => void, timeout: number): number;
-  clearInterval(id: number): void;
 }
 
 export function installAdminActionRefresh(
   target: AdminActionRefreshTarget,
   refresh: () => void,
   enabled: boolean,
-  intervalMs = ADMIN_ACTION_REFRESH_INTERVAL_MS,
 ): () => void {
   if (!enabled) return () => undefined;
 
   refresh();
   target.addEventListener("focus", refresh);
-  const intervalId = target.setInterval(refresh, intervalMs);
 
   return () => {
     target.removeEventListener("focus", refresh);
-    target.clearInterval(intervalId);
   };
+}
+
+export function sameAdminRequestVersion(
+  rendered: Pick<AdminRequestOrderRow, "id" | "status">,
+  latest: Pick<AdminRequestOrderRow, "id" | "status">,
+): boolean {
+  return rendered.id === latest.id && rendered.status === latest.status;
+}
+
+export function sameAdminReviewVersion(
+  rendered: Pick<AdminReviewOrderRow, "id" | "moderation_status"> & { updated_at: string },
+  latest: Pick<AdminReviewOrderRow, "id" | "moderation_status"> & { updated_at: string },
+): boolean {
+  return rendered.id === latest.id
+    && rendered.moderation_status === latest.moderation_status
+    && rendered.updated_at === latest.updated_at;
+}
+
+export function sameAdminReportVersion(
+  rendered: Pick<AdminReportOrderRow, "id" | "status"> & { updated_at: string },
+  latest: Pick<AdminReportOrderRow, "id" | "status"> & { updated_at: string },
+): boolean {
+  return rendered.id === latest.id
+    && rendered.status === latest.status
+    && rendered.updated_at === latest.updated_at;
+}
+
+export function sameAdminUpgradeVersion(
+  rendered: Pick<AdminUpgradeOrderRow, "id" | "status" | "payment_reported_at"> & { plan_id: string; quoted_amount_thb: number },
+  latest: Pick<AdminUpgradeOrderRow, "id" | "status" | "payment_reported_at"> & { plan_id: string; quoted_amount_thb: number },
+): boolean {
+  return rendered.id === latest.id
+    && rendered.status === latest.status
+    && rendered.payment_reported_at === latest.payment_reported_at
+    && rendered.plan_id === latest.plan_id
+    && rendered.quoted_amount_thb === latest.quoted_amount_thb;
+}
+
+export function sameAdminSubscriptionVersion(
+  rendered: { id: string; plan_id: string; status: string; current_period_end: string | null },
+  latest: { id: string; plan_id: string; status: string; current_period_end: string | null },
+): boolean {
+  return rendered.id === latest.id
+    && rendered.plan_id === latest.plan_id
+    && rendered.status === latest.status
+    && rendered.current_period_end === latest.current_period_end;
 }
 
 export function priorityPageSlices(groupCounts: number[], page: number, pageSize: number): PriorityPageSlice[] {

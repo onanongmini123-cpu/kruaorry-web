@@ -370,18 +370,6 @@ ledger, so a direct pending write cannot race a first grant. It does not rewrite
 existing applications, subscriptions, payments, or ledger rows; Founder renewal
 at the regular 599 THB/year price continues through the existing renewal RPC.
 
-Migration `20261003121000_050_admin_queue_compare_and_set.sql` is **pending**
-and must be applied before deploying the matching admin UI. It adds three
-admin-only compare-and-set RPCs for review visibility, review deletion, and
-issue-report status, plus guarded replacements for request status and upgrade
-decline. Review/report operations compare the rendered `updated_at`; upgrade
-decline compares the rendered payment-report timestamp, plan and quoted amount.
-It adds `requests.admin_revision` with a constant initial/default value of `1`,
-then increments and compares that revision on every admin request transition.
-It revokes the older unconditional mutation RPCs and authenticated direct
-`requests` updates so clients cannot bypass those guards. The schema change is
-additive and does not delete or alter existing request business values.
-
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock

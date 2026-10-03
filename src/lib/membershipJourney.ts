@@ -2,8 +2,15 @@ import type { EntitlementSnapshot } from "@/lib/entitlement";
 import { isMembershipExpired, type MemberSubscription } from "@/lib/memberAccount";
 import type { UpgradeRequest } from "@/lib/data";
 import { safeUpgradeReturnPath } from "@/lib/authReturnPath";
+import { planDisplayName } from "@/lib/planDisplay";
 
 export type MembershipJourneyPlanId = "founder" | "teacher";
+
+/** Keep legacy/server wording from leaking the old customer-facing name. */
+export function membershipDisplayError(error: string | null | undefined, fallback: string): string {
+  const message = error?.trim() || fallback;
+  return message.replace(/\bTeacher\b(?!\s+Pro\b)/g, "Teacher Pro");
+}
 
 export function requestedMembershipPlan(raw: string | null | undefined): MembershipJourneyPlanId | null {
   return raw === "founder" || raw === "teacher" ? raw : null;
@@ -94,8 +101,13 @@ export function resolveMembershipPlanSelection(
   }
   if (membershipPlanUnlocksResource("teacher", requiredPlanIds)) return "teacher";
   if (membershipPlanUnlocksResource("founder", requiredPlanIds) && !founderUnavailable) return "founder";
-  // No eligible alternative is safe. Preserve the preference so the caller's
-  // fail-closed state can direct a former Founder to renewal instead.
+  // Founder-only media must remain Founder even when the first-year offer is
+  // unavailable. The caller then shows renewal/support instead of advertising
+  // Teacher Pro, which cannot unlock this resource.
+  if (membershipPlanUnlocksResource("founder", requiredPlanIds)) return "founder";
+  // No saleable alternative exists (for example Plus/Lifetime-only media).
+  // Preserve the preference only as an internal value; the caller's
+  // no-saleable-plan branch hides every purchase CTA.
   return preferredPlan;
 }
 
@@ -129,7 +141,7 @@ export function membershipPlanChangeConfirmation(
 ): string | null {
   if (!subscription || subscription.planId === targetPlan) return null;
   const warnings = [
-    `เมื่อทีมงานอนุมัติแพ็ก ${targetPlan === "teacher" ? "Teacher" : "Founder"} สิทธิ์แพ็กเดิมอาจสิ้นสุดทันที`,
+    `เมื่อทีมงานอนุมัติแพ็ก ${planDisplayName(targetPlan, targetPlan === "founder" ? "Founder" : null)} สิทธิ์แพ็กเดิมอาจสิ้นสุดทันที`,
   ];
   if (subscription.planId === "founder") {
     warnings.push("สิทธิ์ Founder ราคาเดิมจะสิ้นสุดและไม่สามารถกู้คืนได้");
@@ -145,9 +157,9 @@ export function founderApplicationConversionConfirmation(
 ): string {
   const planChangeWarning = membershipPlanChangeConfirmation(subscription, "teacher");
   if (planChangeWarning) {
-    return `เปลี่ยนใบสมัคร Founder ที่รอดำเนินการเป็น Teacher 599 บาท/ปี โดยใช้เลขอ้างอิงเดิม\n\n${planChangeWarning}`;
+    return `เปลี่ยนใบสมัคร Founder ที่รอดำเนินการเป็น Teacher Pro 599 บาท/ปี โดยใช้เลขอ้างอิงเดิม\n\n${planChangeWarning}`;
   }
-  return "เปลี่ยนเฉพาะใบสมัคร Founder ที่รอดำเนินการเป็น Teacher 599 บาท/ปี โดยใช้เลขอ้างอิงเดิมใช่หรือไม่? การเปลี่ยนใบสมัครนี้ยังไม่เปลี่ยนสิทธิ์สมาชิกปัจจุบันจนกว่าทีมงานจะอนุมัติ";
+  return "เปลี่ยนเฉพาะใบสมัคร Founder ที่รอดำเนินการเป็น Teacher Pro 599 บาท/ปี โดยใช้เลขอ้างอิงเดิมใช่หรือไม่? การเปลี่ยนใบสมัครนี้ยังไม่เปลี่ยนสิทธิ์สมาชิกปัจจุบันจนกว่าทีมงานจะอนุมัติ";
 }
 
 export interface MembershipReturnTarget {

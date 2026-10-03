@@ -2,6 +2,7 @@ import { publicCoverUrl } from "@/lib/resourceVisibility";
 import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
 import { safeUpgradeReturnPath } from "@/lib/authReturnPath";
+import { planDisplayNames } from "@/lib/planDisplay";
 
 export type PublicResource = {
   id: string;
@@ -59,7 +60,8 @@ export function toPublicResource(value: unknown): PublicResource | null {
   const gradeLevels = cleanStringArray(row.grade_levels, 20).filter(isResourceGrade);
   const accessMode = row.access_mode as ResourceAccessMode;
   const requiredPlanIds = accessMode === "plans" ? cleanStringArray(row.required_plan_ids, 20) : [];
-  const requiredPlanNames = accessMode === "plans" ? cleanStringArray(row.required_plan_names, 20) : [];
+  const storedPlanNames = accessMode === "plans" ? cleanStringArray(row.required_plan_names, 20) : [];
+  const requiredPlanNames = accessMode === "plans" ? planDisplayNames(requiredPlanIds, storedPlanNames) : [];
   return {
     id: row.id,
     title: row.title.trim(),
@@ -173,9 +175,14 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
   if (!canUse) {
     const upgradePending = resource.accessMode === "plans"
       && resource.requiredPlanIds.some((planId) => (viewer.pendingPlanIds ?? []).includes(planId));
+    const hasSaleablePlan = resource.requiredPlanIds.some((planId) => planId === "founder" || planId === "teacher");
     return {
       href: membershipUpgradeHref(resource),
-      label: upgradePending ? "ติดตามคำขออัปเกรด" : viewer.authenticated ? "อัปเกรดเพื่อปลดล็อก" : "ดูแพ็กเพื่อปลดล็อก",
+      label: upgradePending
+        ? "ติดตามคำขออัปเกรด"
+        : !hasSaleablePlan
+          ? viewer.authenticated ? "ตรวจสอบสิทธิ์สมาชิกเดิม" : "เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม"
+          : viewer.authenticated ? "อัปเกรดเพื่อปลดล็อก" : "ดูแพ็กเพื่อปลดล็อก",
       canUse: false,
       locked: true,
       opensNewTab: false,

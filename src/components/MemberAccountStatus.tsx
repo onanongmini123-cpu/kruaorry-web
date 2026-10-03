@@ -3,6 +3,7 @@ import { CalendarClock, ReceiptText, RefreshCw, ShieldCheck } from "lucide-react
 import { Badge } from "@/components/ui";
 import { LINE_OA_URL } from "@/lib/config";
 import type { Plan, UpgradeRequest } from "@/lib/data";
+import { planDisplayName } from "@/lib/planDisplay";
 import {
   canRequestMembershipRenewal,
   isMembershipExpired,
@@ -44,10 +45,10 @@ function applicationStatus(application: UpgradeRequest): { label: string; tone: 
 }
 
 export function MemberAccountStatus({ currentPlanId, plans, subscription, subscriptionError, applications, applicationsError, now }: MemberAccountStatusProps) {
-  const planNameById = new Map(plans.map((plan) => [plan.id, plan.name]));
+  const planNameById = new Map(plans.map((plan) => [plan.id, planDisplayName(plan.id, plan.name)]));
   const currentPlanName = planNameById.get(currentPlanId)
-    ?? (subscription?.planId === currentPlanId ? subscription.planName : null)
-    ?? (currentPlanId === "free" ? "Free" : currentPlanId);
+    ?? (subscription?.planId === currentPlanId ? planDisplayName(currentPlanId, subscription.planName) : null)
+    ?? (currentPlanId === "free" ? "Free" : planDisplayName(currentPlanId));
   const request = preferredMembershipApplication(applications);
   const requestStatus = request ? applicationStatus(request) : null;
   const status = subscriptionStatus(subscription, now);
@@ -96,7 +97,7 @@ export function MemberAccountStatus({ currentPlanId, plans, subscription, subscr
         <div className="kru-account-membership__request">
           <div>
             <span>เลขอ้างอิง {request.referenceCode}</span>
-            <strong>คำขอแพ็ก {planNameById.get(request.planId) ?? request.planId}</strong>
+            <strong>คำขอแพ็ก {planNameById.get(request.planId) ?? planDisplayName(request.planId)}</strong>
           </div>
           <Link href={`/membership?plan=${encodeURIComponent(request.planId)}`}>ดูคำขอและวิธีชำระ</Link>
         </div>

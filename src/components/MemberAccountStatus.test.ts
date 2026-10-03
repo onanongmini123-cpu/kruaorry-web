@@ -46,7 +46,8 @@ describe("MemberAccountStatus", () => {
     }));
 
     expect(markup).toContain("แพ็กปัจจุบัน");
-    expect(markup).toContain("Teacher");
+    expect(markup).toContain("Teacher Pro");
+    expect(markup).not.toContain(">Teacher<");
     expect(markup).toContain("วันสิ้นสุดสิทธิ์");
     expect(markup).toContain("จำนวนวันที่เหลือ");
     expect(markup).toContain("แจ้งชำระแล้ว · รอตรวจสอบ");

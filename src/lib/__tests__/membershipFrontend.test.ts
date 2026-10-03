@@ -38,15 +38,36 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("ฉันส่งเลขอ้างอิงและหลักฐานแล้ว");
     expect(membership).toContain("pendingFounderUnavailable");
     expect(membership).toContain("convertFounderApplicationToTeacher");
-    expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher 599 บาท/ปี");
+    expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี");
     expect(membership).toContain('const nextCapacity = await fetchFounderCapacity(supabase)');
     expect(membership).toContain('latestApplication.planId === "founder" && nextCapacity?.isFull');
   });
 
-  it("fails closed for an unknown Founder capacity without blocking Teacher applications", () => {
+  it("fails closed for unknown Founder checks while preserving an already-selected Teacher application", () => {
     expect(membership).toContain('if (applicationPlanId === "founder" && !capacity)');
-    expect(membership).toContain('applicationPlanId === "founder" && !capacity ? (');
-    expect(membership).not.toContain('if (!userId || submitting || !capacity)');
+    expect(membership).toContain('const founderChecksUnavailable = schemaReadiness !== "ready"');
+    expect(membership).toContain('&& (selectedPlanId !== "founder" || !founderChecksUnavailable)');
+    expect(membership).toContain('if (applicationPlanId === "founder" && founderChecksUnavailable)');
+    expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
+    expect(membership).toContain('|| founderChecksUnavailable');
+    expect(membership).toContain('membershipNeedsRenewal && !noSelectablePlanForResource && !founderChecksUnavailable && !applicationsError');
+
+    const paymentHandler = membership.slice(
+      membership.indexOf("const handleReportPayment"),
+      membership.indexOf("const handleConvertToTeacher"),
+    );
+    expect(paymentHandler.indexOf("if (founderChecksUnavailable)")).toBeGreaterThan(-1);
+    expect(paymentHandler.indexOf("if (pendingPaymentBlocked) return;")).toBeGreaterThan(
+      paymentHandler.indexOf("if (founderChecksUnavailable)"),
+    );
+  });
+
+  it("never exposes stale pending-payment actions when the application refresh fails", () => {
+    expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
+    expect(membership).toContain('if (applicationsError) {');
+    expect(membership).toContain("ยังตรวจสอบใบสมัครล่าสุดไม่ได้");
+    expect(membership).toContain("เพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว");
+    expect(membership).toContain("membershipDisplayError(result.error");
   });
 
   it("gates every new membership path behind the old-schema readiness marker", () => {
@@ -144,11 +165,13 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("ตรวจสอบสิทธิ์เดิม");
     expect(membership).toContain("ตรวจสอบสิทธิ์สมาชิกเดิม");
     expect(membership).toContain("{!noSelectablePlanForResource && (");
-    expect(membership).toContain("ไม่ได้เปิดรับสมัครด้วยแพ็ก Founder หรือ Teacher");
+    expect(membership).toContain("ไม่ได้เปิดรับสมัครด้วยแพ็ก Founder หรือ Teacher Pro");
     expect(membership).toContain("const showLegacySupportOnly = noSelectablePlanForResource");
     expect(membership).toContain("&& pendingApplication === null");
     expect(membership).toContain("{showLegacySupportOnly ? (");
     expect(membership).toContain("membershipApplicationPlanLabel(application.planId)");
+
+    expect(membership.slice(legacyGuestBranch, genericGuestBranch)).not.toContain("LINE_OA_URL");
 
     const unlockedAction = membership.indexOf(") : hasUnlockedMembership ? (");
     const pendingAction = membership.indexOf(") : latestApplication && hasOpenApplication ? (", unlockedAction);
@@ -158,6 +181,7 @@ describe("canonical manual membership flow", () => {
     expect(pendingAction).toBeGreaterThan(unlockedAction);
     expect(noSelectableAction).toBeGreaterThan(pendingAction);
     expect(genericActiveAction).toBeGreaterThan(noSelectableAction);
+    expect(membership.slice(noSelectableAction, genericActiveAction)).not.toContain("LINE_OA_URL");
 
     const paymentStart = membership.indexOf('id="membership-payment-title"');
     const paymentUnlocked = membership.indexOf(") : hasUnlockedMembership ? (", paymentStart);
@@ -169,6 +193,8 @@ describe("canonical manual membership flow", () => {
     expect(paymentBlocked).toBeGreaterThan(paymentUnlocked);
     expect(paymentPending).toBeGreaterThan(paymentBlocked);
     expect(paymentGenericActive).toBeGreaterThan(paymentPending);
+    const legacyPaymentStart = membership.indexOf("{showLegacySupportOnly ? (");
+    expect(membership.slice(legacyPaymentStart, paymentStart)).not.toContain("LINE_OA_URL");
   });
 
   it("fails closed on repeat Founder eligibility and warns before irreversible plan changes", () => {
