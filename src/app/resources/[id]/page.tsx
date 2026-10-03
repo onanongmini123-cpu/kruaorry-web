@@ -24,6 +24,8 @@ export default async function ResourceDetailPage({ params }: Props) {
   if (!item) notFound();
   const action = publicResourceAction(item, viewer);
   const planLabel = requiredPlansLabel(item);
+  const upgradePending = item.accessMode === "plans"
+    && item.requiredPlanIds.some((planId) => (viewer.pendingPlanIds ?? []).includes(planId));
   const coverCaption = item.accessMode === "public"
     ? "ภาพปกและรายละเอียดของสื่อนี้ · เปิดใช้งานได้ทันทีโดยไม่ต้องเข้าสู่ระบบ"
     : item.accessMode === "authenticated"
@@ -33,6 +35,8 @@ export default async function ResourceDetailPage({ params }: Props) {
         : `ภาพปกและรายละเอียดสำหรับพิจารณา · เปิดใช้ได้ตามสิทธิ์ ${planLabel}`;
   const accessHeading = action.canUse
     ? viewer.authenticated ? "บัญชีของคุณเปิดใช้สื่อนี้ได้" : "เปิดใช้สื่อนี้ได้ทันที"
+    : upgradePending
+      ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ"
     : item.accessMode === "locked"
       ? "สื่อนี้ยังไม่เปิดให้ใช้งาน"
       : item.accessMode === "authenticated"
@@ -42,6 +46,8 @@ export default async function ResourceDetailPage({ params }: Props) {
     ? item.accessMode === "public"
       ? "ระบบจะตรวจว่าสื่อยังเผยแพร่อยู่ก่อนเปิดปลายทาง โดยไม่บังคับให้สร้างบัญชี"
       : "ระบบจะตรวจสิทธิ์อีกครั้งที่เซิร์ฟเวอร์ก่อนเปิดสื่อหรือสร้างลิงก์ดาวน์โหลด"
+    : upgradePending
+      ? "ติดตามเลขอ้างอิง สถานะการชำระ และผลการตรวจสอบได้ในหน้าสมาชิก ระบบจะยังตรวจสิทธิ์ที่เซิร์ฟเวอร์ก่อนเปิดสื่อเสมอ"
     : item.accessMode === "locked"
       ? "ทีมงานยังไม่เปิดปลายทางของสื่อนี้ จึงยังไม่สามารถสมัครหรืออัปเกรดเพื่อใช้งานได้"
       : item.accessMode === "authenticated"

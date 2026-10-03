@@ -7,6 +7,7 @@ export interface SideNavItem {
   key: string;
   label: string;
   icon: LucideIcon;
+  badge?: number | null;
 }
 
 export interface SideNavGroup {
@@ -44,15 +45,27 @@ export function SideNav({ groups, value, onChange }: SideNavProps) {
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = item.key === value;
+              const showBadge = item.badge === null || (typeof item.badge === "number" && item.badge > 0);
+              const badgeLabel = item.badge === null
+                ? `${item.label} ยังตรวจจำนวนรายการที่ต้องดำเนินการไม่ได้`
+                : showBadge
+                  ? `${item.label} มี ${item.badge?.toLocaleString("th-TH")} รายการที่ต้องดำเนินการ`
+                  : undefined;
               return (
                 <button
                   key={item.key}
                   type="button"
                   onClick={() => onChange(item.key)}
                   className={`kru-sidenav__item ${active ? "kru-sidenav__item--active" : ""}`}
+                  aria-label={badgeLabel}
                 >
-                  <Icon size={20} strokeWidth={1.75} />
+                  <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
                   <span>{item.label}</span>
+                  {showBadge && (
+                    <span className="kru-sidenav__badge" aria-hidden="true">
+                      {item.badge === null ? "—" : item.badge! > 99 ? "99+" : item.badge!.toLocaleString("th-TH")}
+                    </span>
+                  )}
                 </button>
               );
             })}

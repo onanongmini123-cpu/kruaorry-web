@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PUBLIC_RESOURCE_SELECT, publicResourceAction, requiredPlansLabel, signupHref, toPublicResource } from "../catalog";
+import { membershipUpgradeHref, PUBLIC_RESOURCE_SELECT, publicResourceAction, requiredPlansLabel, signupHref, toPublicResource } from "../catalog";
 import { safeAuthNext } from "@/lib/authReturnPath";
 import { EMPTY_ENTITLEMENTS } from "@/lib/entitlement";
 
@@ -29,20 +29,26 @@ const base = {
 };
 
 describe("public resource showcase", () => {
-  it("shows a genuine published free file and sends signup back to its download route", () => {
+  it("shows a genuine published free file and sends free signup into its member-app detail", () => {
     const item = toPublicResource(base);
     expect(item?.title).toBe(base.title);
     expect(item?.isFree).toBe(true);
     expect(item?.isNew).toBe(true);
-    expect(signupHref(item!)).toBe(`/login?next=${encodeURIComponent(`/download/${id}`)}&mode=signup`);
-    expect(safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"))).toBe(`/download/${id}`);
-  });
-
-  it("supports a real same-origin web app and routes signup back to its app detail", () => {
-    const item = toPublicResource({ ...base, delivery_mode: "web_app", file_path: null, cta_url: "/tools/timer", access_mode: "plans", required_plan_ids: ["teacher"], is_free: false });
-    expect(item).not.toBeNull();
     expect(signupHref(item!)).toBe(`/login?next=${encodeURIComponent(`/app?resource=${id}`)}&mode=signup`);
     expect(safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"))).toBe(`/app?resource=${id}`);
+  });
+
+  it("supports a real same-origin premium web app but routes guests to intentional upgrade", () => {
+    const item = toPublicResource({ ...base, delivery_mode: "web_app", file_path: null, cta_url: "/tools/timer", access_mode: "plans", required_plan_ids: ["teacher"], is_free: false });
+    expect(item).not.toBeNull();
+    expect(publicResourceAction(item!, {
+      authenticated: false,
+      role: null,
+      entitlements: EMPTY_ENTITLEMENTS,
+    })).toMatchObject({
+      href: `/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`,
+      label: "ดูแพ็กเพื่อปลดล็อก",
+    });
   });
 
   it("never puts private destinations into the public page model", () => {
@@ -104,7 +110,9 @@ describe("public resource showcase", () => {
       role: null,
       entitlements: EMPTY_ENTITLEMENTS,
     });
-    expect(guest).toMatchObject({ label: "สมัครสมาชิกเพื่อใช้งาน", locked: true, canUse: false });
+    expect(guest).toMatchObject({ label: "ดูแพ็กเพื่อปลดล็อก", locked: true, canUse: false });
+    expect(guest.href).toBe(`/membership?plan=founder&returnTo=${encodeURIComponent(`/resources/${id}`)}`);
+    expect(guest.href).not.toContain("mode=signup");
     expect(guest.href).not.toMatch(/file_path|token|worksheet[.]pdf/);
 
     const guestFree = publicResourceAction(free, {
@@ -112,8 +120,8 @@ describe("public resource showcase", () => {
       role: null,
       entitlements: EMPTY_ENTITLEMENTS,
     });
-    expect(guestFree).toMatchObject({ label: "สมัครสมาชิกฟรีเพื่อใช้งาน", locked: true, canUse: false });
-    expect(guestFree.href).toContain(encodeURIComponent(`/download/${id}`));
+    expect(guestFree).toMatchObject({ label: "สมัครบัญชีฟรีเพื่อใช้งาน", locked: true, canUse: false });
+    expect(guestFree.href).toContain(encodeURIComponent(`/app?resource=${id}`));
 
     const freeMember = publicResourceAction(premium, {
       authenticated: true,
@@ -121,12 +129,32 @@ describe("public resource showcase", () => {
       entitlements: EMPTY_ENTITLEMENTS,
     });
     expect(freeMember).toEqual({
-      href: `/app?resource=${id}`,
+      href: `/membership?plan=founder&returnTo=${encodeURIComponent(`/resources/${id}`)}`,
       label: "อัปเกรดเพื่อปลดล็อก",
       canUse: false,
       locked: true,
       opensNewTab: false,
     });
+
+    const pendingMember = publicResourceAction(premium, {
+      authenticated: true,
+      role: "member",
+      entitlements: EMPTY_ENTITLEMENTS,
+      pendingPlanIds: ["founder"],
+    });
+    expect(pendingMember).toMatchObject({
+      href: `/membership?plan=founder&returnTo=${encodeURIComponent(`/resources/${id}`)}`,
+      label: "ติดตามคำขออัปเกรด",
+      canUse: false,
+      locked: true,
+    });
+
+    expect(publicResourceAction(premium, {
+      authenticated: true,
+      role: "member",
+      entitlements: EMPTY_ENTITLEMENTS,
+      pendingPlanIds: ["unrelated-plan"],
+    }).label).toBe("อัปเกรดเพื่อปลดล็อก");
 
     expect(publicResourceAction(free, {
       authenticated: true,
@@ -170,5 +198,19 @@ describe("public resource showcase", () => {
       role: null,
       entitlements: EMPTY_ENTITLEMENTS,
     })).toMatchObject({ href: `/download/${id}`, canUse: true, locked: false, opensNewTab: true });
+  });
+
+  it("builds only allowlisted internal return paths for a premium upgrade", () => {
+    const premium = toPublicResource({
+      ...base,
+      is_free: false,
+      access_mode: "plans",
+      required_plan_ids: ["teacher"],
+      required_plan_names: ["Teacher"],
+    })!;
+    expect(membershipUpgradeHref(premium, `/app?resource=${id}`))
+      .toBe(`/membership?plan=teacher&returnTo=${encodeURIComponent(`/app?resource=${id}`)}`);
+    expect(membershipUpgradeHref(premium, "https://evil.example/steal"))
+      .toBe("/membership?plan=teacher&returnTo=%2Fapp");
   });
 });

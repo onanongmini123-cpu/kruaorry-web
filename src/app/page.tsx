@@ -47,6 +47,7 @@ function toLandingResource(resource: Resource): LandingResource {
 }
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const FREE_SIGNUP_HREF = "/login?mode=signup&next=%2Fapp";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -165,7 +166,7 @@ export default function LandingPage() {
           </span>
           <div style={{ flex: 1 }} />
           <Link href="/login" className="kru-btn kru-btn--ghost kru-btn--sm">เข้าสู่ระบบ</Link>
-          <Link href="/membership" className="kru-btn kru-btn--primary kru-btn--sm">สมัครฟรี</Link>
+          <Link href={FREE_SIGNUP_HREF} className="kru-btn kru-btn--primary kru-btn--sm">สมัครฟรี</Link>
         </div>
       </header>
 
@@ -201,7 +202,7 @@ export default function LandingPage() {
 
               <div className="kru-discovery-hero__secondary">
                 <span>สื่อพร้อมสอนภาษาไทย เทมเพลต Google พร้อมใช้ และเครื่องมือในห้องเรียน</span>
-                <Link href="/membership">สมัครสมาชิกฟรี <ArrowRight size={16} aria-hidden="true" /></Link>
+                <Link href={FREE_SIGNUP_HREF}>สมัครสมาชิกฟรี <ArrowRight size={16} aria-hidden="true" /></Link>
               </div>
             </div>
 
@@ -288,7 +289,7 @@ export default function LandingPage() {
               <Link href="/resources?access=free" className="kru-btn kru-btn--primary kru-btn--lg">
                 ดูสื่อฟรีทั้งหมด <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link href="/membership" className="kru-btn kru-btn--secondary">
+              <Link href={FREE_SIGNUP_HREF} className="kru-btn kru-btn--secondary">
                 สมัครสมาชิกฟรี
               </Link>
             </div>

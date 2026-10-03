@@ -1,6 +1,7 @@
 import { publicCoverUrl } from "@/lib/resourceVisibility";
 import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
+import { safeUpgradeReturnPath } from "@/lib/authReturnPath";
 
 export type PublicResource = {
   id: string;
@@ -26,6 +27,7 @@ export interface PublicResourceViewer {
   authenticated: boolean;
   role: "member" | "admin" | "owner" | null;
   entitlements: EntitlementSnapshot;
+  pendingPlanIds?: string[];
 }
 
 export interface PublicResourceAction {
@@ -93,10 +95,29 @@ function cleanStringArray(value: unknown, limit: number): string[] {
 export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, access_mode, required_plan_ids, required_plan_names, is_new, featured_rank, review_average, review_count";
 
 export function signupHref(resource: PublicResource): string {
-  const destination = resource.isFree && resource.deliveryMode === "file_download"
-    ? `/download/${resource.id}`
-    : `/app?resource=${resource.id}`;
+  // Free-account acquisition always lands inside the member app after email
+  // confirmation. Opening/downloading remains a separate, intentional click
+  // whose API route rechecks the caller's current entitlement server-side.
+  const destination = `/app?resource=${resource.id}`;
   return `/login?next=${encodeURIComponent(destination)}&mode=signup`;
+}
+
+type UpgradeResource = Pick<PublicResource, "id" | "requiredPlanIds">;
+
+/** Build an intentional paid-upgrade CTA without accepting an arbitrary URL. */
+export function membershipUpgradeHref(
+  resource: UpgradeResource,
+  requestedReturnTo: string = `/resources/${resource.id}`,
+): string {
+  const query = new URLSearchParams();
+  const preferredPlan = resource.requiredPlanIds.includes("founder")
+    ? "founder"
+    : resource.requiredPlanIds.includes("teacher")
+      ? "teacher"
+      : null;
+  if (preferredPlan) query.set("plan", preferredPlan);
+  query.set("returnTo", safeUpgradeReturnPath(requestedReturnTo));
+  return `/membership?${query.toString()}`;
 }
 
 const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
@@ -139,10 +160,10 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
     };
   }
 
-  if (!canUse && !viewer.authenticated) {
+  if (!canUse && resource.accessMode === "authenticated" && !viewer.authenticated) {
     return {
       href: signupHref(resource),
-      label: resource.accessMode === "authenticated" ? "สมัครสมาชิกฟรีเพื่อใช้งาน" : "สมัครสมาชิกเพื่อใช้งาน",
+      label: "สมัครบัญชีฟรีเพื่อใช้งาน",
       canUse: false,
       locked: true,
       opensNewTab: false,
@@ -150,9 +171,11 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
   }
 
   if (!canUse) {
+    const upgradePending = resource.accessMode === "plans"
+      && resource.requiredPlanIds.some((planId) => (viewer.pendingPlanIds ?? []).includes(planId));
     return {
-      href: `/app?resource=${resource.id}`,
-      label: "อัปเกรดเพื่อปลดล็อก",
+      href: membershipUpgradeHref(resource),
+      label: upgradePending ? "ติดตามคำขออัปเกรด" : viewer.authenticated ? "อัปเกรดเพื่อปลดล็อก" : "ดูแพ็กเพื่อปลดล็อก",
       canUse: false,
       locked: true,
       opensNewTab: false,

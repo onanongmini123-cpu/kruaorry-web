@@ -443,8 +443,15 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
   };
 }
 
-export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
-  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return [];
+export interface UpgradeRequestsResult {
+  applications: UpgradeRequest[];
+  error: boolean;
+}
+
+export async function fetchUpgradeRequestsResult(supabase: SupabaseClient, userId: string): Promise<UpgradeRequestsResult> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return { applications: [], error: true };
+  }
 
   const { data, error } = await supabase
     .from("upgrade_requests")
@@ -453,10 +460,17 @@ export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: str
     .order("created_at", { ascending: false });
 
   if (error) logError("fetchUpgradeRequests failed", error);
-  if (error || !data) return [];
-  return (data as UpgradeRequestRow[])
+  if (error || !data) return { applications: [], error: true };
+  return {
+    applications: (data as UpgradeRequestRow[])
     .map(membershipApplicationFromRow)
-    .filter((application): application is UpgradeRequest => application !== null);
+    .filter((application): application is UpgradeRequest => application !== null),
+    error: false,
+  };
+}
+
+export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
+  return (await fetchUpgradeRequestsResult(supabase, userId)).applications;
 }
 
 export async function createMembershipApplication(supabase: SupabaseClient, planId: string): Promise<MembershipApplicationMutationResult> {

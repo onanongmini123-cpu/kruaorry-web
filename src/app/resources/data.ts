@@ -10,6 +10,7 @@ const GUEST_VIEWER: PublicResourceViewer = {
   authenticated: false,
   role: null,
   entitlements: EMPTY_ENTITLEMENTS,
+  pendingPlanIds: [],
 };
 
 type EntitlementRow = {
@@ -92,12 +93,16 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
     // capabilities for that temporary identity.
     if (!user || user.is_anonymous === true) return GUEST_VIEWER;
 
-    const [profileResult, entitlementResult] = await Promise.all([
+    const [profileResult, entitlementResult, pendingResult] = await Promise.all([
       withTimeout(
         Promise.resolve(client.from("profiles").select("role").eq("id", user.id).maybeSingle()),
         "public resource viewer profile",
       ),
       withTimeout(Promise.resolve(client.rpc("get_my_entitlements")), "public resource viewer entitlements"),
+      withTimeout(
+        Promise.resolve(client.from("upgrade_requests").select("plan_id").eq("user_id", user.id).eq("status", "pending").limit(5)),
+        "public resource viewer pending upgrade",
+      ),
     ]);
 
     const roleValue = profileResult.ok && !profileResult.value.error ? profileResult.value.data?.role : null;
@@ -105,8 +110,13 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
     const entitlements = entitlementResult.ok && !entitlementResult.value.error
       ? toEntitlements(entitlementResult.value.data)
       : EMPTY_ENTITLEMENTS;
+    const pendingPlanIds = pendingResult.ok && !pendingResult.value.error && Array.isArray(pendingResult.value.data)
+      ? [...new Set(pendingResult.value.data
+          .map((row) => row && typeof row === "object" ? (row as { plan_id?: unknown }).plan_id : null)
+          .filter((planId): planId is string => typeof planId === "string" && planId.length > 0))]
+      : [];
 
-    return { authenticated: true, role, entitlements };
+    return { authenticated: true, role, entitlements, pendingPlanIds };
   } catch {
     // Fail closed: a temporary session lookup failure must never turn into
     // premium access or reveal a protected destination.

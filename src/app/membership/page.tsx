@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Check, Clipboard, ExternalLink, Home, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Clipboard, ExternalLink, Home, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Badge, Button } from "@/components/ui";
 import { PlanBenefits } from "@/app/landing/PlanBenefits";
@@ -25,6 +25,7 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { createClient } from "@/lib/supabase/client";
+import { safeUpgradeReturnPath } from "@/lib/authReturnPath";
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -84,6 +85,8 @@ export default function MembershipPage() {
 function MembershipContent() {
   const searchParams = useSearchParams();
   const requestedPlan = searchParams.get("plan");
+  const requestedReturnPaths = searchParams.getAll("returnTo");
+  const returnTo = safeUpgradeReturnPath(requestedReturnPaths.length === 1 ? requestedReturnPaths[0] : null);
   const supabase = useMemo(() => createClient(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(!isSupabaseConfigured);
@@ -118,7 +121,8 @@ function MembershipContent() {
   const pendingFounderFull = latestApplication?.status === "pending"
     && latestApplication.planId === "founder"
     && capacity?.isFull === true;
-  const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?plan=${applicationPlanId}`)}`;
+  const membershipReturnQuery = new URLSearchParams({ plan: applicationPlanId, returnTo });
+  const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?${membershipReturnQuery.toString()}`)}`;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -228,8 +232,18 @@ function MembershipContent() {
     const result = await createMembershipApplication(supabase, applicationPlanId);
     setSubmitting(false);
     if (!result.application) {
-      setError(result.error ?? "ส่งใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง");
-      setCapacity(await fetchFounderCapacity(supabase));
+      // Another tab may have created the one allowed pending application
+      // while this tab was open. Re-read before showing an error so the UI
+      // displays that original reference instead of inviting a duplicate.
+      const [nextApplications, nextCapacity] = await Promise.all([
+        fetchUpgradeRequests(supabase, userId),
+        fetchFounderCapacity(supabase),
+      ]);
+      setApplications(nextApplications);
+      setCapacity(nextCapacity);
+      setError(nextApplications.some((application) => application.status === "pending")
+        ? null
+        : result.error ?? "ส่งใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง");
       return;
     }
     const application = result.application;
@@ -300,6 +314,7 @@ function MembershipContent() {
         </Link>
         <nav aria-label="เมนูสมาชิก">
           <Link href="/" className="kru-btn kru-btn--ghost"><Home size={17} aria-hidden="true" /> หน้าแรก</Link>
+          <Link href={returnTo} className="kru-btn kru-btn--ghost"><ArrowLeft size={17} aria-hidden="true" /> กลับไปดูสื่อ</Link>
           {authLoaded && userId ? (
             <Link href="/app" className="kru-btn kru-btn--soft">พื้นที่สมาชิก</Link>
           ) : (

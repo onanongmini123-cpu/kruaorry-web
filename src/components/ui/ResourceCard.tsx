@@ -34,6 +34,7 @@ interface ResourceCardProps {
   coverImageUrl?: string | null;
   tint?: "purple" | "pink" | "blue";
   locked?: boolean;
+  upgradePending?: boolean;
   unavailable?: boolean;
   free?: boolean;
   isNew?: boolean;
@@ -44,7 +45,7 @@ interface ResourceCardProps {
   onClick?: () => void;
 }
 
-export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, unavailable, free, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
+export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, upgradePending, unavailable, free, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
   const t = TINTS[tint];
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const showCover = Boolean(coverImageUrl) && failedCoverUrl !== coverImageUrl;
@@ -142,7 +143,7 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
         )}
         <div className="kru-resource-card__actions">
           <button type="button" onClick={onAction} className="kru-btn kru-btn--soft kru-btn--sm">
-            {unavailable ? "ยังไม่เปิดให้ใช้งาน" : locked ? "อัปเกรดเพื่อปลดล็อก" : AFFORDANCE_LABEL[affordance]}
+            {unavailable ? "ยังไม่เปิดให้ใช้งาน" : locked && upgradePending ? "ติดตามคำขออัปเกรด" : locked ? "อัปเกรดเพื่อปลดล็อก" : AFFORDANCE_LABEL[affordance]}
           </button>
         </div>
       </div>

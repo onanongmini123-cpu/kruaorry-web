@@ -28,11 +28,11 @@ const publicRow = {
 };
 
 describe("public preview → signup → intended resource", () => {
-  it("returns a free-file signup to the same signed-in download route", () => {
+  it("returns a free-file signup to the member app before any download action", () => {
     const item = toPublicResource(publicRow);
     expect(item).not.toBeNull();
     const next = new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next");
-    expect(safeAuthNext(next)).toBe(`/download/${id}`);
+    expect(safeAuthNext(next)).toBe(`/app?resource=${id}`);
   });
 
   it("returns a non-file signup to the exact published item in the member app", () => {

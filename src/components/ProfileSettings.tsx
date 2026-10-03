@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Camera, LogOut, Trash2, UserRound } from "lucide-react";
@@ -21,9 +22,10 @@ type Props = {
   onUpdated: (profile: Profile) => void;
   onSignOut: () => void;
   signingOut: boolean;
+  membershipSummary?: ReactNode;
 };
 
-export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signingOut }: Props) {
+export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signingOut, membershipSummary }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fullName, setFullName] = useState(profile.fullName ?? "");
   const [avatarPath, setAvatarPath] = useState(profile.avatarPath);
@@ -140,6 +142,8 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
           <p>แก้ไขชื่อที่แสดงและรูปโปรไฟล์ โดยไม่เปลี่ยนสิทธิ์สมาชิก</p>
         </div>
       </div>
+
+      {membershipSummary}
 
       <div className="kru-profile-settings__avatar">
         <ProfileAvatar supabase={supabase} avatarPath={avatarPath} name={fullName || profile.email} size={96} />

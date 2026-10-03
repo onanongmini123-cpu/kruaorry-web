@@ -18,6 +18,16 @@ function profileQuery(role: string | null, error: unknown = null) {
   };
 }
 
+function pendingUpgradeQuery(planIds: string[] = [], error: unknown = null) {
+  const limit = vi.fn(async () => ({ data: planIds.map((plan_id) => ({ plan_id })), error }));
+  const statusFilter = { eq: vi.fn(() => ({ limit })) };
+  return {
+    select: vi.fn(() => ({
+      eq: vi.fn(() => statusFilter),
+    })),
+  };
+}
+
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "publishable-test-key";
@@ -63,6 +73,7 @@ describe("public resource viewer", () => {
       authenticated: false,
       role: null,
       entitlements: { planId: "free", features: {} },
+      pendingPlanIds: [],
     });
     expect(from).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
@@ -70,6 +81,7 @@ describe("public resource viewer", () => {
 
   it("derives role and capabilities from the caller's own session", async () => {
     const profile = profileQuery("member");
+    const pending = pendingUpgradeQuery(["founder", "founder"]);
     const rpc = vi.fn(async () => ({
       data: [
         { plan_id: "teacher", feature_id: "download.premium", enabled: true, limit_value: null },
@@ -79,7 +91,7 @@ describe("public resource viewer", () => {
     }));
     vi.mocked(createClient).mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })) },
-      from: vi.fn(() => profile),
+      from: vi.fn((table: string) => table === "profiles" ? profile : pending),
       rpc,
     } as never);
 
@@ -93,6 +105,7 @@ describe("public resource viewer", () => {
           "favorites.limit": { enabled: true, limit: 50 },
         },
       },
+      pendingPlanIds: ["founder"],
     });
     expect(rpc).toHaveBeenCalledWith("get_my_entitlements");
   });

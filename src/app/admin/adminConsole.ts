@@ -4,6 +4,104 @@ export type ResourceAccessMode = "public" | "authenticated" | "plans" | "locked"
 
 export type IssueReportStatus = "pending" | "in_progress" | "resolved";
 
+interface DatedAdminRow {
+  id: string;
+  created_at: string;
+}
+
+interface AdminRequestOrderRow extends DatedAdminRow {
+  status: "pending" | "in_progress" | "done";
+  votes: number;
+}
+
+interface AdminReviewOrderRow extends DatedAdminRow {
+  moderation_status: "pending" | "visible" | "hidden";
+}
+
+interface AdminReportOrderRow extends DatedAdminRow {
+  status: IssueReportStatus;
+}
+
+interface AdminUpgradeOrderRow extends DatedAdminRow {
+  status: "pending" | "approved" | "declined";
+  payment_reported_at: string | null;
+}
+
+export interface PriorityPageSlice {
+  groupIndex: number;
+  from: number;
+  to: number;
+}
+
+export function priorityPageSlices(groupCounts: number[], page: number, pageSize: number): PriorityPageSlice[] {
+  if (!Number.isInteger(page) || page < 0 || !Number.isInteger(pageSize) || pageSize <= 0) return [];
+  const pageStart = page * pageSize;
+  const pageEnd = pageStart + pageSize;
+  const slices: PriorityPageSlice[] = [];
+  let groupStart = 0;
+
+  groupCounts.forEach((rawCount, groupIndex) => {
+    const count = Number.isInteger(rawCount) && rawCount > 0 ? rawCount : 0;
+    const groupEnd = groupStart + count;
+    const overlapStart = Math.max(pageStart, groupStart);
+    const overlapEnd = Math.min(pageEnd, groupEnd);
+    if (overlapStart < overlapEnd) {
+      slices.push({
+        groupIndex,
+        from: overlapStart - groupStart,
+        to: overlapEnd - groupStart - 1,
+      });
+    }
+    groupStart = groupEnd;
+  });
+
+  return slices;
+}
+
+function newestFirst(left: DatedAdminRow, right: DatedAdminRow): number {
+  const dateDifference = Date.parse(right.created_at) - Date.parse(left.created_at);
+  return Number.isFinite(dateDifference) && dateDifference !== 0
+    ? dateDifference
+    : right.id.localeCompare(left.id);
+}
+
+export function isActionableUpgradeRequest(request: Pick<AdminUpgradeOrderRow, "status" | "payment_reported_at">): boolean {
+  return request.status === "pending" && Boolean(request.payment_reported_at);
+}
+
+export function sortAdminRequests<T extends AdminRequestOrderRow>(rows: T[]): T[] {
+  const rank: Record<AdminRequestOrderRow["status"], number> = { pending: 0, in_progress: 1, done: 2 };
+  return [...rows].sort((left, right) => {
+    const statusDifference = rank[left.status] - rank[right.status];
+    if (statusDifference !== 0) return statusDifference;
+    const voteDifference = right.votes - left.votes;
+    return voteDifference !== 0 ? voteDifference : newestFirst(left, right);
+  });
+}
+
+export function sortAdminReviews<T extends AdminReviewOrderRow>(rows: T[]): T[] {
+  return [...rows].sort((left, right) => {
+    const actionableDifference = Number(right.moderation_status === "pending") - Number(left.moderation_status === "pending");
+    return actionableDifference !== 0 ? actionableDifference : newestFirst(left, right);
+  });
+}
+
+export function sortAdminReports<T extends AdminReportOrderRow>(rows: T[]): T[] {
+  const rank: Record<IssueReportStatus, number> = { pending: 0, in_progress: 1, resolved: 2 };
+  return [...rows].sort((left, right) => {
+    const statusDifference = rank[left.status] - rank[right.status];
+    return statusDifference !== 0 ? statusDifference : newestFirst(left, right);
+  });
+}
+
+export function sortAdminUpgradeRequests<T extends AdminUpgradeOrderRow>(rows: T[]): T[] {
+  return [...rows].sort((left, right) => {
+    const rank = (row: AdminUpgradeOrderRow) => isActionableUpgradeRequest(row) ? 0 : row.status === "pending" ? 1 : 2;
+    const statusDifference = rank(left) - rank(right);
+    return statusDifference !== 0 ? statusDifference : newestFirst(left, right);
+  });
+}
+
 const COMMON_VIEWS = new Set<AdminView>([
   "dash",
   "content",

@@ -9,7 +9,21 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain("groups={navGroups}");
     expect(pageSource).toContain('key: "moderation"');
     expect(pageSource).toContain('key: "benefits"');
-    expect(pageSource).toContain("isOwner ? [...BASE_NAV_ITEMS, OWNER_NAV_ITEM]");
+    expect(pageSource).toContain("isOwner ? [...baseNavItems, OWNER_NAV_ITEM]");
+  });
+
+  it("uses authoritative admin-only action counts and marks new work first", () => {
+    expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", "pending")');
+    expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("moderation_status", "pending")');
+    expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", status)');
+    expect(pageSource).toContain('.not("payment_reported_at", "is", null)');
+    expect(pageSource).toContain("badge: navBadgeByKey[item.key as View]");
+    expect(pageSource).toContain('isActionableUpgradeRequest(r) && <Badge tone="brand">ใหม่</Badge>');
+    expect(pageSource).toContain('r.status === "pending" && <Badge tone="brand">ใหม่</Badge>');
+    expect(pageSource).toContain("sortAdminRequests");
+    expect(pageSource).toContain("sortAdminReviews");
+    expect(pageSource).toContain("sortAdminReports");
+    expect(pageSource).toContain("sortAdminUpgradeRequests");
   });
 
   it("provides an accessible, keyboard-dismissable mobile drawer", () => {
@@ -40,16 +54,21 @@ describe("responsive admin console contracts", () => {
 
   it("preserves the real vote-ranked request workflow and complete tab semantics", () => {
     expect(pageSource).toContain('.order("votes", { ascending: false })');
+    expect(pageSource).toContain("const loadTeacherRequests = async () =>");
+    expect(pageSource).toContain("loadTeacherRequests(),");
     expect(pageSource).toContain("{r.votes} โหวต");
     expect(pageSource).toContain('aria-controls="admin-reviews-panel"');
     expect(pageSource).toContain('aria-labelledby="admin-reviews-tab"');
   });
 
   it("paginates both moderation queues with authoritative database totals", () => {
-    expect(pageSource).toContain('select(ADMIN_REVIEW_SELECT, { count: "exact" })');
-    expect(pageSource).toContain('select(ADMIN_REPORT_SELECT, { count: "exact" })');
-    expect(pageSource).toContain("nextReviewPage * MODERATION_PAGE_SIZE");
-    expect(pageSource).toContain("nextReportPage * MODERATION_PAGE_SIZE");
+    expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("moderation_status", "pending")');
+    expect(pageSource).toContain('select("id", { count: "exact", head: true }).neq("moderation_status", "pending")');
+    expect(pageSource).toContain('select("id", { count: "exact", head: true }).eq("status", status)');
+    expect(pageSource).toContain("priorityPageSlices(counts, page, MODERATION_PAGE_SIZE)");
+    expect(pageSource).toContain("loadReviewPage(nextReviewPage)");
+    expect(pageSource).toContain("loadReportPage(nextReportPage)");
+    expect(pageSource).toContain(".range(slice.from, slice.to)");
     expect(pageSource).toContain("รีวิว ({reviewTotal})");
     expect(pageSource).toContain("รายงานปัญหา ({reportTotal})");
     expect(pageSource).toContain("handleReviewPageChange(reviewPage + 1)");

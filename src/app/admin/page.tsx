@@ -55,9 +55,15 @@ import {
   ISSUE_CATEGORY_LABEL,
   ISSUE_STATUS_LABEL,
   adminViewHref,
+  isActionableUpgradeRequest,
   moveFeaturedResource,
   parseAdminView,
+  priorityPageSlices,
   resourceAccessLabel,
+  sortAdminReports,
+  sortAdminRequests,
+  sortAdminReviews,
+  sortAdminUpgradeRequests,
   toggleFeaturedResource,
   type AdminView,
   type IssueReportStatus,
@@ -215,6 +221,13 @@ const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success
 const ROLE_LABEL: Record<AdminMember["role"], string> = { member: "สมาชิก", admin: "แอดมิน", owner: "เจ้าของระบบ" };
 const AUDIT_FIELD_LABEL: Record<AdminAuditLogRow["field"], string> = { role: "บทบาท", plan: "แพ็ก" };
 const MODERATION_PAGE_SIZE = 50;
+interface AdminActionCounts {
+  requests: number | null;
+  moderation: number | null;
+  upgrades: number | null;
+}
+
+const EMPTY_ACTION_COUNTS: AdminActionCounts = { requests: null, moderation: null, upgrades: null };
 const ADMIN_REVIEW_SELECT = "id, resource_id, user_id, rating, body, moderation_status, created_at, updated_at, resources(title), profiles!resource_reviews_user_id_fkey(full_name, email)";
 const ADMIN_REPORT_SELECT = "id, resource_id, reporter_id, category, details, status, created_at, updated_at, resources(title), profiles(full_name, email)";
 const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
@@ -254,6 +267,7 @@ export default function AdminConsolePage() {
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
   const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [issueReports, setIssueReports] = useState<AdminIssueReport[]>([]);
+  const [actionCounts, setActionCounts] = useState(EMPTY_ACTION_COUNTS);
   const [reviewPage, setReviewPage] = useState(0);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [reportPage, setReportPage] = useState(0);
@@ -380,6 +394,24 @@ export default function AdminConsolePage() {
     }
   };
 
+  // The action queue must include every request before status/vote sorting;
+  // otherwise PostgREST's default row cap could hide an older pending item.
+  const loadTeacherRequests = async () => {
+    const rows: AdminRequest[] = [];
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase.from("requests")
+        .select("id, title, votes, status, requested_by, created_at, profiles(full_name, email)")
+        .order("votes", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) return { data: null, error };
+      rows.push(...((data as unknown as AdminRequest[]) ?? []));
+      if ((data?.length ?? 0) < pageSize) return { data: rows, error: null };
+    }
+  };
+
   // Upgrade search is client-side, so it must be backed by every row rather
   // than PostgREST's default first page. The secondary id ordering keeps page
   // boundaries stable when multiple requests share the same created_at.
@@ -398,6 +430,62 @@ export default function AdminConsolePage() {
     }
   };
 
+  // Pagination follows the workflow priority across the whole table, not just
+  // within a page that happened to be ordered by recency. Each status gets an
+  // exact RLS-scoped count, then priorityPageSlices maps the requested global
+  // page onto status-local ranges. This keeps an older pending item ahead of
+  // newer completed history without loading the entire private table.
+  const loadReviewPage = async (page: number) => {
+    const [pendingCountResult, historyCountResult] = await Promise.all([
+      supabase.from("resource_reviews").select("id", { count: "exact", head: true }).eq("moderation_status", "pending"),
+      supabase.from("resource_reviews").select("id", { count: "exact", head: true }).neq("moderation_status", "pending"),
+    ]);
+    const countError = pendingCountResult.error ?? historyCountResult.error;
+    if (countError) return { data: null, error: countError, count: null, actionCount: null };
+
+    const counts = [pendingCountResult.count ?? 0, historyCountResult.count ?? 0];
+    const slices = priorityPageSlices(counts, page, MODERATION_PAGE_SIZE);
+    const pageResults = await Promise.all(slices.map((slice) => (
+      slice.groupIndex === 0
+        ? supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT).eq("moderation_status", "pending").order("created_at", { ascending: false }).order("id", { ascending: false }).range(slice.from, slice.to)
+        : supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT).neq("moderation_status", "pending").order("created_at", { ascending: false }).order("id", { ascending: false }).range(slice.from, slice.to)
+    )));
+    const pageError = pageResults.find((result) => result.error)?.error ?? null;
+    return {
+      data: pageError ? null : pageResults.flatMap((result) => (result.data ?? []) as unknown as AdminReview[]),
+      error: pageError,
+      count: counts[0] + counts[1],
+      actionCount: counts[0],
+    };
+  };
+
+  const loadReportPage = async (page: number) => {
+    const statuses: IssueReportStatus[] = ["pending", "in_progress", "resolved"];
+    const countResults = await Promise.all(statuses.map((status) => (
+      supabase.from("resource_issue_reports").select("id", { count: "exact", head: true }).eq("status", status)
+    )));
+    const countError = countResults.find((result) => result.error)?.error ?? null;
+    if (countError) return { data: null, error: countError, count: null, actionCount: null };
+
+    const counts = countResults.map((result) => result.count ?? 0);
+    const slices = priorityPageSlices(counts, page, MODERATION_PAGE_SIZE);
+    const pageResults = await Promise.all(slices.map((slice) => (
+      supabase.from("resource_issue_reports")
+        .select(ADMIN_REPORT_SELECT)
+        .eq("status", statuses[slice.groupIndex])
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(slice.from, slice.to)
+    )));
+    const pageError = pageResults.find((result) => result.error)?.error ?? null;
+    return {
+      data: pageError ? null : pageResults.flatMap((result) => (result.data ?? []) as unknown as AdminIssueReport[]),
+      error: pageError,
+      count: counts.reduce((total, count) => total + count, 0),
+      actionCount: counts[0] + counts[1],
+    };
+  };
+
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
     setMembershipSchemaReadiness("checking");
     // Keep the content, moderation and member-directory tools available while
@@ -407,15 +495,16 @@ export default function AdminConsolePage() {
     const baseDataPromise = Promise.all([
       supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
-      supabase.from("requests").select("id, title, votes, status, requested_by, created_at, profiles(full_name, email)").order("votes", { ascending: false }).order("created_at", { ascending: false }),
+      loadTeacherRequests(),
       supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("resource_plan_access").select("resource_id, plan_id").order("plan_id", { ascending: true }),
       supabase.from("featured_resources").select("resource_id, position").order("position", { ascending: true }),
-      supabase.from("resource_reviews").select(ADMIN_REVIEW_SELECT, { count: "exact" }).order("created_at", { ascending: false }).order("id", { ascending: false }).range(nextReviewPage * MODERATION_PAGE_SIZE, (nextReviewPage + 1) * MODERATION_PAGE_SIZE - 1),
-      supabase.from("resource_issue_reports").select(ADMIN_REPORT_SELECT, { count: "exact" }).order("created_at", { ascending: false }).order("id", { ascending: false }).range(nextReportPage * MODERATION_PAGE_SIZE, (nextReportPage + 1) * MODERATION_PAGE_SIZE - 1),
+      loadReviewPage(nextReviewPage),
+      loadReportPage(nextReportPage),
       supabase.from("plan_benefit_catalog").select("plan_id, feature_id, feature_name, feature_description, value_type, limit_value, sort_order").order("sort_order", { ascending: true }).order("feature_id", { ascending: true }),
+      supabase.from("requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
     ]);
     const readinessPromise = fetchMembershipSchemaReadiness(supabase);
 
@@ -427,9 +516,10 @@ export default function AdminConsolePage() {
       { data: auditRows, error: auditError },
       { data: accessRows, error: accessError },
       { data: featuredRows, error: featuredError },
-      { data: reviewRows, error: reviewError, count: reviewCount },
-      { data: reportRows, error: reportError, count: reportCount },
+      { data: reviewRows, error: reviewError, count: reviewCount, actionCount: reviewActionCount },
+      { data: reportRows, error: reportError, count: reportCount, actionCount: reportActionCount },
       { data: benefits, error: benefitError },
+      { error: requestActionCountError, count: requestActionCount },
     ] = await baseDataPromise;
 
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
@@ -437,7 +527,7 @@ export default function AdminConsolePage() {
     if (requestError) console.error("Failed to load requests:", requestError.message);
     setResources((resourceRows as AdminResource[]) ?? []);
     setMembers((memberRows as AdminMember[]) ?? []);
-    setRequests((requestRows as unknown as AdminRequest[]) ?? []);
+    setRequests(sortAdminRequests((requestRows as unknown as AdminRequest[]) ?? []));
     if (basePlanError) console.error("Failed to load plans:", basePlanError.message);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
@@ -450,19 +540,27 @@ export default function AdminConsolePage() {
     if (featuredError) console.error("Failed to load featured resources:", featuredError.message);
     setFeaturedIds(((featuredRows ?? []) as { resource_id: string }[]).map((row) => row.resource_id));
     if (reviewError) console.error("Failed to load reviews:", reviewError.message);
-    setReviews((reviewRows as unknown as AdminReview[]) ?? []);
+    setReviews(sortAdminReviews((reviewRows as unknown as AdminReview[]) ?? []));
     if (!reviewError) {
       setReviewTotal(reviewCount ?? 0);
       setReviewPage(nextReviewPage);
     }
     if (reportError) console.error("Failed to load issue reports:", reportError.message);
-    setIssueReports((reportRows as unknown as AdminIssueReport[]) ?? []);
+    setIssueReports(sortAdminReports((reportRows as unknown as AdminIssueReport[]) ?? []));
     if (!reportError) {
       setReportTotal(reportCount ?? 0);
       setReportPage(nextReportPage);
     }
     if (benefitError) console.error("Failed to load plan benefits:", benefitError.message);
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
+    if (requestActionCountError) console.error("Failed to count actionable requests:", requestActionCountError.message);
+    setActionCounts((current) => ({
+      ...current,
+      requests: requestActionCountError ? null : requestActionCount ?? 0,
+      moderation: reviewError || reportError || reviewActionCount === null || reportActionCount === null
+        ? null
+        : reviewActionCount + reportActionCount,
+    }));
 
     const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
       .map((plan) => ({ ...plan, renewal_price_amount_thb: null }));
@@ -479,15 +577,19 @@ export default function AdminConsolePage() {
         { data: planRows, error: planError },
         { data: subscriptionRows, error: subscriptionError },
         { data: founderCount, error: founderCountError },
+        { error: upgradeActionCountError, count: upgradeActionCount },
       ] = await Promise.all([
         loadUpgradeRequests(),
         supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, renewal_price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
         loadCurrentSubscriptions(),
         supabase.rpc("get_founder_capacity"),
+        supabase.from("upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending").not("payment_reported_at", "is", null),
       ]);
 
       if (upgradeError) console.error("Failed to load upgrade requests:", upgradeError.message);
-      setUpgradeRequests(upgradeError ? [] : ((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []));
+      setUpgradeRequests(upgradeError ? [] : sortAdminUpgradeRequests((upgradeRows as unknown as AdminUpgradeRequest[]) ?? []));
+      if (upgradeActionCountError) console.error("Failed to count actionable upgrade requests:", upgradeActionCountError.message);
+      setActionCounts((current) => ({ ...current, upgrades: upgradeActionCountError ? null : upgradeActionCount ?? 0 }));
       if (planError) console.error("Failed to load membership plans:", planError.message);
       if (!planError) membershipPlans = (planRows as AdminPlanRow[]) ?? [];
       if (subscriptionError) console.error("Failed to load subscriptions:", subscriptionError.message);
@@ -502,6 +604,7 @@ export default function AdminConsolePage() {
       setSubscriptions(null);
       setFounderSeatsUsed(null);
       setPaymentTarget(null);
+      setActionCounts((current) => ({ ...current, upgrades: null }));
     }
 
     setMembershipDataError(membershipError);
@@ -1463,7 +1566,13 @@ export default function AdminConsolePage() {
   }
 
   const isOwner = viewerRole === "owner";
-  const navGroups: SideNavGroup[] = [{ items: isOwner ? [...BASE_NAV_ITEMS, OWNER_NAV_ITEM] : BASE_NAV_ITEMS }];
+  const navBadgeByKey: Partial<Record<View, number | null>> = {
+    requests: actionCounts.requests,
+    moderation: actionCounts.moderation,
+    upgrades: actionCounts.upgrades,
+  };
+  const baseNavItems = BASE_NAV_ITEMS.map((item) => ({ ...item, badge: navBadgeByKey[item.key as View] }));
+  const navGroups: SideNavGroup[] = [{ items: isOwner ? [...baseNavItems, OWNER_NAV_ITEM] : baseNavItems }];
   const planNameById = new Map(plans.map((plan) => [plan.id, plan.name]));
 
   const uploadStatusFor = (target: UploadTarget) => (uploadStatus.phase !== "idle" && uploadStatus.target === target ? uploadStatus : null);
@@ -1557,8 +1666,9 @@ export default function AdminConsolePage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--gap-grid)", marginBottom: "var(--sp-8)" }}>
                 <StatTile value={resources.filter((r) => r.status === "published").length} label="สื่อที่เผยแพร่แล้ว" icon={FolderOpen} tone="success" />
                 <StatTile value={members.length} label="สมาชิกทั้งหมด" icon={Users} tone="brand" />
-                <StatTile value={requests.filter((r) => r.status === "pending").length} label="คำขอจากครูที่รอ" icon={MessageSquareText} tone="info" />
-                <StatTile value={membershipMutationsReady ? upgradeRequests.filter((r) => r.status === "pending").length : "—"} label="คำขออัปเกรดที่รอ" icon={Wallet} tone="warning" />
+                <StatTile value={actionCounts.requests ?? "—"} label="คำขอใหม่ที่ต้องพิจารณา" icon={MessageSquareText} tone="info" />
+                <StatTile value={actionCounts.moderation ?? "—"} label="รีวิว/รายงานที่ต้องจัดการ" icon={ShieldCheck} tone="warning" />
+                <StatTile value={membershipMutationsReady ? actionCounts.upgrades ?? "—" : "—"} label="แจ้งชำระที่ต้องตรวจ" icon={Wallet} tone="warning" />
               </div>
             </div>
           )}
@@ -1902,9 +2012,12 @@ export default function AdminConsolePage() {
                             <h2 style={{ fontSize: "var(--fs-16)" }}>{review.resources?.title ?? "(ไม่พบชื่อสื่อ)"}</h2>
                             <p className="kru-admin-private-meta">{review.profiles?.full_name || review.profiles?.email || "(ไม่พบผู้ใช้)"} · {new Date(review.created_at).toLocaleString("th-TH")}</p>
                           </div>
-                          <Badge tone={review.moderation_status === "visible" ? "success" : "neutral"}>
-                            {review.moderation_status === "visible" ? "แสดงอยู่" : review.moderation_status === "pending" ? "รอตรวจสอบ" : "ซ่อนแล้ว"}
-                          </Badge>
+                          <div className="kru-admin-resource-badges">
+                            {review.moderation_status === "pending" && <Badge tone="brand">ใหม่</Badge>}
+                            <Badge tone={review.moderation_status === "visible" ? "success" : review.moderation_status === "pending" ? "warning" : "neutral"}>
+                              {review.moderation_status === "visible" ? "แสดงอยู่" : review.moderation_status === "pending" ? "รอตรวจสอบ" : "ซ่อนแล้ว"}
+                            </Badge>
+                          </div>
                         </div>
                         <div aria-label={`${review.rating} ดาว`} className="kru-admin-review-stars">{"★".repeat(review.rating)}{"☆".repeat(Math.max(0, 5 - review.rating))}</div>
                         <p className="kru-admin-review-body">{review.body}</p>
@@ -1941,7 +2054,10 @@ export default function AdminConsolePage() {
                             <h2 style={{ fontSize: "var(--fs-16)" }}>{report.resources?.title ?? "(ไม่พบชื่อสื่อ)"}</h2>
                             <p className="kru-admin-private-meta">{report.profiles?.full_name || report.profiles?.email || "(ไม่พบผู้ใช้)"} · {new Date(report.created_at).toLocaleString("th-TH")}</p>
                           </div>
-                          <Badge tone={report.status === "resolved" ? "success" : report.status === "in_progress" ? "info" : "warning"}>{ISSUE_STATUS_LABEL[report.status]}</Badge>
+                          <div className="kru-admin-resource-badges">
+                            {report.status === "pending" && <Badge tone="brand">ใหม่</Badge>}
+                            <Badge tone={report.status === "resolved" ? "success" : report.status === "in_progress" ? "info" : "warning"}>{ISSUE_STATUS_LABEL[report.status]}</Badge>
+                          </div>
                         </div>
                         <p><strong>{ISSUE_CATEGORY_LABEL[report.category] ?? report.category}</strong></p>
                         {report.details && <p className="kru-admin-review-body">{report.details}</p>}
@@ -2029,9 +2145,12 @@ export default function AdminConsolePage() {
                       <div style={{ flex: 1, minWidth: 200 }}>
                         <div className="kru-admin-section-heading">
                           <div style={{ fontWeight: "var(--fw-semibold)" }}>{r.profiles?.full_name || r.profiles?.email || "(ไม่พบข้อมูลผู้ใช้)"}</div>
-                          <Badge tone={r.status === "approved" ? "success" : r.status === "declined" ? "neutral" : r.payment_reported_at ? "info" : "warning"}>
-                            {adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)}
-                          </Badge>
+                          <div className="kru-admin-resource-badges">
+                            {isActionableUpgradeRequest(r) && <Badge tone="brand">ใหม่</Badge>}
+                            <Badge tone={r.status === "approved" ? "success" : r.status === "declined" ? "neutral" : r.payment_reported_at ? "info" : "warning"}>
+                              {adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)}
+                            </Badge>
+                          </div>
                         </div>
                         <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
                           {r.profiles?.email} · ขออัปเกรดเป็น <strong>{r.plan_id}</strong> · {new Date(r.created_at).toLocaleDateString("th-TH")}
@@ -2067,7 +2186,7 @@ export default function AdminConsolePage() {
           {view === "requests" && (
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>คำขอจากครู</h1>
-              <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>เรียงตามจำนวนโหวต</p>
+              <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แสดงคำขอใหม่ก่อน แล้วเรียงตามจำนวนโหวตในแต่ละสถานะ</p>
               {requests.length === 0 ? (
                 <EmptyState icon={MessageSquareText} title="ยังไม่มีคำขอ" description="" />
               ) : (
@@ -2081,7 +2200,10 @@ export default function AdminConsolePage() {
                           {r.profiles?.full_name || r.profiles?.email || "(ไม่พบผู้ส่ง)"} · {new Date(r.created_at).toLocaleString("th-TH")}
                         </div>
                       </div>
-                      <Badge tone={REQUEST_TONE[r.status]}>{REQUEST_LABEL[r.status]}</Badge>
+                      <div className="kru-admin-resource-badges">
+                        {r.status === "pending" && <Badge tone="brand">ใหม่</Badge>}
+                        <Badge tone={REQUEST_TONE[r.status]}>{REQUEST_LABEL[r.status]}</Badge>
+                      </div>
                       <select
                         className="kru-select"
                         aria-label={`สถานะคำขอ ${r.title}`}
