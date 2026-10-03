@@ -2397,7 +2397,7 @@ export default function AdminConsolePage() {
                           </div>
                         </div>
                         <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
-                          {r.profiles?.email} · ขออัปเกรดเป็น <strong>{r.plan_id}</strong> · {new Date(r.created_at).toLocaleDateString("th-TH")}
+                          {r.profiles?.email} · ขออัปเกรดเป็น <strong>{planDisplayName(r.plan_id)}</strong> · {new Date(r.created_at).toLocaleDateString("th-TH")}
                         </div>
                         <dl className="kru-admin-payment-summary">
                           <div><dt>เลขอ้างอิงใบสมัคร</dt><dd className="kru-admin-reference">{r.reference_code || "—"}</dd></div>

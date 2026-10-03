@@ -16,7 +16,9 @@ describe("member account integration", () => {
   it("renders the member plan through the shared display-name policy", () => {
     expect(pageSource).toContain("planDisplayName(");
     expect(pageSource).toContain("<small>แพ็ก {currentPlanDisplayName}</small>");
+    expect(pageSource).toContain("แพ็กปัจจุบันของคุณคือ {currentPlanDisplayName}");
     expect(pageSource).not.toContain("<small>แพ็ก {entitlements.planId}</small>");
+    expect(pageSource).not.toContain("แพ็กปัจจุบันของคุณคือ {entitlements.planId}");
   });
 
   it("uses a large labelled home link in the responsive member hero", () => {

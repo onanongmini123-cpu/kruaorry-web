@@ -48,6 +48,13 @@ against its internal route allowlist and never accepts an arbitrary URL.
 - Resend uses Supabase Auth's `resend({ type: "signup" })`, preserves the safe
   internal return path, applies the 60-second local guard before the request,
   and gives the approved LINE OA as the support fallback.
+- A password-recovery link is consumed only after the visitor explicitly
+  selects **ยืนยันลิงก์**. The page handles returned failures and rejected
+  promises from token verification, PKCE exchange, session lookup, and password
+  update with fixed Thai copy; it never renders the provider message.
+- Failed recovery verification always leaves the checking state. A failed or
+  successful password update always leaves the loading state and clears both
+  password fields, so password values are not retained after the request.
 
 ## Diagnostic boundary: application code vs hosted delivery
 
@@ -122,7 +129,8 @@ Supabase or sends an email:
 ```bash
 npx vitest run src/lib/__tests__/signupEmailConfirmation.test.ts \
   src/lib/__tests__/authReturnPath.test.ts \
-  src/lib/__tests__/signupConfirmation.test.ts
+  src/lib/__tests__/signupConfirmation.test.ts \
+  src/app/reset-password/resetPassword.test.ts
 ```
 
 ### One-account real-delivery test plan — waiting for approval

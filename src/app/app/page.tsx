@@ -690,7 +690,7 @@ export default function TeacherAppPage() {
             {view === "plans" && (
               <div>
                 <h1 style={{ fontSize: "var(--fs-30)" }}>แพ็กเกจ</h1>
-                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {entitlements.planId}</p>
+                <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {currentPlanDisplayName}</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
                   {plans.map((plan) => {
                     const isCurrent = entitlements.planId === plan.id;

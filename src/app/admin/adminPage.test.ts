@@ -66,6 +66,11 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain(String.raw`/\bTeacher\b(?!\s+Pro\b)/g`);
   });
 
+  it("renders upgrade request plan ids through the shared display-name policy", () => {
+    expect(pageSource).toContain("<strong>{planDisplayName(r.plan_id)}</strong>");
+    expect(pageSource).not.toContain("<strong>{r.plan_id}</strong>");
+  });
+
   it("preserves the real vote-ranked request workflow and complete tab semantics", () => {
     expect(pageSource).toContain('.order("votes", { ascending: false })');
     expect(pageSource).toContain("const loadTeacherRequests = async (signal: AbortSignal)");
