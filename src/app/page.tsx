@@ -151,6 +151,7 @@ export default function LandingPage() {
         }}
       >
         <div
+          className="kru-public-header__inner"
           style={{
             maxWidth: "var(--container-max)",
             margin: "0 auto",
@@ -986,6 +987,13 @@ export default function LandingPage() {
             align-items: flex-start;
             justify-content: flex-start;
             text-align: left;
+          }
+        }
+
+        @media (max-width: 360px) {
+          .kru-public-header__inner {
+            padding-inline: var(--sp-3) !important;
+            gap: var(--sp-2) !important;
           }
         }
 
