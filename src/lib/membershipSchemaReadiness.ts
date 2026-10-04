@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 
 export const MEMBERSHIP_SCHEMA_READINESS_MARKER = "system.membership_payment_confirmation_v1_ready";
+export const FOUNDER_FIRST_YEAR_READINESS_MARKER = "system.founder_first_year_once_v1_ready";
 export const MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER = "system.membership_line_slip_workflow_v1_ready";
 
 export const MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE =
@@ -50,6 +51,21 @@ export async function fetchMembershipSchemaReadiness(
     supabase,
     MEMBERSHIP_SCHEMA_READINESS_MARKER,
     "membership schema readiness",
+  );
+}
+
+/**
+ * Probes migration 049 before any client calls its Founder-history RPC. This
+ * keeps a Preview connected to the pre-049 production schema fail-closed
+ * without generating a PostgREST missing-function error.
+ */
+export async function fetchFounderFirstYearReadiness(
+  supabase: SupabaseClient,
+): Promise<SettledMembershipSchemaReadiness> {
+  return fetchCapabilityReadiness(
+    supabase,
+    FOUNDER_FIRST_YEAR_READINESS_MARKER,
+    "Founder first-year readiness",
   );
 }
 

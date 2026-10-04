@@ -373,6 +373,8 @@ Founder-allocation advisory lock as payment confirmation before reading that
 ledger, so a direct pending write cannot race a first grant. It does not rewrite
 existing applications, subscriptions, payments, or ledger rows; Founder renewal
 at the regular 599 THB/year price continues through the existing renewal RPC.
+Its final readiness marker lets staggered clients avoid calling the new history
+RPC until the migration has completed.
 
 Migration `20261004100000_050_admin_line_slip_workflow.sql` is **pending** and
 must run after `049`. It removes the member-facing execution grant from the old

@@ -16,6 +16,7 @@ describe("Founder first-year-once migration", () => {
     expect(sql).toContain("new.status = 'pending'");
     expect(sql).toContain("where ledger.user_id = new.user_id");
     expect(sql).toContain("Founder first-year offer cannot be claimed twice");
+    expect(sql).toContain("system.founder_first_year_once_v1_ready");
   });
 
   it("takes the existing Founder allocation lock before checking history", () => {
@@ -37,6 +38,6 @@ describe("Founder first-year-once migration", () => {
     expect(sql).not.toMatch(/\bdelete\s+from\b/i);
     expect(sql).not.toMatch(/\btruncate\b/i);
     expect(sql).not.toMatch(/\bupdate\s+public\./i);
-    expect(sql).not.toMatch(/\binsert\s+into\s+public\./i);
+    expect(sql).not.toMatch(/\binsert\s+into\s+public\.(?:upgrade_requests|subscriptions|payments|founder_seat_ledger)\b/i);
   });
 });

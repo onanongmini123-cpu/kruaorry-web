@@ -7,6 +7,7 @@ import { redactSensitive } from "@/lib/redact";
 import { type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
 import {
+  fetchFounderFirstYearReadiness,
   fetchMembershipLineSlipWorkflowReadiness,
   fetchMembershipSchemaReadiness,
   MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
@@ -483,6 +484,9 @@ export interface MembershipReturnResourceResult {
 }
 
 export async function fetchMyFounderHistory(supabase: SupabaseClient): Promise<FounderHistoryResult> {
+  if (await fetchFounderFirstYearReadiness(supabase) !== "ready") {
+    return { hasFounderHistory: false, error: true };
+  }
   const outcome = await withTimeout(
     Promise.resolve(supabase.rpc("has_my_founder_history")),
     "Founder membership history",

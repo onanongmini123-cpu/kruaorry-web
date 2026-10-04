@@ -52,3 +52,14 @@ drop trigger if exists trg_prevent_repeat_founder_application on public.upgrade_
 create trigger trg_prevent_repeat_founder_application
   before insert or update on public.upgrade_requests
   for each row execute function public.prevent_repeat_founder_application();
+
+-- Publish readiness only after the function, grants and trigger above exist.
+-- Pre-049 clients can probe this old-schema features table without calling a
+-- missing RPC, while the whole migration remains atomic.
+insert into public.features (id, name, description, value_type)
+values (
+  'system.founder_first_year_once_v1_ready',
+  'System: Founder first-year-once v1 ready',
+  'Internal Founder-history guard marker; never display as a member benefit.',
+  'boolean'
+);

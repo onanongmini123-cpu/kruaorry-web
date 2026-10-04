@@ -253,7 +253,7 @@ describe("fetchFounderCapacity", () => {
 describe("membership Founder history and return-resource access", () => {
   it("reads only the caller's aggregate Founder history", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
-    const supabase = { rpc } as unknown as SupabaseClient;
+    const supabase = { from: readinessFrom(true, "system.founder_first_year_once_v1_ready"), rpc } as unknown as SupabaseClient;
     await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
       hasFounderHistory: true,
       error: false,
@@ -264,12 +264,24 @@ describe("membership Founder history and return-resource access", () => {
   it("fails closed when Founder history cannot be verified", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const supabase = {
+      from: readinessFrom(true, "system.founder_first_year_once_v1_ready"),
       rpc: vi.fn().mockResolvedValue({ data: null, error: { message: "missing", code: "42883" } }),
     } as unknown as SupabaseClient;
     await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
       hasFounderHistory: false,
       error: true,
     });
+  });
+
+  it("does not call the Founder-history RPC before migration 049 is ready", async () => {
+    const rpc = vi.fn();
+    const supabase = { from: readinessFrom(false), rpc } as unknown as SupabaseClient;
+
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: false,
+      error: true,
+    });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("keeps every actual supported plan for a shared resource", async () => {
