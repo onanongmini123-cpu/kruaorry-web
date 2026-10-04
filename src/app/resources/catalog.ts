@@ -1,7 +1,7 @@
 import { publicCoverUrl } from "@/lib/resourceVisibility";
 import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
-import { safeUpgradeReturnPath } from "@/lib/authReturnPath";
+import { FREE_SIGNUP_HREF, safeUpgradeReturnPath } from "@/lib/authReturnPath";
 import { planDisplayNames } from "@/lib/planDisplay";
 
 export type PublicResource = {
@@ -96,12 +96,10 @@ function cleanStringArray(value: unknown, limit: number): string[] {
 
 export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, access_mode, required_plan_ids, required_plan_names, is_new, featured_rank, review_average, review_count";
 
-export function signupHref(resource: PublicResource): string {
-  // Free-account acquisition always lands inside the member app after email
-  // confirmation. Opening/downloading remains a separate, intentional click
-  // whose API route rechecks the caller's current entitlement server-side.
-  const destination = `/app?resource=${resource.id}`;
-  return `/login?next=${encodeURIComponent(destination)}&mode=signup`;
+export function signupHref(): string {
+  // Account creation always lands at the member-app root. Opening a resource
+  // remains a separate click whose API route rechecks current entitlement.
+  return FREE_SIGNUP_HREF;
 }
 
 type UpgradeResource = Pick<PublicResource, "id" | "requiredPlanIds">;
@@ -164,7 +162,7 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
 
   if (!canUse && resource.accessMode === "authenticated" && !viewer.authenticated) {
     return {
-      href: signupHref(resource),
+      href: signupHref(),
       label: "สมัครบัญชีฟรีเพื่อใช้งาน",
       canUse: false,
       locked: true,

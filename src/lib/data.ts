@@ -7,7 +7,9 @@ import { redactSensitive } from "@/lib/redact";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
 import {
+  fetchMembershipLineSlipWorkflowReadiness,
   fetchMembershipSchemaReadiness,
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
 import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
@@ -384,6 +386,7 @@ export interface UpgradeRequest {
   status: "pending" | "approved" | "declined";
   quotedAmountThb: number;
   paymentReportedAt: string | null;
+  lineSlipReceivedAt: string | null;
   paymentPaidAt: string | null;
   paymentConfirmedAt: string | null;
   paymentConfirmedAmountThb: number | null;
@@ -399,6 +402,7 @@ interface UpgradeRequestRow {
   status: "pending" | "approved" | "declined";
   quoted_amount_thb: number;
   payment_reported_at: string | null;
+  line_slip_received_at?: string | null;
   payment_paid_at: string | null;
   payment_confirmed_at: string | null;
   payment_confirmed_amount_thb: number | null;
@@ -414,6 +418,7 @@ interface CreatedMembershipApplicationRow {
   status: "pending" | "approved" | "declined";
   quoted_amount_thb: number;
   payment_reported_at: string | null;
+  line_slip_received_at?: string | null;
   created_at: string;
 }
 
@@ -442,6 +447,7 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
     status: row.status,
     quotedAmountThb,
     paymentReportedAt: persisted.payment_reported_at ?? null,
+    lineSlipReceivedAt: persisted.line_slip_received_at ?? null,
     paymentPaidAt: persisted.payment_paid_at ?? null,
     paymentConfirmedAt: persisted.payment_confirmed_at ?? null,
     paymentConfirmedAmountThb: persisted.payment_confirmed_amount_thb === null || persisted.payment_confirmed_amount_thb === undefined
@@ -514,13 +520,21 @@ export async function fetchMembershipReturnResource(
 }
 
 export async function fetchUpgradeRequestsResult(supabase: SupabaseClient, userId: string): Promise<UpgradeRequestsResult> {
-  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+  const [schemaReadiness, lineSlipReadiness] = await Promise.all([
+    fetchMembershipSchemaReadiness(supabase),
+    fetchMembershipLineSlipWorkflowReadiness(supabase),
+  ]);
+  if (schemaReadiness !== "ready") {
     return { applications: [], error: true };
   }
 
-  const { data, error } = await supabase
-    .from("upgrade_requests")
-    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at")
+  const requestQuery = lineSlipReadiness === "ready"
+    ? supabase.from("upgrade_requests")
+      .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, line_slip_received_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at")
+    : supabase.from("upgrade_requests")
+      .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at");
+
+  const { data, error } = await requestQuery
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -562,12 +576,14 @@ export async function createMembershipApplication(supabase: SupabaseClient, plan
 
 async function mutateMembershipApplication(
   supabase: SupabaseClient,
-  rpcName: "report_membership_payment" | "convert_founder_application_to_teacher",
+  rpcName: "record_membership_line_slip_received" | "convert_founder_application_to_teacher",
   requestId: string,
   operationLabel: string,
+  readiness: (client: SupabaseClient) => Promise<"ready" | "unavailable"> = fetchMembershipSchemaReadiness,
+  unavailableMessage = MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 ): Promise<MembershipApplicationMutationResult> {
-  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
-    return { application: null, error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE };
+  if (await readiness(supabase) !== "ready") {
+    return { application: null, error: unavailableMessage };
   }
 
   const outcome = await withTimeout(Promise.resolve(supabase.rpc(rpcName, {
@@ -587,11 +603,18 @@ async function mutateMembershipApplication(
     : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
 }
 
-export async function reportMembershipPayment(
+export async function recordMembershipLineSlipReceived(
   supabase: SupabaseClient,
   requestId: string,
 ): Promise<MembershipApplicationMutationResult> {
-  return mutateMembershipApplication(supabase, "report_membership_payment", requestId, "report membership payment");
+  return mutateMembershipApplication(
+    supabase,
+    "record_membership_line_slip_received",
+    requestId,
+    "record membership LINE slip receipt",
+    fetchMembershipLineSlipWorkflowReadiness,
+    MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
+  );
 }
 
 export async function convertFounderApplicationToTeacher(

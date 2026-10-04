@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { safeAuthNext, safeUpgradeReturnPath } from "../authReturnPath";
+import {
+  authCompletionDestination,
+  FREE_SIGNUP_HREF,
+  safeAuthNext,
+  safeUpgradeReturnPath,
+  SIGNUP_DESTINATION,
+} from "../authReturnPath";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
 
@@ -53,6 +59,23 @@ describe("safeAuthNext", () => {
     "/membership#how-to-pay",
   ])("falls back to /app for an unsafe destination: %s", (raw) => {
     expect(safeAuthNext(raw)).toBe("/app");
+  });
+});
+
+describe("authCompletionDestination", () => {
+  it("makes every signup-mode completion canonical regardless of next", () => {
+    expect(FREE_SIGNUP_HREF).toBe("/login?mode=signup&next=%2Fapp");
+    expect(SIGNUP_DESTINATION).toBe("/app");
+    expect(authCompletionDestination("signup", `/app?resource=${id}`)).toBe("/app");
+    expect(authCompletionDestination("signup", `/membership?plan=teacher&returnTo=%2Fapp`)).toBe("/app");
+    expect(authCompletionDestination("signup", "https://evil.example/steal")).toBe("/app");
+  });
+
+  it("preserves only an allowlisted next for sign-in", () => {
+    expect(authCompletionDestination("signin", `/resources/${id}`)).toBe(`/resources/${id}`);
+    expect(authCompletionDestination("signin", `/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`))
+      .toBe(`/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`);
+    expect(authCompletionDestination("signin", "//evil.example/steal")).toBe("/app");
   });
 });
 

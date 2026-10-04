@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  MEMBER_APP_URL,
+  adminPaymentSuccessMessage,
   adminViewHref,
   createCoalescedAdminRefresh,
   installAdminActionRefresh,
+  includesAdminLineSlipProvenance,
   isActionableUpgradeRequest,
+  matchesAdminUpgradeSearch,
   moveFeaturedResource,
   parseAdminView,
   priorityPageSlices,
@@ -153,8 +157,8 @@ describe("admin action queues", () => {
       { id: "report", status: "pending", updated_at: "same" },
     )).toBe(true);
     expect(sameAdminUpgradeVersion(
-      { id: "upgrade", status: "pending", payment_reported_at: null, plan_id: "founder", quoted_amount_thb: 299 },
-      { id: "upgrade", status: "pending", payment_reported_at: "now", plan_id: "founder", quoted_amount_thb: 299 },
+      { id: "upgrade", status: "pending", payment_reported_at: "legacy", line_slip_received_at: null, plan_id: "founder", quoted_amount_thb: 299 },
+      { id: "upgrade", status: "pending", payment_reported_at: "legacy", line_slip_received_at: "now", plan_id: "founder", quoted_amount_thb: 299 },
     )).toBe(false);
     expect(sameAdminSubscriptionVersion(
       { id: "subscription", status: "active", plan_id: "teacher", current_period_end: "2026-01-01" },
@@ -201,16 +205,52 @@ describe("admin action queues", () => {
     expect(sortAdminReports(reports).map((row) => row.id)).toEqual(["pending", "working", "resolved"]);
   });
 
-  it("counts only payment-reported pending applications as admin-actionable", () => {
+  it("counts only pending applications with an admin-recorded LINE slip as actionable", () => {
     const rows = [
-      { id: "approved", created_at: "2026-10-03T00:00:00Z", status: "approved" as const, payment_reported_at: "2026-10-03T00:00:00Z" },
-      { id: "waiting", created_at: "2026-10-02T00:00:00Z", status: "pending" as const, payment_reported_at: null },
-      { id: "action", created_at: "2026-10-01T00:00:00Z", status: "pending" as const, payment_reported_at: "2026-10-01T00:00:00Z" },
+      { id: "approved", created_at: "2026-10-03T00:00:00Z", status: "approved" as const, payment_reported_at: "2026-10-03T00:00:00Z", line_slip_received_at: "2026-10-03T00:00:00Z" },
+      { id: "legacy", created_at: "2026-10-02T12:00:00Z", status: "pending" as const, payment_reported_at: "2026-10-02T00:00:00Z", line_slip_received_at: null },
+      { id: "waiting", created_at: "2026-10-02T00:00:00Z", status: "pending" as const, payment_reported_at: null, line_slip_received_at: null },
+      { id: "action", created_at: "2026-10-01T00:00:00Z", status: "pending" as const, payment_reported_at: "2026-10-01T00:00:00Z", line_slip_received_at: "2026-10-01T00:00:00Z" },
     ];
     expect(isActionableUpgradeRequest(rows[0])).toBe(false);
     expect(isActionableUpgradeRequest(rows[1])).toBe(false);
-    expect(isActionableUpgradeRequest(rows[2])).toBe(true);
-    expect(sortAdminUpgradeRequests(rows).map((row) => row.id)).toEqual(["action", "waiting", "approved"]);
+    expect(isActionableUpgradeRequest(rows[2])).toBe(false);
+    expect(isActionableUpgradeRequest(rows[3])).toBe(true);
+    expect(sortAdminUpgradeRequests(rows).map((row) => row.id)).toEqual(["action", "legacy", "waiting", "approved"]);
+  });
+
+  it("searches upgrade requests by reference, member name, or email", () => {
+    const request = {
+      reference_code: "KA-00001234",
+      profiles: { full_name: "ครูอรรี่ ทดสอบ", email: "Teacher@example.com" },
+    };
+
+    expect(matchesAdminUpgradeSearch(request, "  ka-00001234 ")).toBe(true);
+    expect(matchesAdminUpgradeSearch(request, "อรรี่")).toBe(true);
+    expect(matchesAdminUpgradeSearch(request, "teacher@EXAMPLE.com")).toBe(true);
+    expect(matchesAdminUpgradeSearch(request, "missing")).toBe(false);
+    expect(matchesAdminUpgradeSearch(request, " ")).toBe(true);
+  });
+
+  it("keeps admin upgrade reads on legacy columns until migration 050 is ready", () => {
+    expect(includesAdminLineSlipProvenance("checking")).toBe(false);
+    expect(includesAdminLineSlipProvenance("unavailable")).toBe(false);
+    expect(includesAdminLineSlipProvenance("ready")).toBe(true);
+  });
+
+  it("builds a copy-ready confirmation message with the member app URL", () => {
+    const message = adminPaymentSuccessMessage({
+      kind: "application",
+      amountThb: 299,
+      referenceCode: "KA-00001234",
+    });
+
+    expect(message).toContain("ชำระเงินสำเร็จแล้วค่ะ 🎉 เปิดใช้งานแพ็กเกจเรียบร้อยแล้ว กดด้านล่างเพื่อเข้าใช้งาน");
+    expect(message).toContain("เข้าใช้งาน KruAorry Web");
+    expect(message).toContain("KA-00001234");
+    expect(message).toContain("299 บาท");
+    expect(message).toContain(MEMBER_APP_URL);
+    expect(MEMBER_APP_URL).toBe("https://kruaorry.com/app");
   });
 });
 

@@ -3,11 +3,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
-import { LayoutDashboard, FolderCog, MessageSquareText, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search, RefreshCw } from "lucide-react";
+import { LayoutDashboard, FolderCog, MessageSquareText, MessageCircle, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search, RefreshCw, Clipboard } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, fetchFounderCapacity } from "@/lib/data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, fetchFounderCapacity, recordMembershipLineSlipReceived } from "@/lib/data";
 import { loadResourceTarget } from "@/lib/resourceTarget";
 import {
   validateResourceFile,
@@ -43,7 +43,9 @@ import {
   type AdminSubscription,
 } from "@/lib/adminMembership";
 import {
+  fetchMembershipLineSlipWorkflowReadiness,
   fetchMembershipSchemaReadiness,
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
@@ -56,10 +58,13 @@ import {
   EMPTY_ADMIN_ACTION_COUNTS,
   ISSUE_CATEGORY_LABEL,
   ISSUE_STATUS_LABEL,
+  adminPaymentSuccessMessage,
   adminViewHref,
   createCoalescedAdminRefresh,
   installAdminActionRefresh,
+  includesAdminLineSlipProvenance,
   isActionableUpgradeRequest,
+  matchesAdminUpgradeSearch,
   moveFeaturedResource,
   parseAdminView,
   priorityPageSlices,
@@ -135,6 +140,8 @@ interface AdminUpgradeRequest {
   reference_code: string;
   quoted_amount_thb: number;
   payment_reported_at: string | null;
+  line_slip_received_at: string | null;
+  line_slip_received_by: string | null;
   payment_paid_at: string | null;
   payment_confirmed_at: string | null;
   payment_confirmed_by: string | null;
@@ -161,7 +168,10 @@ function newIdempotencyKey(): string {
 }
 
 function userFacingAdminError(message: string): string {
-  return message.replace(/\bTeacher\b(?!\s+Pro\b)/g, "Teacher Pro");
+  return message
+    .replace(/\bTeacher\b(?!\s+Pro\b)/g, "Teacher Pro")
+    .replace("Member has not reported payment for this application", "ยังไม่ได้บันทึกรับสลิปจาก LINE สำหรับใบสมัครนี้")
+    .replace("Admin-recorded LINE slip is required before payment confirmation", "ต้องบันทึกว่าทีมงานได้รับสลิปใน LINE ก่อนยืนยันยอด");
 }
 
 interface AdminReview {
@@ -253,6 +263,7 @@ const MODERATION_PAGE_SIZE = 50;
 const ADMIN_REVIEW_SELECT = "id, resource_id, user_id, rating, body, moderation_status, created_at, updated_at, resources(title), profiles!resource_reviews_user_id_fkey(full_name, email)";
 const ADMIN_REPORT_SELECT = "id, resource_id, reporter_id, category, details, status, created_at, updated_at, resources(title), profiles(full_name, email)";
 const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
+const ADMIN_UPGRADE_LINE_SLIP_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, line_slip_received_at, line_slip_received_by, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
 
 const EMPTY_FORM = {
   title: "",
@@ -298,6 +309,7 @@ export default function AdminConsolePage() {
   const reviewPageRef = useRef(0);
   const reportPageRef = useRef(0);
   const membershipSchemaReadinessRef = useRef<MembershipSchemaReadiness>("checking");
+  const lineSlipWorkflowReadinessRef = useRef<MembershipSchemaReadiness>("checking");
   const [reviewPage, setReviewPage] = useState(0);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [reportPage, setReportPage] = useState(0);
@@ -305,6 +317,7 @@ export default function AdminConsolePage() {
   const [benefitRows, setBenefitRows] = useState<PlanBenefitRow[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
   const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>("checking");
+  const [lineSlipWorkflowReadiness, setLineSlipWorkflowReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
   const [founderSeatsUsed, setFounderSeatsUsed] = useState<number | null>(null);
   const [founderCapacityRefreshing, setFounderCapacityRefreshing] = useState(false);
@@ -341,6 +354,8 @@ export default function AdminConsolePage() {
   const [paymentVerified, setPaymentVerified] = useState(false);
   const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState("");
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
+  const [paymentSuccessCopied, setPaymentSuccessCopied] = useState(false);
   const [moderationTab, setModerationTab] = useState<"reviews" | "reports">("reviews");
   const paymentDialogRef = useRef<HTMLElement>(null);
   const paymentTriggerRef = useRef<HTMLElement | null>(null);
@@ -462,15 +477,21 @@ export default function AdminConsolePage() {
   const loadUpgradeRequests = async (signal: AbortSignal) => {
     const rows: AdminUpgradeRequest[] = [];
     const pageSize = 500;
+    const includesLineSlipProvenance = includesAdminLineSlipProvenance(lineSlipWorkflowReadinessRef.current);
+    const select = includesLineSlipProvenance ? ADMIN_UPGRADE_LINE_SLIP_SELECT : ADMIN_UPGRADE_SELECT;
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase.from("upgrade_requests")
-        .select(ADMIN_UPGRADE_SELECT)
+        .select(select)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(offset, offset + pageSize - 1)
         .abortSignal(signal);
       if (error) return { data: null, error };
-      rows.push(...((data as unknown as AdminUpgradeRequest[]) ?? []));
+      rows.push(...(((data as unknown as AdminUpgradeRequest[]) ?? []).map((row) => ({
+        ...row,
+        line_slip_received_at: includesLineSlipProvenance ? row.line_slip_received_at : null,
+        line_slip_received_by: includesLineSlipProvenance ? row.line_slip_received_by : null,
+      }))));
       if ((data?.length ?? 0) < pageSize) return { data: rows, error: null };
     }
   };
@@ -668,6 +689,7 @@ export default function AdminConsolePage() {
 
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
     setMembershipSchemaReadiness("checking");
+    setLineSlipWorkflowReadiness("checking");
     // Keep the content, moderation and member-directory tools available while
     // the payment-confirmation schema is being rolled out. Only the second
     // batch below touches 048 columns/RPCs, and it cannot run until the shared
@@ -683,6 +705,7 @@ export default function AdminConsolePage() {
       supabase.from("plan_benefit_catalog").select("plan_id, feature_id, feature_name, feature_description, value_type, limit_value, sort_order").order("sort_order", { ascending: true }).order("feature_id", { ascending: true }),
     ]);
     const readinessPromise = fetchMembershipSchemaReadiness(supabase);
+    const lineSlipReadinessPromise = fetchMembershipLineSlipWorkflowReadiness(supabase);
 
     const [
       { data: resourceRows, error: resourceError },
@@ -715,7 +738,12 @@ export default function AdminConsolePage() {
       .map((plan) => ({ ...plan, name: planDisplayName(plan.id, plan.name), renewal_price_amount_thb: null }));
     setPlans(basePlanError ? [] : basePlans);
 
-    const readiness = await readinessPromise;
+    const [readiness, lineSlipReadiness] = await Promise.all([
+      readinessPromise,
+      lineSlipReadinessPromise,
+    ]);
+    setLineSlipWorkflowReadiness(lineSlipReadiness);
+    lineSlipWorkflowReadinessRef.current = lineSlipReadiness;
 
     let membershipPlans = basePlans;
     let membershipError: string | null = readiness === "ready" ? null : MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
@@ -776,15 +804,9 @@ export default function AdminConsolePage() {
   const membershipMutationsReady = membershipSchemaReadiness === "ready" && membershipDataError === null;
   const membershipMaintenanceMessage = membershipDataError ?? MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE;
   const mutationBusy = saving || pendingAction !== null || changingPlanId !== null || paymentTarget !== null;
-  const normalizedUpgradeSearch = upgradeSearch.trim().toLocaleLowerCase("th-TH");
   const filteredUpgradeRequests = useMemo(() => {
-    if (!normalizedUpgradeSearch) return upgradeRequests;
-    return upgradeRequests.filter((request) => [
-      request.reference_code,
-      request.profiles?.full_name,
-      request.profiles?.email,
-    ].some((value) => value?.toLocaleLowerCase("th-TH").includes(normalizedUpgradeSearch)));
-  }, [normalizedUpgradeSearch, upgradeRequests]);
+    return upgradeRequests.filter((request) => matchesAdminUpgradeSearch(request, upgradeSearch));
+  }, [upgradeSearch, upgradeRequests]);
   const confirmsFounderApplication = paymentTarget?.kind === "application" && paymentTarget.request.plan_id === "founder";
   const founderCapacityUnavailable = confirmsFounderApplication && (founderCapacityRefreshing || founderSeatsUsed === null);
   const founderCapacityFull = confirmsFounderApplication && !founderCapacityRefreshing && founderSeatsUsed !== null && founderSeatsUsed >= FOUNDER_CAPACITY_LIMIT;
@@ -1540,8 +1562,20 @@ export default function AdminConsolePage() {
         await refreshAdminQueues();
         return;
       }
-      await reloadAdminData();
+      setPaymentSuccessMessage(adminPaymentSuccessMessage({
+        kind: paymentTarget.kind,
+        amountThb: paymentTarget.amountThb,
+        referenceCode: paymentTarget.kind === "application"
+          ? paymentTarget.request.reference_code
+          : undefined,
+      }));
+      setPaymentSuccessCopied(false);
       setPaymentTarget(null);
+      try {
+        await reloadAdminData();
+      } catch {
+        window.alert("ยืนยันการชำระสำเร็จแล้ว แต่โหลดข้อมูลล่าสุดไม่สำเร็จ กรุณากดรีเฟรชข้อมูลอีกครั้ง");
+      }
     } catch (error) {
       setPaymentError(`ยืนยันการชำระไม่สำเร็จ: ${error instanceof Error ? userFacingAdminError(error.message) : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
     } finally {
@@ -1554,8 +1588,8 @@ export default function AdminConsolePage() {
       window.alert(membershipMaintenanceMessage);
       return;
     }
-    if (!request.payment_reported_at) {
-      window.alert("ผู้สมัครยังไม่ได้แจ้งว่าส่งเลขอ้างอิงและหลักฐานแล้ว");
+    if (!request.line_slip_received_at) {
+      window.alert("ยังไม่ได้บันทึกรับสลิปจาก LINE สำหรับใบสมัครนี้");
       return;
     }
     const amountThb = Number(request.quoted_amount_thb);
@@ -1569,6 +1603,37 @@ export default function AdminConsolePage() {
       amountThb,
       title: `ใบสมัคร ${request.reference_code}`,
     });
+  };
+
+  const handleRecordLineSlip = async (request: AdminUpgradeRequest) => {
+    if (lineSlipWorkflowReadiness !== "ready") {
+      window.alert(MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    const action = `slip:${request.id}`;
+    if (queueRefreshError || paymentTarget || !window.confirm(`ยืนยันว่าได้รับสลิปของ ${request.reference_code} ใน LINE แล้ว?`) || !beginPendingAction(action)) return;
+    try {
+      const latest = await refreshAndMatchQueueRow("upgrades", request, sameAdminUpgradeVersion);
+      if (!latest) return;
+      const result = await recordMembershipLineSlipReceived(supabase, latest.id);
+      if (result.error || !result.application) {
+        window.alert(`บันทึกรับสลิปไม่สำเร็จ: ${userFacingAdminError(result.error ?? "ระบบไม่ได้ส่งข้อมูลกลับมา")}`);
+      }
+      await refreshAdminQueues();
+    } finally {
+      finishPendingAction(action);
+    }
+  };
+
+  const handleCopyPaymentSuccess = async () => {
+    if (!paymentSuccessMessage) return;
+    try {
+      await navigator.clipboard.writeText(paymentSuccessMessage);
+      setPaymentSuccessCopied(true);
+      window.setTimeout(() => setPaymentSuccessCopied(false), 2500);
+    } catch {
+      window.alert("คัดลอกข้อความไม่สำเร็จ กรุณาเลือกข้อความและคัดลอกด้วยตนเอง");
+    }
   };
 
   const handleDeclineUpgrade = async (request: AdminUpgradeRequest) => {
@@ -1902,6 +1967,18 @@ export default function AdminConsolePage() {
               <span>{queueRefreshError}</span>
               <Button type="button" size="sm" variant="ghost" onClick={() => void refreshAdminQueues()}>ลองโหลดรายการใหม่</Button>
             </div>
+          )}
+          {paymentSuccessMessage && (
+            <section className="kru-admin-payment-success" role="status" aria-label="ข้อความแจ้งสมาชิกหลังยืนยันชำระ">
+              <div>
+                <strong>ยืนยันสำเร็จ · คัดลอกข้อความส่งกลับใน LINE</strong>
+                <button type="button" onClick={() => { setPaymentSuccessMessage(null); setPaymentSuccessCopied(false); }} aria-label="ปิดข้อความสำเร็จ"><X size={18} aria-hidden="true" /></button>
+              </div>
+              <textarea readOnly value={paymentSuccessMessage} aria-label="ข้อความพร้อมส่งให้สมาชิก" rows={3} onFocus={(event) => event.currentTarget.select()} />
+              <Button type="button" size="sm" icon={paymentSuccessCopied ? Check : Clipboard} onClick={() => void handleCopyPaymentSuccess()}>
+                {paymentSuccessCopied ? "คัดลอกแล้ว" : "คัดลอกข้อความแจ้งสมาชิก"}
+              </Button>
+            </section>
           )}
           {view === "dash" && (
             <div>
@@ -2369,6 +2446,11 @@ export default function AdminConsolePage() {
                   {membershipMaintenanceMessage}
                 </p>
               )}
+              {membershipMutationsReady && lineSlipWorkflowReadiness !== "ready" && (
+                <p role="status" className="kru-admin-membership-maintenance">
+                  {MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE} รายการที่บันทึกรับสลิปไว้แล้วยังตรวจและยืนยันยอดได้ตามปกติ
+                </p>
+              )}
               <Input
                 label="ค้นหาใบสมัคร"
                 icon={Search}
@@ -2391,8 +2473,8 @@ export default function AdminConsolePage() {
                           <div style={{ fontWeight: "var(--fw-semibold)" }}>{r.profiles?.full_name || r.profiles?.email || "(ไม่พบข้อมูลผู้ใช้)"}</div>
                           <div className="kru-admin-resource-badges">
                             {isActionableUpgradeRequest(r) && <Badge tone="brand">ใหม่</Badge>}
-                            <Badge tone={r.status === "approved" ? "success" : r.status === "declined" ? "neutral" : r.payment_reported_at ? "info" : "warning"}>
-                              {adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)}
+                            <Badge tone={r.status === "approved" ? "success" : r.status === "declined" ? "neutral" : r.line_slip_received_at ? "info" : "warning"}>
+                              {adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.line_slip_received_at)}
                             </Badge>
                           </div>
                         </div>
@@ -2402,7 +2484,10 @@ export default function AdminConsolePage() {
                         <dl className="kru-admin-payment-summary">
                           <div><dt>เลขอ้างอิงใบสมัคร</dt><dd className="kru-admin-reference">{r.reference_code || "—"}</dd></div>
                           <div><dt>ยอดตามใบสมัคร</dt><dd>{Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท</dd></div>
-                          <div><dt>ผู้สมัครแจ้งหลักฐาน</dt><dd>{r.payment_reported_at ? new Date(r.payment_reported_at).toLocaleString("th-TH") : "ยังไม่แจ้ง"}</dd></div>
+                          <div><dt>ทีมงานบันทึกรับสลิปจาก LINE</dt><dd>{r.line_slip_received_at ? new Date(r.line_slip_received_at).toLocaleString("th-TH") : "ยังไม่บันทึก"}</dd></div>
+                          {r.payment_reported_at && !r.line_slip_received_at && (
+                            <div><dt>สถานะแจ้งชำระจากระบบเดิม</dt><dd>{new Date(r.payment_reported_at).toLocaleString("th-TH")} · ยังไม่ถือว่าทีมงานรับสลิป</dd></div>
+                          )}
                           <div><dt>รับชำระเมื่อ</dt><dd>{r.payment_paid_at ? new Date(r.payment_paid_at).toLocaleString("th-TH") : "ยังไม่บันทึก"}</dd></div>
                           <div><dt>อ้างอิงการชำระ</dt><dd>{r.payment_reference || "ยังไม่บันทึก"}</dd></div>
                           {r.payment_confirmed_at && (
@@ -2412,9 +2497,15 @@ export default function AdminConsolePage() {
                       </div>
                       {r.status === "pending" ? (
                         <div className="kru-admin-card-actions">
-                          <Button size="sm" icon={Check} disabled={!membershipMutationsReady || mutationBusy || queueRefreshError !== null || !r.payment_reported_at} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
-                            {r.payment_reported_at ? `ยืนยันรับเงินจริง ${Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท` : "รอผู้สมัครแจ้งหลักฐาน"}
-                          </Button>
+                          {r.line_slip_received_at ? (
+                            <Button size="sm" icon={Check} disabled={!membershipMutationsReady || mutationBusy || queueRefreshError !== null} loading={pendingAction === `payment:${r.id}`} onClick={() => handleApproveUpgrade(r)}>
+                              ยืนยันรับเงินจริง {Number(r.quoted_amount_thb).toLocaleString("th-TH")} บาท
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="soft" icon={MessageCircle} disabled={!membershipMutationsReady || lineSlipWorkflowReadiness !== "ready" || mutationBusy || queueRefreshError !== null} loading={pendingAction === `slip:${r.id}`} onClick={() => void handleRecordLineSlip(r)}>
+                              บันทึกรับสลิปจาก LINE
+                            </Button>
+                          )}
                           <Button size="sm" variant="ghost" icon={X} disabled={!membershipMutationsReady || mutationBusy || queueRefreshError !== null} onClick={() => handleDeclineUpgrade(r)}>
                             ปฏิเสธ
                           </Button>
@@ -2675,6 +2766,11 @@ export default function AdminConsolePage() {
         .kru-admin-shell { display: flex; min-height: 100dvh; max-width: 100%; }
         .kru-admin-queue-error { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-5); padding: var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg); }
         .kru-admin-refresh-row { display: flex; justify-content: flex-end; margin-bottom: var(--sp-4); }
+        .kru-admin-payment-success { margin-bottom: var(--sp-5); padding: var(--sp-5); display: grid; gap: var(--sp-3); border: 1px solid color-mix(in srgb, var(--status-success-fg) 28%, transparent); border-radius: var(--r-card); background: var(--status-success-bg); color: var(--status-success-fg); }
+        .kru-admin-payment-success > div { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+        .kru-admin-payment-success > div button { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: var(--r-pill); background: transparent; color: inherit; cursor: pointer; }
+        .kru-admin-payment-success textarea { width: 100%; min-height: 88px; padding: var(--sp-3); resize: vertical; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--surface-card); color: var(--text-strong); font: inherit; line-height: 1.6; }
+        .kru-admin-payment-success > :global(.kru-btn) { width: fit-content; }
         .kru-admin-sidebar { display: none; flex-direction: column; width: 256px; flex: 0 0 auto; background: var(--white); border-right: 1px solid var(--border-subtle); padding: var(--sp-6); position: sticky; top: 0; height: 100dvh; }
         .kru-admin-main { flex: 1; min-width: 0; max-width: 100%; overflow-x: clip; padding: var(--sp-5) max(var(--sp-4), env(safe-area-inset-right)) calc(var(--sp-8) + env(safe-area-inset-bottom)) max(var(--sp-4), env(safe-area-inset-left)); }
         .kru-admin-main h1 { font-size: clamp(1.55rem, 7vw, var(--fs-30)) !important; overflow-wrap: anywhere; }

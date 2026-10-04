@@ -9,7 +9,8 @@ import { useEffect, useState, type CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   avatarSignedUrl,
-  PROFILE_AVATAR_SIGNED_URL_REFRESH_MS,
+  avatarUrlRefreshDelay,
+  cachedAvatarUrl,
 } from "@/lib/profileAvatar";
 
 type Props = {
@@ -22,7 +23,9 @@ type Props = {
 
 export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: Props) {
   const [signedAvatar, setSignedAvatar] = useState<{ path: string; url: string } | null>(null);
-  const url = avatarPath && signedAvatar?.path === avatarPath ? signedAvatar.url : null;
+  const url = avatarPath
+    ? cachedAvatarUrl(supabase, avatarPath) ?? (signedAvatar?.path === avatarPath ? signedAvatar.url : null)
+    : null;
   const initials = (name.trim() || "ค").slice(0, 2).toLocaleUpperCase("th");
 
   useEffect(() => {
@@ -37,7 +40,7 @@ export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: 
       } catch {
         if (active) setSignedAvatar(null);
       }
-      if (active) refreshTimer = setTimeout(refresh, PROFILE_AVATAR_SIGNED_URL_REFRESH_MS);
+      if (active) refreshTimer = setTimeout(refresh, avatarUrlRefreshDelay(supabase, avatarPath));
     };
 
     void refresh();

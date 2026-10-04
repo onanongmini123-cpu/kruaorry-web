@@ -6,7 +6,11 @@ import { Mail, KeyRound, Eye, EyeOff, CheckCircle2, User } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { safeAuthNext } from "@/lib/authReturnPath";
+import {
+  authCompletionDestination,
+  SIGNUP_DESTINATION,
+  type AuthEntryMode,
+} from "@/lib/authReturnPath";
 import { LINE_OA_URL } from "@/lib/config";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
 import {
@@ -34,8 +38,6 @@ const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && pro
 
 export const dynamic = "force-dynamic";
 
-type Mode = "signin" | "signup";
-
 export default function LoginPage() {
   return (
     <Suspense fallback={<div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>กำลังโหลด...</div>}>
@@ -47,10 +49,13 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = safeAuthNext(searchParams.get("next"));
+  const requestedMode: AuthEntryMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
+  const rawNext = searchParams.get("next");
+  const signInDestination = authCompletionDestination("signin", rawNext);
+  const authenticatedDestination = authCompletionDestination(requestedMode, rawNext);
   const hasConfirmationError = searchParams.get("error") === "confirmation";
   const supabase = useMemo(() => createClient(), []);
-  const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "signup" ? "signup" : "signin");
+  const [mode, setMode] = useState<AuthEntryMode>(requestedMode);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,11 +100,11 @@ function LoginForm() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) router.replace(next);
+      if (user) router.replace(authenticatedDestination);
     }).catch(() => {
       // A temporary auth/network failure must not prevent manual sign-in.
     });
-  }, [supabase, router, next]);
+  }, [supabase, router, authenticatedDestination]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -129,7 +134,7 @@ function LoginForm() {
 
     try {
       if (mode === "signup") {
-        const emailRedirectTo = buildSignupConfirmationRedirect(window.location.origin, next);
+        const emailRedirectTo = buildSignupConfirmationRedirect(window.location.origin);
         if (!emailRedirectTo) {
           setError(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE);
           return;
@@ -160,7 +165,7 @@ function LoginForm() {
           setShowConfirmPassword(false);
           return;
         }
-        router.replace(next);
+        router.replace(SIGNUP_DESTINATION);
         router.refresh();
         return;
       }
@@ -173,7 +178,7 @@ function LoginForm() {
         setConfirmationHelpOpen(true);
         return;
       }
-      router.replace(next);
+      router.replace(signInDestination);
       router.refresh();
     } catch {
       if (mode === "signup") {
@@ -207,7 +212,6 @@ function LoginForm() {
         (credentials) => supabase.auth.resend(credentials),
         email,
         window.location.origin,
-        next,
       ),
     );
 

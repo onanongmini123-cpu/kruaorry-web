@@ -282,14 +282,16 @@ consumed after expiry, cancellation or account deletion. The migration also
 adds an admin-readable, browser-append-only payment-confirmation audit
 containing reference metadata only, never a slip.
 
-Members first call an authenticated idempotent reporting RPC. Its
+Migration 048 originally lets members call an authenticated idempotent
+reporting RPC. Its
 `payment_reported_at` marker separates awaiting-payment from awaiting-review
 without granting access or reserving a Founder place. A retry returns the
 original marker even if capacity filled after that first report. Once Founder
 is full, a new report or admin confirmation for a pending Founder quote is
 blocked; the request can only proceed through the explicit conversion RPC,
 which preserves its reference, requotes canonical Teacher at 599 THB and clears
-any report made against the old quote.
+any report made against the old quote. Migration 050 below supersedes the
+member-facing reporting step while retaining this function for schema history.
 
 Migration 048 contains one narrowly scoped, fail-closed reconciliation for the
 two owner test applications confirmed by the production read-only audit. It
@@ -369,6 +371,30 @@ Founder-allocation advisory lock as payment confirmation before reading that
 ledger, so a direct pending write cannot race a first grant. It does not rewrite
 existing applications, subscriptions, payments, or ledger rows; Founder renewal
 at the regular 599 THB/year price continues through the existing renewal RPC.
+
+Migration `20261004100000_050_admin_line_slip_workflow.sql` is **pending** and
+must run after `049`. It removes the member-facing execution grant from the old
+self-report RPC and adds the admin-only, idempotent
+`record_membership_line_slip_received(uuid)` RPC. For rollout compatibility the
+RPC writes distinct `line_slip_received_at` and `line_slip_received_by`
+provenance. It preserves any legacy, member-self-attested
+`payment_reported_at`; when that field is empty, the RPC fills it only so old
+readers keep working. A legacy timestamp alone never enables the new admin
+confirmation UI. Recording receipt never activates a plan or reserves/consumes
+a Founder place. A transition trigger clears receipt provenance whenever the
+application plan or quote changes, and rejects a new payment confirmation until
+an admin receipt exists. The existing confirmation transaction continues to
+serialize the permanent 1–100 Founder allocation, validate the quoted amount,
+write immutable payment/resolution audits, and safely return the original
+result for an identical idempotency-key retry. The guard applies only to a new
+confirmation transition, so previously completed payments and their retries
+remain compatible. The migration asserts that 049's permanent-history function
+and trigger still exist, changes no production row, and publishes the separate
+`system.membership_line_slip_workflow_v1_ready` marker only after its privilege
+checks pass. Clients continue to use 048's marker for the broader membership
+page. Admin and member readers use legacy selects until 050's separate marker
+is present, so a staggered rollout does not disable application creation or
+read-only member statuses.
 
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025

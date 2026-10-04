@@ -23,6 +23,7 @@ const pendingApplication: UpgradeRequest = {
   status: "pending",
   quotedAmountThb: 599,
   paymentReportedAt: "2098-10-02T00:00:00.000Z",
+  lineSlipReceivedAt: "2098-10-02T00:05:00.000Z",
   paymentPaidAt: null,
   paymentConfirmedAt: null,
   paymentConfirmedAmountThb: null,
@@ -50,11 +51,25 @@ describe("MemberAccountStatus", () => {
     expect(markup).not.toContain(">Teacher<");
     expect(markup).toContain("วันสิ้นสุดสิทธิ์");
     expect(markup).toContain("จำนวนวันที่เหลือ");
-    expect(markup).toContain("แจ้งชำระแล้ว · รอตรวจสอบ");
+    expect(markup).toContain("รับสลิปทาง LINE แล้ว · รอตรวจยอด");
     expect(markup).toContain("KA-00000001");
     expect(markup).toContain("ขอรหัสอ้างอิงต่ออายุทาง LINE");
     expect(markup).toContain("ขอรหัสอ้างอิงต่ออายุจากทีมงานก่อน");
     expect(markup).toContain('target="_blank"');
+  });
+
+  it("does not present a legacy member timestamp as an admin-recorded LINE receipt", () => {
+    const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "free",
+      plans: [{ id: "teacher", name: "Teacher" }],
+      subscription: null,
+      subscriptionError: false,
+      applications: [{ ...pendingApplication, lineSlipReceivedAt: null }],
+      applicationsError: false,
+    }));
+
+    expect(markup).toContain("มีสถานะแจ้งชำระเดิม · รอยืนยันยอด");
+    expect(markup).not.toContain("รับสลิปทาง LINE แล้ว");
   });
 
   it("only offers active renewal inside the seven-day window", () => {

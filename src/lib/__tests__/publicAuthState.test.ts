@@ -78,6 +78,10 @@ describe("public-home auth state", () => {
     expect(publicHeaderActions("member")).toEqual([
       { href: "/app", label: "ไปพื้นที่สมาชิก", emphasis: "primary" },
     ]);
+    expect(publicFreeAccountAction("guest")).toEqual({
+      href: "/login?mode=signup&next=%2Fapp",
+      label: "สมัครสมาชิกฟรี",
+    });
     expect(publicFreeAccountAction("member")).toEqual({ href: "/app", label: "ไปพื้นที่สมาชิก" });
   });
 

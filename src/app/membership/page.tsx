@@ -17,7 +17,6 @@ import {
   fetchMyFounderHistory,
   fetchPlans,
   fetchUpgradeRequestsResult,
-  reportMembershipPayment,
   type Plan,
   type UpgradeRequest,
 } from "@/lib/data";
@@ -57,6 +56,7 @@ import {
 } from "@/lib/membershipJourney";
 import { createLatestRefreshRunner } from "@/lib/latestRefresh";
 import { planDisplayName } from "@/lib/planDisplay";
+import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -89,17 +89,21 @@ function resolvedStatusCopy(application: UpgradeRequest): { label: string; tone:
 }
 
 function pendingStatusCopy(application: UpgradeRequest) {
-  return application.paymentReportedAt
-    ? {
-        label: "แจ้งหลักฐานแล้ว · รอตรวจสอบ",
-        tone: "info" as const,
-        detail: "ครูอรรี่ได้รับสถานะการแจ้งชำระแล้ว และกำลังตรวจยอดจริงก่อนออกสิทธิ์สมาชิก",
-      }
-    : {
-        label: "รอแจ้งชำระ",
-        tone: "warning" as const,
-        detail: "ใบสมัครนี้ยังไม่จองสิทธิ์ กรุณาส่งเลขอ้างอิงและหลักฐานทาง LINE แล้วกดแจ้งทีมงานบนหน้านี้",
-      };
+  if (application.lineSlipReceivedAt) return {
+    label: "รับสลิปทาง LINE แล้ว · รอตรวจยอด",
+    tone: "info" as const,
+    detail: "ทีมงานบันทึกรับสลิปจากแชต LINE แล้ว และกำลังตรวจยอดเงินเข้าจริงก่อนออกสิทธิ์สมาชิก",
+  };
+  if (application.paymentReportedAt) return {
+    label: "มีสถานะแจ้งชำระเดิม · รอยืนยันยอด",
+    tone: "info" as const,
+    detail: "รายการนี้มีสถานะจากขั้นตอนเดิม ซึ่งยังไม่ถือว่าทีมงานรับสลิป สถานะบนเว็บเป็นแบบอ่านอย่างเดียว และทีมงานจะยืนยันยอดจริงก่อนออกสิทธิ์",
+  };
+  return {
+    label: "รอส่งเลขอ้างอิงและสลิปทาง LINE",
+    tone: "warning" as const,
+    detail: "ใบสมัครนี้ยังไม่จองสิทธิ์ ส่งเลขอ้างอิงและสลิปในแชต LINE ได้เลย สถานะบนเว็บเป็นแบบอ่านอย่างเดียวและจะอัปเดตโดยทีมงาน",
+  };
 }
 
 function formatThaiDate(value: string): string {
@@ -154,10 +158,10 @@ function MembershipContent() {
   const [memberStatusError, setMemberStatusError] = useState(false);
   const [memberStatusLoaded, setMemberStatusLoaded] = useState(!isSupabaseConfigured);
   const [submitting, setSubmitting] = useState(false);
-  const [reporting, setReporting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [lineCtaFeedback, setLineCtaFeedback] = useState<string | null>(null);
 
   // A legacy account can legitimately have an older pending application and a
   // newer resolved record. Keep the still-actionable request visible instead
@@ -296,10 +300,9 @@ function MembershipContent() {
   const showLegacySupportOnly = noSelectablePlanForResource
     && !hasUnlockedMembership
     && pendingApplication === null;
-  const membershipReturnQuery = new URLSearchParams({ plan: applicationPlanId, returnTo });
   const legacyReturnQuery = new URLSearchParams({ returnTo });
   const signInHref = `/login?next=${encodeURIComponent(`/membership?${legacyReturnQuery.toString()}`)}`;
-  const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?${membershipReturnQuery.toString()}`)}`;
+  const signupHref = FREE_SIGNUP_HREF;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -552,43 +555,6 @@ function MembershipContent() {
     if (applicationPlanId === "founder") setCapacity(await fetchFounderCapacity(supabase));
   };
 
-  const handleReportPayment = async () => {
-    if (!latestApplication || latestApplication.status !== "pending" || reporting) return;
-    if (schemaReadiness !== "ready") {
-      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
-      return;
-    }
-    if (pendingFounderChecksUnavailable) {
-      setError("ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ จึงปิดการแจ้งชำระชั่วคราว");
-      return;
-    }
-    if (applicationsError) {
-      setError("ยังตรวจสอบใบสมัครล่าสุดไม่ได้ จึงปิดการแจ้งชำระชั่วคราว กรุณาลองตรวจสอบอีกครั้ง");
-      return;
-    }
-    if (pendingPaymentBlocked) return;
-    setReporting(true);
-    setError(null);
-    const result = await reportMembershipPayment(supabase, latestApplication.id);
-    if (result.error || !result.application) {
-      if (latestApplication.planId === "founder") {
-        const nextCapacity = await fetchFounderCapacity(supabase);
-        setCapacity(nextCapacity);
-        setError(nextCapacity?.isFull
-          ? canConvertPendingFounderToTeacher
-            ? "Founder ครบ 100 สิทธิ์แล้ว กรุณาเปลี่ยนใบสมัครเป็น Teacher Pro ก่อนแจ้งชำระ"
-            : "Founder ครบ 100 สิทธิ์แล้ว และ Teacher Pro ไม่สามารถเปิดสื่อรายการนี้ได้"
-          : `แจ้งทีมงานไม่สำเร็จ: ${membershipDisplayError(result.error, "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา")}`);
-      } else {
-        setError(`แจ้งทีมงานไม่สำเร็จ: ${membershipDisplayError(result.error, "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา")}`);
-      }
-    } else if (userId) {
-      const application = result.application;
-      setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
-    }
-    setReporting(false);
-  };
-
   const handleConvertToTeacher = async () => {
     if (!latestApplication || latestApplication.status !== "pending" || latestApplication.planId !== "founder" || converting) return;
     if (applicationsError) {
@@ -628,6 +594,28 @@ function MembershipContent() {
     }
   };
 
+  const handleLineCtaClick = (referenceCode: string) => {
+    setError(null);
+    setLineCtaFeedback(`กำลังเปิด LINE — ส่งเลขอ้างอิง ${referenceCode} พร้อมสลิปในแชตนี้`);
+
+    try {
+      const clipboardWrite = navigator.clipboard?.writeText(referenceCode);
+      if (!clipboardWrite) {
+        setLineCtaFeedback(`เปิด LINE ต่อได้เลย — กรุณาคัดลอกเลขอ้างอิง ${referenceCode} จากด้านบนและส่งพร้อมสลิป`);
+        return;
+      }
+      void clipboardWrite.then(() => {
+        setCopied(referenceCode);
+        setLineCtaFeedback(`คัดลอกเลขอ้างอิง ${referenceCode} แล้ว — วางใน LINE และส่งพร้อมสลิปได้เลย`);
+        window.setTimeout(() => setCopied((current) => current === referenceCode ? null : current), 2500);
+      }, () => {
+        setLineCtaFeedback(`เปิด LINE ต่อได้เลย — กรุณาคัดลอกเลขอ้างอิง ${referenceCode} จากด้านบนและส่งพร้อมสลิป`);
+      });
+    } catch {
+      setLineCtaFeedback(`เปิด LINE ต่อได้เลย — กรุณาคัดลอกเลขอ้างอิง ${referenceCode} จากด้านบนและส่งพร้อมสลิป`);
+    }
+  };
+
   return (
     <div className="kru-membership-page">
       <header className="kru-membership-header">
@@ -661,7 +649,7 @@ function MembershipContent() {
                 : "แพ็กสมาชิกรายปีสำหรับเข้าถึงคลังสื่อพรีเมียม"}
             </p>
             <div className="kru-membership-renewal"><ShieldCheck size={20} aria-hidden="true" /><strong>{noSelectablePlanForResource ? "เข้าสู่ระบบด้วยบัญชีเดิมเพื่อตรวจสอบสิทธิ์" : applicationPlanId === "founder" ? "ต่ออายุปีถัดไป 599 บาท/ปี" : "ต่ออายุ 599 บาท/ปี"}</strong></div>
-            <p className="kru-membership-rule">{noSelectablePlanForResource ? "ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้" : "กรอกใบสมัครยังไม่นับสิทธิ์และยังไม่จองสิทธิ์ การแจ้งหลักฐานก็ยังต้องรอทีมงานยืนยันยอดจริง"}</p>
+            <p className="kru-membership-rule">{noSelectablePlanForResource ? "ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้" : "การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์ ต้องรอทีมงานตรวจและยืนยันยอดเงินเข้าจริง"}</p>
           </div>
 
           {noSelectablePlanForResource ? (
@@ -798,7 +786,7 @@ function MembershipContent() {
               </div>
             ) : !userId ? (
               <div className="kru-membership-action-block">
-                <p>เข้าสู่ระบบหรือสมัครบัญชีฟรีก่อน ระบบจะพากลับมายังหน้านี้หลังยืนยันอีเมล</p>
+                <p>เข้าสู่ระบบหรือสมัครบัญชีฟรีก่อน หลังยืนยันอีเมลให้กลับมาเลือกแพ็กจากพื้นที่สมาชิก</p>
                 <Link href={signupHref} className="kru-btn kru-btn--primary kru-btn--lg">เข้าสู่ระบบเพื่อกรอกใบสมัคร</Link>
               </div>
             ) : hasUnlockedMembership ? (
@@ -934,9 +922,9 @@ function MembershipContent() {
                   </>
                 ) : (
                   <>
-                    <p>{applicationPlanId === "founder" ? "เมื่อส่งสำเร็จ คุณจะได้รับเลขอ้างอิงสำหรับสิทธิ์ปีแรก 299 บาท" : "เมื่อส่งสำเร็จ คุณจะได้รับเลขอ้างอิงสำหรับแพ็ก Teacher Pro 599 บาท/ปี"}</p>
+                    <p>{applicationPlanId === "founder" ? "ระบบจะสร้างเลขอ้างอิงสำหรับสิทธิ์ปีแรก 299 บาท" : "ระบบจะสร้างเลขอ้างอิงสำหรับแพ็ก Teacher Pro 599 บาท/ปี"}</p>
                     <Button size="lg" block loading={submitting} onClick={() => void handleCreateApplication()}>
-                      {submitting ? "กำลังสร้างเลขอ้างอิง…" : `ส่งใบสมัคร ${applicationAmount.toLocaleString("th-TH")} บาท`}
+                      {submitting ? "กำลังสร้างเลขอ้างอิง…" : `สร้างเลขอ้างอิง ${applicationAmount.toLocaleString("th-TH")} บาท`}
                     </Button>
                   </>
                 )}
@@ -956,14 +944,13 @@ function MembershipContent() {
           ) : (
             <section id="how-to-pay" className="kru-card kru-membership-payment" aria-labelledby="membership-payment-title">
               <span className="kru-membership-step">ขั้นตอนที่ 2</span>
-              <h2 id="membership-payment-title">แจ้งชำระผ่าน LINE OA</h2>
+              <h2 id="membership-payment-title">ส่งเลขอ้างอิงและสลิปทาง LINE OA</h2>
               <ol>
                 <li>ส่งเลขอ้างอิงจากเว็บไซต์ให้ครูอรรี่ทาง LINE</li>
                 <li>รอรับรายละเอียดการชำระจากครูอรรี่ก่อนโอน</li>
                 <li>หลังชำระแล้ว ส่งเลขอ้างอิงพร้อมสลิปในแชตเดิม</li>
-                <li>กลับมากด “ฉันส่งหลักฐานแล้ว” แล้วรอครูอรรี่ตรวจสอบยอดจริง</li>
               </ol>
-              <p className="kru-membership-payment__notice">การส่งสลิปหรือกรอกใบสมัครยังไม่นับสิทธิ์ จนกว่าระบบจะแสดงสถานะ “ยืนยันชำระแล้ว”</p>
+              <p className="kru-membership-payment__notice">ส่งทุกอย่างใน LINE ได้เลย ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ สถานะจะอัปเดตโดยทีมงาน และยังไม่นับสิทธิ์จนกว่าจะแสดง “ยืนยันชำระแล้ว”</p>
               {schemaReadiness !== "ready" ? (
                 <p role="status" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
               ) : hasUnlockedMembership ? (
@@ -978,27 +965,25 @@ function MembershipContent() {
                 </p>
               ) : latestApplication?.status === "pending" ? (
                 <>
-                  <a className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
-                    <MessageCircle size={19} aria-hidden="true" /> เปิด LINE OA เพื่อแจ้งชำระ
+                  <a
+                    className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block"
+                    href={LINE_OA_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    referrerPolicy="no-referrer"
+                    onClick={() => handleLineCtaClick(latestApplication.referenceCode)}
+                    aria-describedby="membership-line-status"
+                  >
+                    <MessageCircle size={19} aria-hidden="true" /> ส่งเลขอ้างอิงและสลิปทาง LINE
                   </a>
-                  {latestApplication.paymentReportedAt ? (
-                    <p role="status" className="kru-membership-alert">แจ้งหลักฐานแล้วเมื่อ {formatThaiDate(latestApplication.paymentReportedAt)} · อยู่ระหว่างรอตรวจสอบยอดจริง</p>
-                  ) : (
-                    <>
-                      <Button
-                        type="button"
-                        variant="soft"
-                        size="lg"
-                        block
-                        loading={reporting}
-                        aria-describedby="membership-payment-report-help"
-                        onClick={() => void handleReportPayment()}
-                      >
-                        ฉันส่งเลขอ้างอิงและหลักฐานแล้ว
-                      </Button>
-                      <p id="membership-payment-report-help" className="kru-membership-payment__help">กดหลังส่งใน LINE แล้ว เพื่อย้ายรายการจาก “รอแจ้งชำระ” ไปเป็น “รอตรวจสอบ”</p>
-                    </>
-                  )}
+                  <p id="membership-line-status" role="status" className="kru-membership-alert">
+                    {lineCtaFeedback
+                      ?? (latestApplication.lineSlipReceivedAt
+                        ? `ทีมงานบันทึกรับสลิปจาก LINE เมื่อ ${formatThaiDate(latestApplication.lineSlipReceivedAt)} · อยู่ระหว่างตรวจยอดจริง`
+                        : latestApplication.paymentReportedAt
+                          ? `ระบบมีสถานะแจ้งชำระเดิมเมื่อ ${formatThaiDate(latestApplication.paymentReportedAt)} · ยังไม่ถือว่าทีมงานรับสลิป และยังต้องรอยืนยันยอดจริง`
+                          : "กดปุ่มแล้วส่งเลขอ้างอิงพร้อมสลิปใน LINE จากนั้นรอทีมงานอัปเดตสถานะ ไม่ต้องกดแจ้งซ้ำบนเว็บ")}
+                  </p>
                 </>
               ) : hasCurrentMembership && !requestedPlanMismatch && !returnResourceError ? (
                 <p role="status" className="kru-membership-alert">อนุมัติแล้ว กำลังอัปเดตสิทธิ์การเข้าถึงสื่อ…</p>
@@ -1078,7 +1063,6 @@ function MembershipContent() {
         .kru-membership-payment { scroll-margin-top: 88px; }
         .kru-membership-payment ol { margin: 0; padding-left: 1.3rem; display: grid; gap: var(--sp-3); color: var(--text-body); }
         .kru-membership-payment__notice { padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg) !important; font-size: var(--fs-14); font-weight: var(--fw-semibold); }
-        .kru-membership-payment__help { margin-top: calc(var(--sp-2) * -1) !important; color: var(--text-muted) !important; font-size: var(--fs-13); text-align: center; }
         .kru-membership-payment > small { color: var(--text-muted); text-align: center; }
         .kru-membership-payment :global(a.kru-btn:hover) { color: var(--white); text-decoration: none; }
         .kru-membership-facts { margin-top: var(--sp-8); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
@@ -1131,8 +1115,11 @@ function ApplicationStatus({ application, copied, onCopy }: { application: Upgra
       {application.status === "approved" && application.paymentConfirmedAt && (
         <small>ยืนยันในระบบเมื่อ {formatThaiDate(application.paymentConfirmedAt)}</small>
       )}
-      {application.status === "pending" && application.paymentReportedAt && (
-        <small>แจ้งหลักฐานเมื่อ {formatThaiDate(application.paymentReportedAt)}</small>
+      {application.status === "pending" && application.lineSlipReceivedAt && (
+        <small>ทีมงานบันทึกรับสลิปจาก LINE เมื่อ {formatThaiDate(application.lineSlipReceivedAt)}</small>
+      )}
+      {application.status === "pending" && application.paymentReportedAt && !application.lineSlipReceivedAt && (
+        <small>สถานะแจ้งชำระเดิมในระบบเมื่อ {formatThaiDate(application.paymentReportedAt)} · ยังไม่ใช่การบันทึกรับสลิปโดยทีมงาน</small>
       )}
       {application.status === "pending" && (
         <a href="#how-to-pay">ดูวิธีแจ้งชำระ <ExternalLink size={15} aria-hidden="true" /></a>

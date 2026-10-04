@@ -13,6 +13,7 @@ const files = [
   "20260924170000_025_active_founder_capacity.sql",
   "20261001190000_048_founder_payment_confirmation.sql",
   "20261003120000_049_founder_first_year_once.sql",
+  "20261004100000_050_admin_line_slip_workflow.sql",
 ];
 const plusFeatures = [
   "คลังสื่อพร้อมสอนทั้งหมด",
@@ -838,6 +839,10 @@ try {
           select count(*)::integer from public.features
           where id = 'system.membership_payment_confirmation_v1_ready'
         ) as readiness_markers,
+        (
+          select count(*)::integer from public.features
+          where id = 'system.membership_line_slip_workflow_v1_ready'
+        ) as line_slip_readiness_markers,
         pg_catalog.to_regclass('public.upgrade_requests_one_pending_per_user') is not null
           as pending_index_exists
     `);
@@ -846,6 +851,7 @@ try {
       resolution_audits: 0,
       founder_seats: 0,
       readiness_markers: 1,
+      line_slip_readiness_markers: 1,
       pending_index_exists: true,
     }, "pristine membership migration replay did not complete cleanly");
   } finally {
@@ -904,6 +910,8 @@ try {
     select
       has_function_privilege('anon', 'public.report_membership_payment(uuid)', 'execute') as anon_report,
       has_function_privilege('authenticated', 'public.report_membership_payment(uuid)', 'execute') as member_report,
+      has_function_privilege('anon', 'public.record_membership_line_slip_received(uuid)', 'execute') as anon_line_slip,
+      has_function_privilege('authenticated', 'public.record_membership_line_slip_received(uuid)', 'execute') as authenticated_line_slip,
       has_function_privilege('anon', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as anon_convert,
       has_function_privilege('authenticated', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as member_convert,
       has_function_privilege('anon', 'public.has_my_founder_history()', 'execute') as anon_founder_history,
@@ -911,12 +919,14 @@ try {
   `);
   assert.deepEqual(memberMutationPrivileges.rows[0], {
     anon_report: false,
-    member_report: true,
+    member_report: false,
+    anon_line_slip: false,
+    authenticated_line_slip: true,
     anon_convert: false,
     member_convert: true,
     anon_founder_history: false,
     member_founder_history: true,
-  }, "membership mutation RPC execute grants are not restricted to authenticated users");
+  }, "membership mutation RPC execute grants do not match the member/admin workflow boundary");
 
   const admin = randomUUID();
   await db.query("insert into public.profiles(id, role) values ($1, 'owner')", [admin]);
@@ -929,9 +939,9 @@ try {
     const result = await db.query("select * from public.create_membership_application($1)", [planId]);
     return result.rows[0];
   };
-  const reportApplication = async (userId, requestId) => {
-    await setActor(userId);
-    const result = await db.query("select * from public.report_membership_payment($1)", [requestId]);
+  const recordLineSlip = async (requestId) => {
+    await setActor(admin);
+    const result = await db.query("select * from public.record_membership_line_slip_received($1)", [requestId]);
     return result.rows[0];
   };
   const convertFounderApplication = async (userId, requestId) => {
@@ -1049,16 +1059,58 @@ try {
 
   const otherMember = randomUUID();
   await db.query("insert into public.profiles(id) values ($1)", [otherMember]);
+  await setActor(otherMember);
   await rejectsWith(
-    () => reportApplication(otherMember, firstApplication.id),
-    "Pending membership application not found",
+    () => db.query("select * from public.record_membership_line_slip_received($1)", [firstApplication.id]),
+    "Admin access required",
   );
-  const firstReport = await reportApplication(firstFounderUser, firstApplication.id);
-  const repeatedReport = await reportApplication(firstFounderUser, firstApplication.id);
-  assert.equal(firstReport.payment_reported_at.toISOString(), repeatedReport.payment_reported_at.toISOString(),
-    "reporting payment twice changed the self-attested timestamp");
+
+  // A 048-era browser may have written this self-attested timestamp before
+  // 050 revoked the member RPC. It must not count as admin LINE provenance or
+  // permit confirmation until an admin explicitly records receipt.
+  const legacyReportedAt = "2026-10-03T01:02:03.000Z";
+  await db.query(
+    "update public.upgrade_requests set payment_reported_at = $2 where id = $1",
+    [firstApplication.id, legacyReportedAt],
+  );
+  await setActor(admin);
+  await rejectsWith(
+    () => confirmApplication(
+      firstApplication.id,
+      299,
+      "legacy-self-attested-only",
+      randomUUID(),
+    ),
+    "Admin-recorded LINE slip is required",
+  );
+  const legacyOnlyState = await db.query(`
+    select line_slip_received_at, line_slip_received_by,
+      payment_confirmed_at,
+      (select count(*)::integer from public.membership_payment_confirmations
+        where request_id = $1) as confirmations
+    from public.upgrade_requests where id = $1
+  `, [firstApplication.id]);
+  assert.deepEqual(legacyOnlyState.rows[0], {
+    line_slip_received_at: null,
+    line_slip_received_by: null,
+    payment_confirmed_at: null,
+    confirmations: 0,
+  }, "legacy member self-attestation bypassed admin receipt provenance");
+
+  const firstReceipt = await recordLineSlip(firstApplication.id);
+  const repeatedReceipt = await recordLineSlip(firstApplication.id);
+  assert.equal(firstReceipt.payment_reported_at.toISOString(), new Date(legacyReportedAt).toISOString(),
+    "admin receipt overwrote the preserved legacy member timestamp");
+  assert.equal(firstReceipt.line_slip_received_by, admin,
+    "admin receipt did not record its actor");
+  assert.ok(firstReceipt.line_slip_received_at,
+    "admin receipt did not record distinct LINE provenance");
+  assert.equal(firstReceipt.payment_reported_at.toISOString(), repeatedReceipt.payment_reported_at.toISOString(),
+    "recording the same LINE slip twice changed the compatibility timestamp");
+  assert.equal(firstReceipt.line_slip_received_at.toISOString(), repeatedReceipt.line_slip_received_at.toISOString(),
+    "recording the same LINE slip twice changed its admin receipt timestamp");
   assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 0,
-    "reporting payment reserved a Founder place");
+    "recording a LINE slip reserved a Founder place");
 
   await setActor(admin);
   await rejectsWith(
@@ -1189,11 +1241,8 @@ try {
   const explicitConversionUser = randomUUID();
   await db.query("insert into public.profiles(id) values ($1)", [explicitConversionUser]);
   const founderApplicationToConvert = await createApplication(explicitConversionUser, "founder");
-  const preConversionReport = await reportApplication(
-    explicitConversionUser,
-    founderApplicationToConvert.id,
-  );
-  assert.ok(preConversionReport.payment_reported_at);
+  const preConversionReceipt = await recordLineSlip(founderApplicationToConvert.id);
+  assert.ok(preConversionReceipt.payment_reported_at);
   const explicitConversion = await convertFounderApplication(
     explicitConversionUser,
     founderApplicationToConvert.id,
@@ -1203,26 +1252,41 @@ try {
   assert.equal(explicitConversion.plan_id, "teacher");
   assert.equal(explicitConversion.quoted_amount_thb, 599);
   assert.equal(explicitConversion.payment_reported_at, null,
-    "conversion retained a self-attested report made against the old Founder quote");
+    "conversion retained a LINE-slip receipt made against the old Founder quote");
+  const convertedReceiptProvenance = await db.query(`
+    select line_slip_received_at, line_slip_received_by
+    from public.upgrade_requests where id = $1
+  `, [founderApplicationToConvert.id]);
+  assert.deepEqual(convertedReceiptProvenance.rows[0], {
+    line_slip_received_at: null,
+    line_slip_received_by: null,
+  }, "conversion retained admin receipt provenance for the old Founder quote");
   const conversionRetry = await convertFounderApplication(
     explicitConversionUser,
     founderApplicationToConvert.id,
   );
   assert.equal(conversionRetry.reference_code, explicitConversion.reference_code);
   assert.equal(conversionRetry.plan_id, "teacher");
-  const convertedPaymentReport = await reportApplication(
-    explicitConversionUser,
-    founderApplicationToConvert.id,
-  );
-  const conversionRetryAfterReport = await convertFounderApplication(
+  const convertedLineSlip = await recordLineSlip(founderApplicationToConvert.id);
+  const conversionRetryAfterReceipt = await convertFounderApplication(
     explicitConversionUser,
     founderApplicationToConvert.id,
   );
   assert.equal(
-    conversionRetryAfterReport.payment_reported_at.toISOString(),
-    convertedPaymentReport.payment_reported_at.toISOString(),
-    "an idempotent conversion retry cleared a later Teacher payment report",
+    conversionRetryAfterReceipt.payment_reported_at.toISOString(),
+    convertedLineSlip.payment_reported_at.toISOString(),
+    "an idempotent conversion retry cleared a later Teacher LINE-slip receipt",
   );
+  const teacherReceiptAfterConversionRetry = await db.query(`
+    select line_slip_received_at, line_slip_received_by
+    from public.upgrade_requests where id = $1
+  `, [founderApplicationToConvert.id]);
+  assert.equal(
+    teacherReceiptAfterConversionRetry.rows[0].line_slip_received_at.toISOString(),
+    convertedLineSlip.line_slip_received_at.toISOString(),
+    "an idempotent conversion retry cleared the Teacher receipt provenance",
+  );
+  assert.equal(teacherReceiptAfterConversionRetry.rows[0].line_slip_received_by, admin);
   assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 1,
     "conversion reserved or consumed a Founder place");
 
@@ -1234,50 +1298,46 @@ try {
     founderUsers.push(userId);
     await db.query("insert into public.profiles(id) values ($1)", [userId]);
     const application = await createApplication(userId, "founder");
-    await reportApplication(userId, application.id);
+    await recordLineSlip(application.id);
     await confirmApplication(application.id, 299, `founder-payment-${String(n).padStart(3, "0")}`, randomUUID());
   }
 
   const hundredthFounderUser = randomUUID();
   const overCapacityFounderUser = randomUUID();
-  const firstReportAtFullFounderUser = randomUUID();
+  const firstReceiptAtFullFounderUser = randomUUID();
   await db.query("insert into public.profiles(id) values ($1), ($2), ($3)", [
     hundredthFounderUser,
     overCapacityFounderUser,
-    firstReportAtFullFounderUser,
+    firstReceiptAtFullFounderUser,
   ]);
   const hundredthApplication = await createApplication(hundredthFounderUser, "founder");
   const overCapacityApplication = await createApplication(overCapacityFounderUser, "founder");
-  const firstReportAtFullApplication = await createApplication(firstReportAtFullFounderUser, "founder");
+  const firstReceiptAtFullApplication = await createApplication(firstReceiptAtFullFounderUser, "founder");
   assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 99,
     "pending applications changed Founder capacity");
 
-  const reportBeforeCapacityFilled = await reportApplication(
-    overCapacityFounderUser,
-    overCapacityApplication.id,
-  );
-  await reportApplication(hundredthFounderUser, hundredthApplication.id);
+  const receiptBeforeCapacityFilled = await recordLineSlip(overCapacityApplication.id);
+  await recordLineSlip(hundredthApplication.id);
   await confirmApplication(hundredthApplication.id, 299, "founder-payment-100", randomUUID());
-  const retryAfterCapacityFilled = await reportApplication(
-    overCapacityFounderUser,
-    overCapacityApplication.id,
-  );
+  const retryAfterCapacityFilled = await recordLineSlip(overCapacityApplication.id);
   assert.equal(
-    retryAfterCapacityFilled.payment_reported_at.toISOString(),
-    reportBeforeCapacityFilled.payment_reported_at.toISOString(),
-    "a report retry stopped being idempotent after another member filled Founder capacity",
+    retryAfterCapacityFilled.line_slip_received_at.toISOString(),
+    receiptBeforeCapacityFilled.line_slip_received_at.toISOString(),
+    "a LINE-slip receipt retry stopped being idempotent after another member filled Founder capacity",
   );
   await rejectsWith(
     () => confirmApplication(overCapacityApplication.id, 299, "founder-payment-101", randomUUID()),
     "Founder 100 is full",
   );
-  await rejectsWith(
-    () => reportApplication(firstReportAtFullFounderUser, firstReportAtFullApplication.id),
-    "Founder 100 is full",
-  );
+  const firstReceiptAtFull = await recordLineSlip(firstReceiptAtFullApplication.id);
+  assert.ok(firstReceiptAtFull.line_slip_received_at,
+    "the factual LINE-slip receipt was not recorded after Founder capacity filled");
+  assert.equal((await db.query("select * from public.get_founder_capacity()")).rows[0].used, 100,
+    "recording a LINE slip after capacity filled changed Founder usage");
 
   const overCapacityState = await db.query(`
     select request.status, request.payment_reported_at is not null as payment_reported,
+      request.line_slip_received_at is not null as line_slip_received,
       request.payment_confirmed_at,
       count(confirmation.id)::integer as confirmations,
       count(subscription.id)::integer as subscriptions
@@ -1285,11 +1345,13 @@ try {
     left join public.membership_payment_confirmations confirmation on confirmation.request_id = request.id
     left join public.subscriptions subscription on subscription.approved_from_request_id = request.id
     where request.id = $1
-    group by request.status, request.payment_reported_at, request.payment_confirmed_at
+    group by request.status, request.payment_reported_at,
+      request.line_slip_received_at, request.payment_confirmed_at
   `, [overCapacityApplication.id]);
   assert.deepEqual(overCapacityState.rows[0], {
     status: "pending",
     payment_reported: true,
+    line_slip_received: true,
     payment_confirmed_at: null,
     confirmations: 0,
     subscriptions: 0,
@@ -1312,10 +1374,10 @@ try {
   );
   assert.equal(repeatedConversion.id, convertedTeacher.id);
   assert.equal(repeatedConversion.reference_code, originalOverCapacityReference);
-  const convertedReport = await reportApplication(overCapacityFounderUser, overCapacityApplication.id);
-  const repeatedConvertedReport = await reportApplication(overCapacityFounderUser, overCapacityApplication.id);
-  assert.equal(convertedReport.payment_reported_at.toISOString(), repeatedConvertedReport.payment_reported_at.toISOString(),
-    "Teacher payment report retry changed the original timestamp");
+  const convertedReceipt = await recordLineSlip(overCapacityApplication.id);
+  const repeatedConvertedReceipt = await recordLineSlip(overCapacityApplication.id);
+  assert.equal(convertedReceipt.line_slip_received_at.toISOString(), repeatedConvertedReceipt.line_slip_received_at.toISOString(),
+    "Teacher LINE-slip receipt retry changed the original timestamp");
   const convertedTeacherSubscription = await confirmApplication(
     overCapacityApplication.id,
     599,
@@ -1511,7 +1573,7 @@ try {
   await db.query("insert into public.profiles(id) values ($1)", [teacherUser]);
   const teacherApplication = await createApplication(teacherUser, "teacher");
   assert.equal(teacherApplication.quoted_amount_thb, 599);
-  await reportApplication(teacherUser, teacherApplication.id);
+  await recordLineSlip(teacherApplication.id);
   let duplicateReferenceError;
   try {
     await confirmApplication(

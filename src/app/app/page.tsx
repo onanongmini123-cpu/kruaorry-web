@@ -745,7 +745,7 @@ export default function TeacherAppPage() {
                   })}
                 </div>
                 <p style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
-                  วิธีอัปเกรด: เข้าหน้า <Link href="/membership">สมัครสมาชิก</Link> เพื่อสร้างเลขอ้างอิง แจ้งชำระ และติดตามสถานะได้ในที่เดียว
+                  วิธีอัปเกรด: เข้าหน้า <Link href="/membership">สมัครสมาชิก</Link> เพื่อสร้างเลขอ้างอิง ส่งเลขอ้างอิงและสลิปทาง LINE และดูสถานะแบบอ่านอย่างเดียวบนเว็บ
                 </p>
               </div>
             )}

@@ -109,19 +109,41 @@ describe("responsive admin console contracts", () => {
 
   it("searches upgrade requests by reference, name, or email and displays payment workflow status", () => {
     expect(pageSource).toContain('const [upgradeSearch, setUpgradeSearch]');
-    expect(pageSource).toContain("request.reference_code");
-    expect(pageSource).toContain("request.profiles?.full_name");
-    expect(pageSource).toContain("request.profiles?.email");
+    expect(pageSource).toContain("matchesAdminUpgradeSearch(request, upgradeSearch)");
     expect(pageSource).toContain("filteredUpgradeRequests.map");
     expect(pageSource).toContain("payment_reported_at");
     expect(pageSource).toContain("resolution_reason_code");
-    expect(pageSource).toContain("adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.payment_reported_at)");
+    expect(pageSource).toContain("adminMembershipApplicationStatusLabel(r.status, r.resolution_reason_code, r.line_slip_received_at)");
     expect(pageSource).toContain("const loadUpgradeRequests = async (signal: AbortSignal)");
     expect(pageSource).toContain("profiles!upgrade_requests_user_id_fkey(full_name, email)");
     expect(pageSource).toContain("profiles!resource_reviews_user_id_fkey(full_name, email)");
     expect(pageSource).toContain("loadUpgradeRequests(signal)");
     expect(pageSource).toContain(".range(offset, offset + pageSize - 1)");
     expect(pageSource).toContain('.order("id", { ascending: false })');
+  });
+
+  it("records LINE receipt separately, gates it on migration 050, and exposes copy-ready success text", () => {
+    expect(pageSource).toContain("fetchMembershipLineSlipWorkflowReadiness(supabase)");
+    expect(pageSource).toContain('lineSlipWorkflowReadiness !== "ready"');
+    expect(pageSource).toContain("includesAdminLineSlipProvenance(lineSlipWorkflowReadinessRef.current)");
+    expect(pageSource).toContain("ADMIN_UPGRADE_LINE_SLIP_SELECT");
+    expect(pageSource).toContain("ADMIN_UPGRADE_SELECT");
+    expect(pageSource).toContain("recordMembershipLineSlipReceived(supabase, latest.id)");
+    expect(pageSource).toContain("request.line_slip_received_at");
+    expect(pageSource).toContain("r.line_slip_received_at");
+    expect(pageSource).toContain("!r.line_slip_received_at");
+    expect(pageSource).toContain("บันทึกรับสลิปจาก LINE");
+    expect(pageSource).toContain("adminPaymentSuccessMessage");
+    expect(pageSource).toContain("navigator.clipboard.writeText(paymentSuccessMessage)");
+    expect(pageSource).toContain("คัดลอกข้อความแจ้งสมาชิก");
+    const committedSuccess = pageSource.slice(
+      pageSource.indexOf("setPaymentSuccessMessage(adminPaymentSuccessMessage"),
+      pageSource.indexOf("const handleApproveUpgrade"),
+    );
+    expect(committedSuccess.indexOf("setPaymentTarget(null)")).toBeLessThan(
+      committedSuccess.indexOf("await reloadAdminData()"),
+    );
+    expect(committedSuccess).toContain("ยืนยันการชำระสำเร็จแล้ว แต่โหลดข้อมูลล่าสุดไม่สำเร็จ");
   });
 
   it("refreshes queue rows and badges together on load, focus, menu open, manual refresh, and actions", () => {

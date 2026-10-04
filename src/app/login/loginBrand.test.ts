@@ -15,4 +15,12 @@ describe("login and signup branding", () => {
     expect(loginSource).toContain(".kru-login-form-brand { display: none; }");
     expect(loginSource).toContain(".kru-login-brand { display: flex !important; }");
   });
+
+  it("uses separate canonical signup and allowlisted sign-in destinations", () => {
+    expect(loginSource).toContain("authCompletionDestination(requestedMode, rawNext)");
+    expect(loginSource).toContain('authCompletionDestination("signin", rawNext)');
+    expect(loginSource).toContain("buildSignupConfirmationRedirect(window.location.origin)");
+    expect(loginSource).toContain("router.replace(SIGNUP_DESTINATION)");
+    expect(loginSource).toContain("router.replace(signInDestination)");
+  });
 });

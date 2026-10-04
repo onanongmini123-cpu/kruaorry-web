@@ -4,7 +4,7 @@ vi.mock("@supabase/ssr", () => ({ createServerClient: vi.fn() }));
 
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
-import { proxy } from "./proxy";
+import { config, proxy } from "./proxy";
 
 const mockedCreateServerClient = vi.mocked(createServerClient);
 
@@ -48,6 +48,40 @@ describe("application proxy", () => {
   it("does not guard public catalogue routes", async () => {
     mockSession(null);
     const response = await proxy(new NextRequest("https://example.com/resources"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("sends an authenticated visitor away from signup to the member app", async () => {
+    mockSession({ id: "member-1" });
+    const response = await proxy(new NextRequest(
+      "https://example.com/login?mode=signup&next=%2Fmembership%3Fplan%3Dteacher",
+    ));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://example.com/app");
+    expect(config.matcher).toContain("/login");
+  });
+
+  it("lets authenticated sign-in resume only an allowlisted destination", async () => {
+    mockSession({ id: "member-1" });
+    const safe = await proxy(new NextRequest(
+      "https://example.com/login?next=%2Fmembership%3Fplan%3Dteacher",
+    ));
+    const unsafe = await proxy(new NextRequest(
+      "https://example.com/login?next=https%3A%2F%2Fevil.example%2Fsteal",
+    ));
+
+    expect(safe.headers.get("location")).toBe("https://example.com/membership?plan=teacher");
+    expect(unsafe.headers.get("location")).toBe("https://example.com/app");
+  });
+
+  it("keeps the login page available to a signed-out visitor", async () => {
+    mockSession(null);
+    const response = await proxy(new NextRequest(
+      "https://example.com/login?mode=signup&next=%2Fapp",
+    ));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();

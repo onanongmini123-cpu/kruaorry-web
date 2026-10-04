@@ -88,25 +88,30 @@ preserved if a member was already over that limit; only new inserts are denied.
   application across all plans: calling it again for the same plan returns that
   application, while changing plans must use the explicit conversion workflow.
   A pending application does not reserve a Founder place.
-- `report_membership_payment(request_id)` lets the authenticated owner mark a
-  pending application as paid. The idempotent `payment_reported_at` timestamp
-  is self-attested workflow state only: it does not confirm payment, grant
-  access or reserve a Founder place. A pending application with no timestamp is
-  `awaiting payment`; one with a timestamp is `awaiting admin review`. Retrying
-  an existing report always returns its original timestamp, even if another
-  confirmation filled the final Founder place in the meantime; admin
-  confirmation is still blocked once capacity is full.
+- `report_membership_payment(request_id)` is retained only as a migration-048
+  compatibility function. Migration 050 revokes its browser execution grant,
+  and current member pages never call it. Existing `payment_reported_at` values
+  remain legacy self-attested state and must not be presented as proof that
+  staff received a slip.
+- `record_membership_line_slip_received(request_id)` is the admin-only,
+  idempotent LINE handoff. It writes distinct `line_slip_received_at` and
+  `line_slip_received_by` provenance, and fills `payment_reported_at` only when
+  needed for old-reader compatibility. It does not confirm payment, grant
+  access, or reserve/consume a Founder place. A legacy `payment_reported_at`
+  alone still requires an explicit admin receipt action.
 - `convert_founder_application_to_teacher(request_id)` is the explicit escape
   path when Founder is full. It keeps the same application reference, replaces
-  the quote with the active canonical Teacher price of 599 THB and clears a
-  report made against the old Founder quote. It never converts silently and
-  never activates membership.
+  the quote with the active canonical Teacher price of 599 THB and clears both
+  compatibility state and admin receipt provenance made against the old
+  Founder quote. It never converts silently and never activates membership.
 - `confirm_membership_payment(request_id, amount_thb, payment_reference,
   paid_at, idempotency_key)` is the only Founder activation path. It requires
-  the member-reported marker, records confirmation facts, activates access,
-  consumes a Founder place when applicable, appends the payment audit and
-  resolves the request in one transaction. A retry with the same facts and
-  idempotency key returns the original subscription.
+  `line_slip_received_at` from the admin receipt workflow, records confirmation
+  facts, activates access, consumes a Founder place when applicable, appends
+  the payment audit and resolves the request in one transaction. A retry with
+  the same facts and idempotency key returns the original subscription; the
+  migration-050 transition guard does not invalidate confirmations completed
+  before the new provenance columns existed.
 - `decline_upgrade_request(request_id)` resolves a pending request with the
   machine-readable reason `admin_declined`, records the resolver, and appends a
   resolution audit without changing membership.

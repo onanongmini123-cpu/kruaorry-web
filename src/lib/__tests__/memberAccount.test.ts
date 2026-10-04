@@ -30,6 +30,7 @@ const application = (overrides: Partial<UpgradeRequest> = {}): UpgradeRequest =>
   status: "approved",
   quotedAmountThb: 599,
   paymentReportedAt: null,
+  lineSlipReceivedAt: null,
   paymentPaidAt: null,
   paymentConfirmedAt: null,
   paymentConfirmedAmountThb: null,

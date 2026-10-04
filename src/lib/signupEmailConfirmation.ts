@@ -1,5 +1,5 @@
 import type { ResendParams } from "@supabase/supabase-js";
-import { safeAuthNext } from "@/lib/authReturnPath";
+import { SIGNUP_DESTINATION } from "@/lib/authReturnPath";
 
 export const SIGNUP_CONFIRMATION_COOLDOWN_SECONDS = 60;
 
@@ -132,10 +132,10 @@ export function isPlausibleEmail(rawEmail: string): boolean {
 /**
  * Builds the one callback URL permitted by the signup flow. The caller must
  * pass `window.location.origin`; paths, credentials and non-HTTP origins are
- * rejected, while the eventual app destination is reduced to the internal
- * allowlist in `safeAuthNext`.
+ * rejected. Signup confirmations always end at the member-app root, so an
+ * inbound `next` value can never turn account creation into a redirector.
  */
-export function buildSignupConfirmationRedirect(origin: string, rawNext: string | null | undefined): string | null {
+export function buildSignupConfirmationRedirect(origin: string): string | null {
   try {
     const parsedOrigin = new URL(origin);
     if (
@@ -150,7 +150,7 @@ export function buildSignupConfirmationRedirect(origin: string, rawNext: string 
     }
 
     const callback = new URL("/auth/callback", parsedOrigin.origin);
-    callback.searchParams.set("next", safeAuthNext(rawNext));
+    callback.searchParams.set("next", SIGNUP_DESTINATION);
     return callback.toString();
   } catch {
     return null;
@@ -269,9 +269,8 @@ export async function resendSignupConfirmation(
   resend: SignupResend,
   email: string,
   origin: string,
-  rawNext: string | null | undefined,
 ): Promise<ResendSignupConfirmationResult> {
-  const emailRedirectTo = buildSignupConfirmationRedirect(origin, rawNext);
+  const emailRedirectTo = buildSignupConfirmationRedirect(origin);
   if (!emailRedirectTo || !isPlausibleEmail(email)) return { outcome: "invalid" };
 
   try {

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, recordMembershipLineSlipReceived, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER,
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "../membershipSchemaReadiness";
@@ -17,9 +19,12 @@ function fakeSupabase(createSignedUrl: (path: string, expiresIn: number, options
   } as unknown as SupabaseClient;
 }
 
-function readinessFrom(ready = true): ReturnType<typeof vi.fn> {
+function readinessFrom(
+  ready = true,
+  marker = MEMBERSHIP_SCHEMA_READINESS_MARKER,
+): ReturnType<typeof vi.fn> {
   const maybeSingle = vi.fn().mockResolvedValue({
-    data: ready ? { id: MEMBERSHIP_SCHEMA_READINESS_MARKER } : null,
+    data: ready ? { id: marker } : null,
     error: null,
   });
   const eq = vi.fn(() => ({ maybeSingle }));
@@ -298,6 +303,7 @@ describe("manual membership payment RPC wrappers", () => {
         status: "pending",
         quotedAmountThb: 299,
         paymentReportedAt: null,
+        lineSlipReceivedAt: null,
         paymentPaidAt: null,
         paymentConfirmedAt: null,
         paymentConfirmedAmountThb: null,
@@ -310,7 +316,7 @@ describe("manual membership payment RPC wrappers", () => {
     expect(rpc).toHaveBeenCalledWith("create_membership_application", { p_plan_id: "founder" });
   });
 
-  it("reports payment and converts a Founder application through narrow authenticated RPCs", async () => {
+  it("records an admin-observed LINE slip and converts a Founder application through narrow RPCs", async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
         data: [{
@@ -320,6 +326,7 @@ describe("manual membership payment RPC wrappers", () => {
           status: "pending",
           quoted_amount_thb: 299,
           payment_reported_at: "2026-10-01T02:30:00.000Z",
+          line_slip_received_at: "2026-10-01T02:31:00.000Z",
           created_at: "2026-10-01T02:00:00.000Z",
         }],
         error: null,
@@ -336,21 +343,26 @@ describe("manual membership payment RPC wrappers", () => {
         }],
         error: null,
       });
-    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
+    const lineSlipSupabase = {
+      from: readinessFrom(true, MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER),
+      rpc,
+    } as unknown as SupabaseClient;
 
-    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toMatchObject({
+    await expect(recordMembershipLineSlipReceived(lineSlipSupabase, "request-1")).resolves.toMatchObject({
       application: {
         id: "request-1",
         planId: "founder",
         quotedAmountThb: 299,
         paymentReportedAt: "2026-10-01T02:30:00.000Z",
+        lineSlipReceivedAt: "2026-10-01T02:31:00.000Z",
       },
       error: null,
     });
-    expect(rpc).toHaveBeenNthCalledWith(1, "report_membership_payment", {
+    expect(rpc).toHaveBeenNthCalledWith(1, "record_membership_line_slip_received", {
       p_request_id: "request-1",
     });
 
+    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
     await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toMatchObject({
       application: {
         id: "request-1",
@@ -358,6 +370,7 @@ describe("manual membership payment RPC wrappers", () => {
         planId: "teacher",
         quotedAmountThb: 599,
         paymentReportedAt: null,
+        lineSlipReceivedAt: null,
       },
       error: null,
     });
@@ -393,6 +406,22 @@ describe("manual membership payment RPC wrappers", () => {
       p_paid_at: "2026-10-01T03:00:00.000Z",
       p_idempotency_key: "admin-action-1",
     });
+  });
+
+  it("keeps only the new admin LINE-receipt action closed when migration 050 is absent", async () => {
+    const rpc = vi.fn();
+    const supabase = {
+      // The broad 048 marker is present, but the probe receives that old id
+      // instead of migration 050's dedicated marker.
+      from: readinessFrom(true, MEMBERSHIP_SCHEMA_READINESS_MARKER),
+      rpc,
+    } as unknown as SupabaseClient;
+
+    await expect(recordMembershipLineSlipReceived(supabase, "request-1")).resolves.toEqual({
+      application: null,
+      error: MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
+    });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("never logs a payment reference echoed by PostgREST error details", async () => {
@@ -443,9 +472,9 @@ describe("manual membership payment RPC wrappers", () => {
       application: null,
       error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
     });
-    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toEqual({
+    await expect(recordMembershipLineSlipReceived(supabase, "request-1")).resolves.toEqual({
       application: null,
-      error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+      error: MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
     });
     await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toEqual({
       application: null,
@@ -464,7 +493,7 @@ describe("manual membership payment RPC wrappers", () => {
       idempotencyKey: "admin-action-2",
     })).resolves.toBe(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
 
-    expect(touchedTables).toEqual(Array(6).fill("features"));
+    expect(touchedTables).toEqual(Array(7).fill("features"));
     expect(from).not.toHaveBeenCalledWith("upgrade_requests");
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -491,9 +520,10 @@ describe("manual membership payment RPC wrappers", () => {
       }],
       error: null,
     });
-    const upgradeSelect = vi.fn(() => ({
-      eq: vi.fn(() => ({ order })),
-    }));
+    const upgradeSelect = vi.fn((columns: string) => {
+      void columns;
+      return { eq: vi.fn(() => ({ order })) };
+    });
     const from = vi.fn((table: string) => table === "features"
       ? { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) }
       : { select: upgradeSelect });
@@ -507,6 +537,51 @@ describe("manual membership payment RPC wrappers", () => {
       }),
     ]);
     expect(upgradeSelect).toHaveBeenCalledWith(expect.stringContaining("resolution_reason_code"));
+    expect(upgradeSelect.mock.calls[0]?.[0]).not.toContain("line_slip_received_at");
+  });
+
+  it("selects admin LINE-receipt provenance only after migration 050 is ready", async () => {
+    const order = vi.fn().mockResolvedValue({
+      data: [{
+        id: "request-line-slip",
+        reference_code: "KA-LINE",
+        plan_id: "teacher",
+        status: "pending",
+        quoted_amount_thb: 599,
+        payment_reported_at: "2026-10-01T02:30:00.000Z",
+        line_slip_received_at: "2026-10-01T02:31:00.000Z",
+        payment_paid_at: null,
+        payment_confirmed_at: null,
+        payment_confirmed_amount_thb: null,
+        payment_reference: null,
+        resolution_reason_code: null,
+        created_at: "2026-10-01T02:00:00.000Z",
+      }],
+      error: null,
+    });
+    const upgradeSelect = vi.fn((columns: string) => {
+      void columns;
+      return { eq: vi.fn(() => ({ order })) };
+    });
+    const from = vi.fn((table: string) => table === "features"
+      ? {
+          select: vi.fn(() => ({
+            eq: vi.fn((_column: string, marker: string) => ({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { id: marker }, error: null }),
+            })),
+          })),
+        }
+      : { select: upgradeSelect });
+    const supabase = { from } as unknown as SupabaseClient;
+
+    await expect(fetchUpgradeRequests(supabase, "user-1")).resolves.toEqual([
+      expect.objectContaining({
+        id: "request-line-slip",
+        paymentReportedAt: "2026-10-01T02:30:00.000Z",
+        lineSlipReceivedAt: "2026-10-01T02:31:00.000Z",
+      }),
+    ]);
+    expect(upgradeSelect).toHaveBeenCalledWith(expect.stringContaining("line_slip_received_at"));
   });
 });
 

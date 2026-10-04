@@ -31,7 +31,7 @@ const TEST_APPLICATION_CLEANUP_REASONS = new Set([
 export function adminMembershipApplicationStatusLabel(
   status: "pending" | "approved" | "declined",
   resolutionReasonCode: string | null,
-  paymentReportedAt: string | null,
+  lineSlipReceivedAt: string | null,
 ): string {
   if (status === "approved") return "อนุมัติแล้ว";
   if (status === "declined") {
@@ -39,7 +39,7 @@ export function adminMembershipApplicationStatusLabel(
       ? "ยกเลิกรายการทดสอบ"
       : "ปฏิเสธแล้ว";
   }
-  return paymentReportedAt ? "แจ้งหลักฐานแล้ว · รอตรวจสอบ" : "รอแจ้งชำระ";
+  return lineSlipReceivedAt ? "รับสลิปทาง LINE แล้ว · รอตรวจยอด" : "รอรับสลิปทาง LINE";
 }
 
 const STATUS_PRIORITY: Record<AdminSubscription["status"], number> = {

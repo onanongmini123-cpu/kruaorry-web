@@ -25,6 +25,36 @@ interface AdminReportOrderRow extends DatedAdminRow {
 interface AdminUpgradeOrderRow extends DatedAdminRow {
   status: "pending" | "approved" | "declined";
   payment_reported_at: string | null;
+  line_slip_received_at: string | null;
+}
+
+interface AdminUpgradeSearchRow {
+  reference_code: string;
+  profiles: { full_name: string | null; email: string } | null;
+}
+
+export const MEMBER_APP_URL = "https://kruaorry.com/app";
+
+export function adminPaymentSuccessMessage(
+  payment: { kind: "application" | "renewal"; amountThb: number; referenceCode?: string },
+): string {
+  const paymentDetail = payment.kind === "application" && payment.referenceCode
+    ? `เลขอ้างอิง ${payment.referenceCode} · ยอด ${payment.amountThb.toLocaleString("th-TH")} บาท`
+    : `ต่ออายุสมาชิก · ยอด ${payment.amountThb.toLocaleString("th-TH")} บาท`;
+  return `ชำระเงินสำเร็จแล้วค่ะ 🎉 เปิดใช้งานแพ็กเกจเรียบร้อยแล้ว กดด้านล่างเพื่อเข้าใช้งาน\nเข้าใช้งาน KruAorry Web\n${MEMBER_APP_URL}\n\n${paymentDetail}`;
+}
+
+export function matchesAdminUpgradeSearch(request: AdminUpgradeSearchRow, query: string): boolean {
+  const normalizedQuery = query.trim().toLocaleLowerCase("th-TH");
+  if (!normalizedQuery) return true;
+  return [request.reference_code, request.profiles?.full_name, request.profiles?.email]
+    .some((value) => value?.toLocaleLowerCase("th-TH").includes(normalizedQuery));
+}
+
+export function includesAdminLineSlipProvenance(
+  readiness: "checking" | "ready" | "unavailable",
+): boolean {
+  return readiness === "ready";
 }
 
 export interface PriorityPageSlice {
@@ -204,12 +234,13 @@ export function sameAdminReportVersion(
 }
 
 export function sameAdminUpgradeVersion(
-  rendered: Pick<AdminUpgradeOrderRow, "id" | "status" | "payment_reported_at"> & { plan_id: string; quoted_amount_thb: number },
-  latest: Pick<AdminUpgradeOrderRow, "id" | "status" | "payment_reported_at"> & { plan_id: string; quoted_amount_thb: number },
+  rendered: Pick<AdminUpgradeOrderRow, "id" | "status" | "payment_reported_at" | "line_slip_received_at"> & { plan_id: string; quoted_amount_thb: number },
+  latest: Pick<AdminUpgradeOrderRow, "id" | "status" | "payment_reported_at" | "line_slip_received_at"> & { plan_id: string; quoted_amount_thb: number },
 ): boolean {
   return rendered.id === latest.id
     && rendered.status === latest.status
     && rendered.payment_reported_at === latest.payment_reported_at
+    && rendered.line_slip_received_at === latest.line_slip_received_at
     && rendered.plan_id === latest.plan_id
     && rendered.quoted_amount_thb === latest.quoted_amount_thb;
 }
@@ -256,8 +287,8 @@ function newestFirst(left: DatedAdminRow, right: DatedAdminRow): number {
     : right.id.localeCompare(left.id);
 }
 
-export function isActionableUpgradeRequest(request: Pick<AdminUpgradeOrderRow, "status" | "payment_reported_at">): boolean {
-  return request.status === "pending" && Boolean(request.payment_reported_at);
+export function isActionableUpgradeRequest(request: Pick<AdminUpgradeOrderRow, "status" | "line_slip_received_at">): boolean {
+  return request.status === "pending" && Boolean(request.line_slip_received_at);
 }
 
 export function sortAdminRequests<T extends AdminRequestOrderRow>(rows: T[]): T[] {

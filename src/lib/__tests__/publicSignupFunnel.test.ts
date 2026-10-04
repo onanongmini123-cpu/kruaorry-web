@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { signupHref, toPublicResource } from "@/app/resources/catalog";
-import { safeAuthNext } from "../authReturnPath";
-import { resourceIdFromSearch } from "../resourceDeepLink";
+import { FREE_SIGNUP_HREF } from "../authReturnPath";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
 const publicRow = {
@@ -27,19 +26,17 @@ const publicRow = {
   file_name: "sample.pdf",
 };
 
-describe("public preview → signup → intended resource", () => {
-  it("returns a free-file signup to the member app before any download action", () => {
+describe("public preview → canonical free signup", () => {
+  it("returns a free-file signup to the member-app root before any download action", () => {
     const item = toPublicResource(publicRow);
     expect(item).not.toBeNull();
-    const next = new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next");
-    expect(safeAuthNext(next)).toBe(`/app?resource=${id}`);
+    expect(signupHref()).toBe(FREE_SIGNUP_HREF);
   });
 
-  it("returns a non-file signup to the exact published item in the member app", () => {
+  it("does not carry a non-file resource destination through account creation", () => {
     const item = toPublicResource({ ...publicRow, delivery_mode: "google_template", file_path: null, cta_url: "https://docs.google.com/document/d/valid-copy-id/copy" });
     expect(item).not.toBeNull();
-    const next = safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"));
-    expect(resourceIdFromSearch(new URL(next, "https://kruaorry.example").search, [{ id }])).toBe(id);
-    expect(resourceIdFromSearch(new URL(next, "https://kruaorry.example").search, [])).toBeNull();
+    expect(signupHref()).toBe("/login?mode=signup&next=%2Fapp");
+    expect(signupHref()).not.toContain(id);
   });
 });

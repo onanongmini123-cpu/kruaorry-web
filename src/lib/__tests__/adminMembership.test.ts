@@ -21,8 +21,8 @@ describe("admin membership application status", () => {
 
   it("preserves approved and pending workflow labels", () => {
     expect(adminMembershipApplicationStatusLabel("approved", "payment_confirmed", null)).toBe("อนุมัติแล้ว");
-    expect(adminMembershipApplicationStatusLabel("pending", null, null)).toBe("รอแจ้งชำระ");
-    expect(adminMembershipApplicationStatusLabel("pending", null, "2026-10-01T00:00:00Z")).toBe("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
+    expect(adminMembershipApplicationStatusLabel("pending", null, null)).toBe("รอรับสลิปทาง LINE");
+    expect(adminMembershipApplicationStatusLabel("pending", null, "2026-10-01T00:00:00Z")).toBe("รับสลิปทาง LINE แล้ว · รอตรวจยอด");
   });
 });
 

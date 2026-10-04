@@ -39,9 +39,10 @@ function subscriptionStatus(subscription: MemberSubscription | null, now?: numbe
 function applicationStatus(application: UpgradeRequest): { label: string; tone: "success" | "warning" | "info" | "neutral" } {
   if (application.status === "approved") return { label: "อนุมัติแล้ว", tone: "success" };
   if (application.status === "declined") return { label: "ปิดคำขอแล้ว", tone: "neutral" };
+  if (application.lineSlipReceivedAt) return { label: "รับสลิปทาง LINE แล้ว · รอตรวจยอด", tone: "info" };
   return application.paymentReportedAt
-    ? { label: "แจ้งชำระแล้ว · รอตรวจสอบ", tone: "info" }
-    : { label: "รอแจ้งชำระ", tone: "warning" };
+    ? { label: "มีสถานะแจ้งชำระเดิม · รอยืนยันยอด", tone: "info" }
+    : { label: "รอส่งเลขอ้างอิงและสลิปทาง LINE", tone: "warning" };
 }
 
 export function MemberAccountStatus({ currentPlanId, plans, subscription, subscriptionError, applications, applicationsError, now }: MemberAccountStatusProps) {
@@ -99,7 +100,7 @@ export function MemberAccountStatus({ currentPlanId, plans, subscription, subscr
             <span>เลขอ้างอิง {request.referenceCode}</span>
             <strong>คำขอแพ็ก {planNameById.get(request.planId) ?? planDisplayName(request.planId)}</strong>
           </div>
-          <Link href={`/membership?plan=${encodeURIComponent(request.planId)}`}>ดูคำขอและวิธีชำระ</Link>
+          <Link href={`/membership?plan=${encodeURIComponent(request.planId)}`}>ดูคำขอและสถานะ</Link>
         </div>
       )}
 

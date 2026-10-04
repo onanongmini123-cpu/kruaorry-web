@@ -14,7 +14,7 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("299 บาทเฉพาะปีแรก");
     expect(membership).toContain("สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง");
     expect(membership).toContain("ต่ออายุปีถัดไป 599 บาท/ปี");
-    expect(membership).toContain("กรอกใบสมัครยังไม่นับสิทธิ์และยังไม่จองสิทธิ์");
+    expect(membership).toContain("การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์");
     expect(membership).toContain("ยืนยันชำระแล้ว {capacity.used}/{capacity.capacity}");
   });
 
@@ -26,22 +26,25 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("referenceCode");
     expect(membership).toContain("LINE_OA_URL");
     expect(membership).toContain("navigator.clipboard.writeText");
+    expect(membership).toContain("handleLineCtaClick(latestApplication.referenceCode)");
+    expect(membership).toContain("วางใน LINE และส่งพร้อมสลิปได้เลย");
+    expect(membership).toContain("เปิด LINE ต่อได้เลย");
     expect(membership).toContain("fetchUpgradeRequestsResult(supabase, userId)");
     expect(membership).toContain('applicationResult.applications.some((application) => application.status === "pending")');
   });
 
-  it("separates payment reporting from review and safely converts a full pending Founder application", () => {
+  it("keeps member payment status read-only and safely converts a full pending Founder application", () => {
     expect(membership).toContain("paymentReportedAt");
-    expect(membership).toContain("รอแจ้งชำระ");
-    expect(membership).toContain("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
-    expect(membership).toContain("reportMembershipPayment");
-    expect(membership).toContain("ฉันส่งเลขอ้างอิงและหลักฐานแล้ว");
+    expect(membership).toContain("lineSlipReceivedAt");
+    expect(membership).toContain("รอส่งเลขอ้างอิงและสลิปทาง LINE");
+    expect(membership).toContain("รับสลิปทาง LINE แล้ว · รอตรวจยอด");
+    expect(membership).toContain("มีสถานะแจ้งชำระเดิม · รอยืนยันยอด");
+    expect(membership).toContain("ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ");
+    expect(membership).not.toContain("reportMembershipPayment");
+    expect(membership).not.toContain("ฉันส่งเลขอ้างอิงและหลักฐานแล้ว");
     expect(membership).toContain("pendingFounderUnavailable");
     expect(membership).toContain("convertFounderApplicationToTeacher");
     expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี");
-    expect(membership).toContain('const nextCapacity = await fetchFounderCapacity(supabase)');
-    expect(membership).toContain('if (latestApplication.planId === "founder")');
-    expect(membership).toContain('setError(nextCapacity?.isFull');
   });
 
   it("fails closed globally for schema drift and only applies Founder facts to Founder flows", () => {
@@ -65,16 +68,7 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain('<strong>Teacher Pro</strong>');
     expect(membership).toContain('{applicationPlanId === "founder" && (');
 
-    const paymentHandler = membership.slice(
-      membership.indexOf("const handleReportPayment"),
-      membership.indexOf("const handleConvertToTeacher"),
-    );
-    expect(paymentHandler).toContain("if (pendingFounderChecksUnavailable)");
-    expect(paymentHandler).not.toContain("if (founderChecksUnavailable)");
-    expect(paymentHandler.indexOf('if (schemaReadiness !== "ready")')).toBeLessThan(
-      paymentHandler.indexOf("if (pendingFounderChecksUnavailable)"),
-    );
-    expect(paymentHandler).toContain('if (latestApplication.planId === "founder")');
+    expect(membership).not.toContain("const handleReportPayment");
 
     const conversionHandler = membership.slice(
       membership.indexOf("const handleConvertToTeacher"),
@@ -126,8 +120,8 @@ describe("canonical manual membership flow", () => {
 
   it("keeps membership public, sends auth back safely, and redirects the old payment route", () => {
     expect(membership).toContain("membershipReturnTarget");
-    expect(membership).toContain("new URLSearchParams({ plan: applicationPlanId, returnTo })");
-    expect(membership).toContain('const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?${membershipReturnQuery.toString()}`)}`');
+    expect(membership).toContain("new URLSearchParams({ returnTo })");
+    expect(membership).toContain("const signupHref = FREE_SIGNUP_HREF;");
     expect(membership.match(/href=\{signupHref\}/g)).toHaveLength(2);
     expect(payment).toContain('redirect("/membership#how-to-pay")');
   });
@@ -238,7 +232,7 @@ describe("canonical manual membership flow", () => {
   });
 
   it("uses explicit payment confirmation and records the audit fields in admin", () => {
-    for (const field of ["reference_code", "quoted_amount_thb", "payment_reported_at", "payment_paid_at", "payment_confirmed_at", "payment_confirmed_by", "payment_confirmed_amount_thb", "payment_reference"]) {
+    for (const field of ["reference_code", "quoted_amount_thb", "payment_reported_at", "line_slip_received_at", "line_slip_received_by", "payment_paid_at", "payment_confirmed_at", "payment_confirmed_by", "payment_confirmed_amount_thb", "payment_reference"]) {
       expect(admin).toContain(field);
     }
     expect(admin).toContain("confirmMembershipPayment");

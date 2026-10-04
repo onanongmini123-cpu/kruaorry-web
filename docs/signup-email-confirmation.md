@@ -45,9 +45,9 @@ against its internal route allowlist and never accepts an arbitrary URL.
   resend while the local controller still blocks every provider call for the
   full 60 seconds.
 - `email_not_confirmed` sign-in errors open the same recovery UI.
-- Resend uses Supabase Auth's `resend({ type: "signup" })`, preserves the safe
-  internal return path, applies the 60-second local guard before the request,
-  and gives the approved LINE OA as the support fallback.
+- Resend uses Supabase Auth's `resend({ type: "signup" })`, always returns a
+  confirmed account to `/app`, applies the 60-second local guard before the
+  request, and gives the approved LINE OA as the support fallback.
 - A password-recovery link is consumed only after the visitor explicitly
   selects **ยืนยันลิงก์**. The page handles returned failures and rejected
   promises from token verification, PKCE exchange, session lookup, and password
@@ -67,7 +67,7 @@ Evidence that can be established from this repository without accessing an
 external account:
 
 - local password confirmation and email-format validation run before Auth;
-- the callback is same-origin and its final destination is allowlisted;
+- the callback is same-origin and its final destination is fixed to `/app`;
 - failure to construct that local callback stops before Auth and uses fixed Thai
   corrective copy; it never claims that the registration request was received;
 - provider messages, recipient addresses, passwords, and SMTP details are not
@@ -116,7 +116,8 @@ request identifier rather than by pasting an email into notes or logs.
    screenshots and reports.
 8. **Template callback** — verify the confirmation template uses Supabase's
    generated confirmation URL and resolves to the exact allowlisted
-   `/auth/callback` origin before preserving a safe internal `next` path.
+   `/auth/callback` origin before finishing at `/app`. Signup confirmation must
+   not preserve a membership, download, or resource `next` path.
 9. **Link tracking** — verify click/link rewriting does not replace, truncate,
    prefetch, or prematurely consume the one-time confirmation link. Any change
    to tracking is a production configuration change and needs separate approval.
@@ -149,7 +150,7 @@ inbox through a private input surface.
 4. Confirm one matching Supabase Auth event and one matching Resend delivery
    event, then verify the message arrives in the authorized inbox.
 5. Open the message once and confirm it returns through the exact production
-   `/auth/callback` to the allowlisted internal destination. Verify the session
+   `/auth/callback` to `/app`. Verify the session
    is established without exposing tokens in the address bar or logs.
 6. In another clean session, exercise one resend only after the cooldown ends;
    verify the same generic UI whether the address is pending, confirmed, or

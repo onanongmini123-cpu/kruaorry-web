@@ -32,6 +32,7 @@ const application = (status: UpgradeRequest["status"]): UpgradeRequest => ({
   status,
   quotedAmountThb: 599,
   paymentReportedAt: null,
+  lineSlipReceivedAt: null,
   paymentPaidAt: null,
   paymentConfirmedAt: status === "approved" ? "2026-10-02T00:00:00.000Z" : null,
   paymentConfirmedAmountThb: status === "approved" ? 599 : null,

@@ -15,10 +15,8 @@ import {
 } from "../signupEmailConfirmation";
 
 describe("signup email confirmation", () => {
-  it("builds a same-origin callback and reduces an external destination to /app", () => {
-    expect(buildSignupConfirmationRedirect("https://kruaorry-web.vercel.app", "/app?view=library"))
-      .toBe("https://kruaorry-web.vercel.app/auth/callback?next=%2Fapp%3Fview%3Dlibrary");
-    expect(buildSignupConfirmationRedirect("https://kruaorry-web.vercel.app", "https://evil.example/steal"))
+  it("builds the one same-origin callback whose destination is /app", () => {
+    expect(buildSignupConfirmationRedirect("https://kruaorry-web.vercel.app"))
       .toBe("https://kruaorry-web.vercel.app/auth/callback?next=%2Fapp");
   });
 
@@ -29,7 +27,7 @@ describe("signup email confirmation", () => {
     "https://example.com?next=https://evil.example",
     "not an origin",
   ])("rejects a non-origin callback base: %s", (origin) => {
-    expect(buildSignupConfirmationRedirect(origin, "/app")).toBeNull();
+    expect(buildSignupConfirmationRedirect(origin)).toBeNull();
     expect(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE).toMatch(/[\u0E00-\u0E7F]/);
     expect(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE).not.toMatch(/SMTP|Resend|Supabase|error/i);
   });
@@ -62,7 +60,6 @@ describe("signup email confirmation", () => {
       resend,
       "not-an-email",
       "https://kruaorry-web.vercel.app",
-      "/app",
     )).resolves.toEqual({ outcome: "invalid" });
     expect(resend).not.toHaveBeenCalled();
   });
@@ -73,7 +70,6 @@ describe("signup email confirmation", () => {
       resend,
       " teacher@example.com ",
       "https://kruaorry-web.vercel.app",
-      "/app?view=favorites",
     )).resolves.toEqual({ outcome: "accepted" });
 
     expect(resend).toHaveBeenCalledTimes(1);
@@ -81,7 +77,7 @@ describe("signup email confirmation", () => {
       type: "signup",
       email: "teacher@example.com",
       options: {
-        emailRedirectTo: "https://kruaorry-web.vercel.app/auth/callback?next=%2Fapp%3Fview%3Dfavorites",
+        emailRedirectTo: "https://kruaorry-web.vercel.app/auth/callback?next=%2Fapp",
       },
     });
   });
@@ -94,7 +90,6 @@ describe("signup email confirmation", () => {
       rateLimited,
       "teacher@example.com",
       "https://kruaorry-web.vercel.app",
-      "/app",
     )).resolves.toEqual({ outcome: "rate-limited" });
 
     const rejectedByProvider = vi.fn(async () => ({
@@ -104,7 +99,6 @@ describe("signup email confirmation", () => {
       rejectedByProvider,
       "teacher@example.com",
       "https://kruaorry-web.vercel.app",
-      "/app",
     )).resolves.toEqual({ outcome: "accepted" });
 
     const rejected = vi.fn(async () => {
@@ -114,7 +108,6 @@ describe("signup email confirmation", () => {
       rejected,
       "teacher@example.com",
       "https://kruaorry-web.vercel.app",
-      "/app",
     )).resolves.toEqual({ outcome: "accepted" });
   });
 

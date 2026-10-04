@@ -5,6 +5,7 @@ import { Mascot } from "@/components/Mascot";
 import { Badge, ExpandableResourceDescription } from "@/components/ui";
 import { filterDiscoveredResources, normalizeDiscoveryFilters, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
+import { publicFreeAccountAction } from "@/lib/publicAuthState";
 import { publicResourceAction, requiredPlansLabel } from "./catalog";
 import { loadPublicResources, loadPublicResourceViewer } from "./data";
 import { PublicResourceCover } from "./PublicResourceCover";
@@ -38,6 +39,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
   const visible = filterDiscoveredResources(result.resources, filters);
   const freeCount = result.resources.filter((item) => item.isFree).length;
   const hasFilters = Boolean(filters.query || filters.category || filters.grade || filters.access !== "all");
+  const accountAction = publicFreeAccountAction(viewer.authenticated ? "member" : "guest")!;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--surface-page)" }}>
@@ -45,7 +47,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
         <div style={{ maxWidth: "var(--container-max)", margin: "auto", padding: "var(--sp-4) var(--sp-5)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontWeight: "var(--fw-bold)", fontFamily: "var(--font-display)", color: "var(--text-strong)" }}><Mascot size={34} /> KruAorry</Link>
           <div style={{ flex: 1 }} />
-          <Link href="/login?mode=signup" style={{ color: "var(--text-link)", fontWeight: "var(--fw-semibold)" }}>สมัครสมาชิกฟรี</Link>
+          <Link href={accountAction.href} style={{ color: "var(--text-link)", fontWeight: "var(--fw-semibold)" }}>{accountAction.label}</Link>
         </div>
       </header>
 

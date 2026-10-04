@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "./asyncTimeout";
+import { FREE_SIGNUP_HREF } from "./authReturnPath";
 
 export type PublicAuthState = "checking" | "guest" | "member";
 
@@ -20,7 +21,7 @@ export function publicHeaderActions(state: PublicAuthState): PublicAuthAction[] 
   }
   return [
     { href: "/login", label: "เข้าสู่ระบบ", emphasis: "ghost" },
-    { href: "/login?mode=signup&next=%2Fapp", label: "สมัครฟรี", emphasis: "primary" },
+    { href: FREE_SIGNUP_HREF, label: "สมัครฟรี", emphasis: "primary" },
   ];
 }
 
@@ -28,7 +29,7 @@ export function publicFreeAccountAction(state: PublicAuthState): Omit<PublicAuth
   if (state === "checking") return null;
   return state === "member"
     ? { href: "/app", label: "ไปพื้นที่สมาชิก" }
-    : { href: "/login?mode=signup&next=%2Fapp", label: "สมัครสมาชิกฟรี" };
+    : { href: FREE_SIGNUP_HREF, label: "สมัครสมาชิกฟรี" };
 }
 
 /**

@@ -9,6 +9,10 @@ const BASE = "https://return-path.invalid";
 const APP_VIEWS = new Set(["home", "library", "favorites", "plans", "requests"]);
 const APP_FILTER_PARAMS = ["resource", "view", "q", "category", "grade"] as const;
 
+export const SIGNUP_DESTINATION = "/app";
+export const FREE_SIGNUP_HREF = "/login?mode=signup&next=%2Fapp";
+export type AuthEntryMode = "signin" | "signup";
+
 function hasOnlyParams(params: URLSearchParams, allowed: readonly string[]): boolean {
   const keys = [...params.keys()];
   return keys.every((key) => allowed.includes(key) && params.getAll(key).length === 1);
@@ -91,4 +95,17 @@ export function safeAuthNext(raw: string | null | undefined): string {
   } catch {
     return "/app";
   }
+}
+
+/**
+ * Signup is intentionally a single-purpose account-creation flow. It never
+ * carries a paid offer, download, or resource deep link through confirmation;
+ * those are selected again from the authenticated app. Sign-in may retain the
+ * small allowlist above because it resumes an action for an existing account.
+ */
+export function authCompletionDestination(
+  mode: AuthEntryMode,
+  rawNext: string | null | undefined,
+): string {
+  return mode === "signup" ? SIGNUP_DESTINATION : safeAuthNext(rawNext);
 }

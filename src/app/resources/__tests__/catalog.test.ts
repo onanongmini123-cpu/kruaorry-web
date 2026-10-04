@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { membershipUpgradeHref, PUBLIC_RESOURCE_SELECT, publicResourceAction, requiredPlansLabel, signupHref, toPublicResource } from "../catalog";
-import { safeAuthNext } from "@/lib/authReturnPath";
+import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { EMPTY_ENTITLEMENTS } from "@/lib/entitlement";
 
 const id = "11111111-2222-4333-8444-555555555555";
@@ -29,13 +29,13 @@ const base = {
 };
 
 describe("public resource showcase", () => {
-  it("shows a genuine published free file and sends free signup into its member-app detail", () => {
+  it("shows a genuine published free file and uses the canonical free signup route", () => {
     const item = toPublicResource(base);
     expect(item?.title).toBe(base.title);
     expect(item?.isFree).toBe(true);
     expect(item?.isNew).toBe(true);
-    expect(signupHref(item!)).toBe(`/login?next=${encodeURIComponent(`/app?resource=${id}`)}&mode=signup`);
-    expect(safeAuthNext(new URL(signupHref(item!), "https://kruaorry.example").searchParams.get("next"))).toBe(`/app?resource=${id}`);
+    expect(signupHref()).toBe(FREE_SIGNUP_HREF);
+    expect(signupHref()).toBe("/login?mode=signup&next=%2Fapp");
   });
 
   it("supports a real same-origin premium web app but routes guests to intentional upgrade", () => {
@@ -153,7 +153,7 @@ describe("public resource showcase", () => {
       entitlements: EMPTY_ENTITLEMENTS,
     });
     expect(guestFree).toMatchObject({ label: "สมัครบัญชีฟรีเพื่อใช้งาน", locked: true, canUse: false });
-    expect(guestFree.href).toContain(encodeURIComponent(`/app?resource=${id}`));
+    expect(guestFree.href).toBe(FREE_SIGNUP_HREF);
 
     const freeMember = publicResourceAction(premium, {
       authenticated: true,
