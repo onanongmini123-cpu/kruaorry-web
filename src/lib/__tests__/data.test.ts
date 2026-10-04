@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
@@ -177,6 +177,10 @@ describe("fetchEntitlements", () => {
     } as unknown as SupabaseClient;
 
     await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+    await expect(fetchEntitlementsResult(supabase)).resolves.toEqual({
+      entitlements: { planId: "free", features: {} },
+      error: true,
+    });
   });
 });
 
@@ -214,6 +218,60 @@ describe("fetchFounderCapacity", () => {
 
     await expect(fetchFounderCapacity(supabase)).resolves.toBeNull();
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("membership Founder history and return-resource access", () => {
+  it("reads only the caller's aggregate Founder history", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: true,
+      error: false,
+    });
+    expect(rpc).toHaveBeenCalledWith("has_my_founder_history");
+  });
+
+  it("fails closed when Founder history cannot be verified", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({ data: null, error: { message: "missing", code: "42883" } }),
+    } as unknown as SupabaseClient;
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: false,
+      error: true,
+    });
+  });
+
+  it("keeps every actual supported plan for a shared resource", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { access_mode: "plans", required_plan_ids: ["founder", "teacher", "teacher", "plus", " retired ", ""] },
+      error: null,
+    });
+    const eq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq }));
+    const supabase = { from: vi.fn(() => ({ select })) } as unknown as SupabaseClient;
+
+    await expect(fetchMembershipReturnResource(supabase, "resource-1")).resolves.toEqual({
+      requiredPlanIds: ["founder", "teacher", "plus", "retired"],
+      error: false,
+    });
+    expect(supabase.from).toHaveBeenCalledWith("resource_catalog");
+    expect(eq).toHaveBeenCalledWith("id", "resource-1");
+  });
+
+  it("fails closed when the return resource is missing or is not plan-protected", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { access_mode: "authenticated", required_plan_ids: [] },
+      error: null,
+    });
+    const supabase = {
+      from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) })),
+    } as unknown as SupabaseClient;
+    await expect(fetchMembershipReturnResource(supabase, "resource-1")).resolves.toEqual({
+      requiredPlanIds: [],
+      error: true,
+    });
   });
 });
 
@@ -515,8 +573,8 @@ describe("public catalog reads", () => {
         tags: [],
         grade_levels: [],
         access_mode: "authenticated",
-        required_plan_ids: [],
-        required_plan_names: [],
+        required_plan_ids: ["teacher_pro", "teacher"],
+        required_plan_names: ["Teacher"],
         is_free: true,
         is_new: true,
         file_size: 100,
@@ -528,7 +586,12 @@ describe("public catalog reads", () => {
     const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: rows, error: null }) };
     const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
 
-    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง", isNew: true }]);
+    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{
+      id: "one",
+      title: "แบบฝึกจริง",
+      isNew: true,
+      requiredPlanNames: ["Teacher Pro (แพ็กเดิม)", "Teacher Pro"],
+    }]);
     expect(client.from).toHaveBeenCalledWith("resource_catalog");
     expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
     expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*access_mode.*required_plan_ids.*required_plan_names.*is_new.*featured_rank.*review_average.*review_count/));
@@ -557,6 +620,33 @@ describe("public catalog reads", () => {
     await expect(result).resolves.toEqual([]);
     expect(client.from).toHaveBeenCalledWith("plans");
     expect(client.from).toHaveBeenCalledWith("plan_benefit_catalog");
+  });
+
+  it("uses customer-facing labels while keeping canonical plan ids unchanged", async () => {
+    const planQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({
+        data: [
+          { id: "teacher", name: "Teacher", price_label: "599 บาท/ปี", note: null, is_popular: true, billing_interval: "year" },
+          { id: "teacher_pro", name: "Teacher Pro", price_label: "แพ็กเดิม", note: null, is_popular: false, billing_interval: "year" },
+        ],
+        error: null,
+      }),
+    };
+    const benefitQuery = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn(),
+    };
+    benefitQuery.order.mockReturnValueOnce(benefitQuery).mockResolvedValueOnce({ data: [], error: null });
+    const client = {
+      from: vi.fn((table: string) => table === "plans" ? planQuery : benefitQuery),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchPlans(client)).resolves.toMatchObject([
+      { id: "teacher", name: "Teacher Pro" },
+      { id: "teacher_pro", name: "Teacher Pro (แพ็กเดิม)" },
+    ]);
   });
 });
 

@@ -90,6 +90,18 @@ describe("ResourceCard media", () => {
     expect(html).not.toContain("สำหรับสมาชิก");
   });
 
+  it("shows a status CTA instead of asking again while an upgrade is pending", () => {
+    const html = renderToStaticMarkup(React.createElement(ResourceCard, {
+      ...baseProps,
+      locked: true,
+      upgradePending: true,
+      onAction: vi.fn(),
+    }));
+
+    expect(html).toContain("ติดตามคำขออัปเกรด");
+    expect(html).not.toContain("อัปเกรดเพื่อปลดล็อก");
+  });
+
   it("keeps an accessible favorite name while an optimistic save is pending", () => {
     const html = renderToStaticMarkup(React.createElement(ResourceCard, {
       ...baseProps,

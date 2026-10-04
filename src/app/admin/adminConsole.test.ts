@@ -1,10 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   adminViewHref,
+  createCoalescedAdminRefresh,
+  installAdminActionRefresh,
+  isActionableUpgradeRequest,
   moveFeaturedResource,
   parseAdminView,
+  priorityPageSlices,
   resourceAccessLabel,
+  sameAdminReportVersion,
+  sameAdminRequestVersion,
+  sameAdminReviewVersion,
+  sameAdminSubscriptionVersion,
+  sameAdminUpgradeVersion,
+  sortAdminReports,
+  sortAdminRequests,
+  sortAdminReviews,
+  sortAdminUpgradeRequests,
   toggleFeaturedResource,
+  type AdminActionCounts,
 } from "./adminConsole";
 
 describe("admin console navigation", () => {
@@ -21,10 +35,189 @@ describe("admin console navigation", () => {
   });
 });
 
+describe("admin action queues", () => {
+  it("serializes slow reads, coalesces bursts, and applies only the newest cross-session snapshot", async () => {
+    type Snapshot = { requests: string[]; counts: AdminActionCounts };
+    const resolvers: Array<(snapshot: Snapshot) => void> = [];
+    const applied: Snapshot[] = [];
+    let activeLoads = 0;
+    let maximumActiveLoads = 0;
+    let loadCalls = 0;
+    const refresh = createCoalescedAdminRefresh(
+      () => {
+        loadCalls += 1;
+        activeLoads += 1;
+        maximumActiveLoads = Math.max(maximumActiveLoads, activeLoads);
+        return new Promise<Snapshot>((resolve) => {
+          resolvers.push((snapshot) => {
+            activeLoads -= 1;
+            resolve(snapshot);
+          });
+        });
+      },
+      (snapshot) => { applied.push(snapshot); },
+      () => undefined,
+    );
+
+    const initialPoll = refresh.request();
+    const focusRefresh = refresh.request();
+    const menuRefresh = refresh.request();
+    expect(loadCalls).toBe(1);
+    expect(maximumActiveLoads).toBe(1);
+
+    resolvers[0]({ requests: ["old"], counts: { requests: 1, moderation: 0, upgrades: 0 } });
+    await vi.waitFor(() => expect(loadCalls).toBe(2));
+    expect(applied).toEqual([]);
+    expect(maximumActiveLoads).toBe(1);
+
+    resolvers[1]({ requests: ["old", "new-from-other-session"], counts: { requests: 2, moderation: 0, upgrades: 0 } });
+    await expect(Promise.all([initialPoll, focusRefresh, menuRefresh])).resolves.toEqual([true, true, true]);
+    expect(applied).toEqual([
+      { requests: ["old", "new-from-other-session"], counts: { requests: 2, moderation: 0, upgrades: 0 } },
+    ]);
+    expect(maximumActiveLoads).toBe(1);
+    refresh.dispose();
+  });
+
+  it("aborts a hung read at the timeout, reports unknown, and accepts a later refresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const failures: Array<{ timedOut: boolean }> = [];
+      const applied: number[] = [];
+      let attempt = 0;
+      let observedAbort = false;
+      const refresh = createCoalescedAdminRefresh(
+        (signal) => {
+          attempt += 1;
+          if (attempt === 2) return Promise.resolve(9);
+          return new Promise<number>(() => {
+            signal.addEventListener("abort", () => { observedAbort = true; }, { once: true });
+          });
+        },
+        (value) => { applied.push(value); },
+        (failure) => { failures.push(failure); },
+        250,
+      );
+
+      const timedOut = refresh.request();
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(timedOut).resolves.toBe(false);
+      expect(observedAbort).toBe(true);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ timedOut: true });
+      expect(applied).toEqual([]);
+
+      await expect(refresh.request()).resolves.toBe(true);
+      expect(applied).toEqual([9]);
+      refresh.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes only for an authorized admin on load and focus without polling", () => {
+    const handlers: { focus?: () => void } = {};
+    let refreshCount = 0;
+    const target = {
+      addEventListener: (_type: "focus", listener: () => void) => { handlers.focus = listener; },
+      removeEventListener: (_type: "focus", listener: () => void) => {
+        if (handlers.focus === listener) delete handlers.focus;
+      },
+    };
+
+    const unauthorizedCleanup = installAdminActionRefresh(target, () => { refreshCount += 1; }, false);
+    expect(refreshCount).toBe(0);
+    expect(handlers.focus).toBeUndefined();
+    unauthorizedCleanup();
+
+    const cleanup = installAdminActionRefresh(target, () => { refreshCount += 1; }, true);
+    expect(refreshCount).toBe(1);
+    handlers.focus?.();
+    expect(refreshCount).toBe(2);
+
+    cleanup();
+    expect(handlers.focus).toBeUndefined();
+  });
+
+  it("detects a queue row changed since the admin rendered it", () => {
+    expect(sameAdminRequestVersion(
+      { id: "request", status: "pending" },
+      { id: "request", status: "in_progress" },
+    )).toBe(false);
+    expect(sameAdminReviewVersion(
+      { id: "review", moderation_status: "pending", updated_at: "old" },
+      { id: "review", moderation_status: "pending", updated_at: "new" },
+    )).toBe(false);
+    expect(sameAdminReportVersion(
+      { id: "report", status: "pending", updated_at: "same" },
+      { id: "report", status: "pending", updated_at: "same" },
+    )).toBe(true);
+    expect(sameAdminUpgradeVersion(
+      { id: "upgrade", status: "pending", payment_reported_at: null, plan_id: "founder", quoted_amount_thb: 299 },
+      { id: "upgrade", status: "pending", payment_reported_at: "now", plan_id: "founder", quoted_amount_thb: 299 },
+    )).toBe(false);
+    expect(sameAdminSubscriptionVersion(
+      { id: "subscription", status: "active", plan_id: "teacher", current_period_end: "2026-01-01" },
+      { id: "subscription", status: "active", plan_id: "teacher", current_period_end: "2026-01-01" },
+    )).toBe(true);
+  });
+
+  it("fills a page from prioritized database groups without hiding older actions", () => {
+    expect(priorityPageSlices([60, 90], 0, 50)).toEqual([
+      { groupIndex: 0, from: 0, to: 49 },
+    ]);
+    expect(priorityPageSlices([60, 90], 1, 50)).toEqual([
+      { groupIndex: 0, from: 50, to: 59 },
+      { groupIndex: 1, from: 0, to: 39 },
+    ]);
+    expect(priorityPageSlices([10, 15, 80], 0, 50)).toEqual([
+      { groupIndex: 0, from: 0, to: 9 },
+      { groupIndex: 1, from: 0, to: 14 },
+      { groupIndex: 2, from: 0, to: 24 },
+    ]);
+  });
+
+  it("orders new teacher requests first while preserving vote rank", () => {
+    const rows = [
+      { id: "done", created_at: "2026-10-03T00:00:00Z", status: "done" as const, votes: 50 },
+      { id: "new-low", created_at: "2026-10-02T00:00:00Z", status: "pending" as const, votes: 2 },
+      { id: "new-high", created_at: "2026-10-01T00:00:00Z", status: "pending" as const, votes: 8 },
+    ];
+    expect(sortAdminRequests(rows).map((row) => row.id)).toEqual(["new-high", "new-low", "done"]);
+    expect(rows.map((row) => row.id)).toEqual(["done", "new-low", "new-high"]);
+  });
+
+  it("puts moderation work before completed history", () => {
+    const reviews = [
+      { id: "visible", created_at: "2026-10-03T00:00:00Z", moderation_status: "visible" as const },
+      { id: "pending", created_at: "2026-10-01T00:00:00Z", moderation_status: "pending" as const },
+    ];
+    const reports = [
+      { id: "resolved", created_at: "2026-10-03T00:00:00Z", status: "resolved" as const },
+      { id: "working", created_at: "2026-10-02T00:00:00Z", status: "in_progress" as const },
+      { id: "pending", created_at: "2026-10-01T00:00:00Z", status: "pending" as const },
+    ];
+    expect(sortAdminReviews(reviews).map((row) => row.id)).toEqual(["pending", "visible"]);
+    expect(sortAdminReports(reports).map((row) => row.id)).toEqual(["pending", "working", "resolved"]);
+  });
+
+  it("counts only payment-reported pending applications as admin-actionable", () => {
+    const rows = [
+      { id: "approved", created_at: "2026-10-03T00:00:00Z", status: "approved" as const, payment_reported_at: "2026-10-03T00:00:00Z" },
+      { id: "waiting", created_at: "2026-10-02T00:00:00Z", status: "pending" as const, payment_reported_at: null },
+      { id: "action", created_at: "2026-10-01T00:00:00Z", status: "pending" as const, payment_reported_at: "2026-10-01T00:00:00Z" },
+    ];
+    expect(isActionableUpgradeRequest(rows[0])).toBe(false);
+    expect(isActionableUpgradeRequest(rows[1])).toBe(false);
+    expect(isActionableUpgradeRequest(rows[2])).toBe(true);
+    expect(sortAdminUpgradeRequests(rows).map((row) => row.id)).toEqual(["action", "waiting", "approved"]);
+  });
+});
+
 describe("admin resource controls", () => {
   it("labels plan access using real selected plan names", () => {
     expect(resourceAccessLabel("public", [])).toBe("ฟรีทุกคน");
-    expect(resourceAccessLabel("plans", ["Founder 100", "Teacher"])).toBe("Founder 100, Teacher");
+    expect(resourceAccessLabel("plans", ["Founder 100", "Teacher Pro"])).toBe("Founder 100, Teacher Pro");
   });
 
   it("enforces a five-item, duplicate-free featured order", () => {

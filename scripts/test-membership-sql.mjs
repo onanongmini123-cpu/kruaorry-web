@@ -12,6 +12,7 @@ const files = [
   "20260901090400_021_founder_seat_usage.sql",
   "20260924170000_025_active_founder_capacity.sql",
   "20261001190000_048_founder_payment_confirmation.sql",
+  "20261003120000_049_founder_first_year_once.sql",
 ];
 const plusFeatures = [
   "คลังสื่อพร้อมสอนทั้งหมด",
@@ -904,13 +905,17 @@ try {
       has_function_privilege('anon', 'public.report_membership_payment(uuid)', 'execute') as anon_report,
       has_function_privilege('authenticated', 'public.report_membership_payment(uuid)', 'execute') as member_report,
       has_function_privilege('anon', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as anon_convert,
-      has_function_privilege('authenticated', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as member_convert
+      has_function_privilege('authenticated', 'public.convert_founder_application_to_teacher(uuid)', 'execute') as member_convert,
+      has_function_privilege('anon', 'public.has_my_founder_history()', 'execute') as anon_founder_history,
+      has_function_privilege('authenticated', 'public.has_my_founder_history()', 'execute') as member_founder_history
   `);
   assert.deepEqual(memberMutationPrivileges.rows[0], {
     anon_report: false,
     member_report: true,
     anon_convert: false,
     member_convert: true,
+    anon_founder_history: false,
+    member_founder_history: true,
   }, "membership mutation RPC execute grants are not restricted to authenticated users");
 
   const admin = randomUUID();
@@ -1006,6 +1011,9 @@ try {
 
   const firstFounderUser = randomUUID();
   await db.query("insert into public.profiles(id) values ($1)", [firstFounderUser]);
+  await setActor(firstFounderUser);
+  assert.equal((await db.query("select public.has_my_founder_history() as value")).rows[0].value, false,
+    "a member without a confirmed Founder grant was marked as historical Founder");
   const firstApplication = await createApplication(firstFounderUser, "founder");
   assert.match(firstApplication.reference_code, /^KA-\d{8,}$/);
   assert.equal(firstApplication.quoted_amount_thb, 299);
@@ -1106,6 +1114,21 @@ try {
       new Date(Date.parse(firstActivationPaidAt) + 1000).toISOString(),
     ),
     "Idempotency key was already used",
+  );
+  await setActor(firstFounderUser);
+  assert.equal((await db.query("select public.has_my_founder_history() as value")).rows[0].value, true,
+    "the confirmed Founder grant was not visible to its member as boolean history");
+  await rejectsWith(
+    () => createApplication(firstFounderUser, "founder"),
+    "Founder first-year offer cannot be claimed twice",
+  );
+  await rejectsWith(
+    () => db.query(`
+      insert into public.upgrade_requests (
+        user_id, plan_id, status, quoted_amount_thb
+      ) values ($1, 'founder', 'pending', 299)
+    `, [firstFounderUser]),
+    "Founder first-year offer cannot be claimed twice",
   );
 
   const firstActivationState = await db.query(`
@@ -1445,6 +1468,9 @@ try {
       founder_price_lock = false
     where id = $1
   `, [expiredFounderSubscription]);
+  await setActor(expiredFounderUser);
+  assert.equal((await db.query("select public.has_my_founder_history() as value")).rows[0].value, true,
+    "expiring Founder access erased the permanent first-year history");
   const expiredRenewalFloor = (await db.query("select now() as value")).rows[0].value;
   const expiredFounderRenewedUntil = await confirmRenewal(
     expiredFounderSubscription,

@@ -361,6 +361,15 @@ list after the rehearsal and again after any authorized production apply.
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
+Migration `20261003120000_049_founder_first_year_once.sql` is **pending** and
+must run after `048`. It exposes only the signed-in member's boolean Founder
+history and rejects any new pending Founder application when that member is
+already present in the permanent Founder ledger. The trigger takes the same
+Founder-allocation advisory lock as payment confirmation before reading that
+ledger, so a direct pending write cannot race a first grant. It does not rewrite
+existing applications, subscriptions, payments, or ledger rows; Founder renewal
+at the regular 599 THB/year price continues through the existing renewal RPC.
+
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock

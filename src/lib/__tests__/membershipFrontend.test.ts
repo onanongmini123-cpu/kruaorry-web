@@ -19,12 +19,15 @@ describe("canonical manual membership flow", () => {
   });
 
   it("waits for a created pending application before exposing LINE and preserves a stable reference", () => {
-    expect(membership).toContain('applications.find((application) => application.status === "pending")');
+    expect(membership).toContain("pendingMembershipApplication(applications)");
+    expect(membership).toContain("const hasOpenApplication = pendingApplication !== null");
     expect(membership).toContain("await createMembershipApplication");
     expect(membership).toContain("latestApplication?.status === \"pending\"");
     expect(membership).toContain("referenceCode");
     expect(membership).toContain("LINE_OA_URL");
     expect(membership).toContain("navigator.clipboard.writeText");
+    expect(membership).toContain("fetchUpgradeRequestsResult(supabase, userId)");
+    expect(membership).toContain('applicationResult.applications.some((application) => application.status === "pending")');
   });
 
   it("separates payment reporting from review and safely converts a full pending Founder application", () => {
@@ -33,17 +36,61 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
     expect(membership).toContain("reportMembershipPayment");
     expect(membership).toContain("ฉันส่งเลขอ้างอิงและหลักฐานแล้ว");
-    expect(membership).toContain("pendingFounderFull");
+    expect(membership).toContain("pendingFounderUnavailable");
     expect(membership).toContain("convertFounderApplicationToTeacher");
-    expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher 599 บาท/ปี");
+    expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี");
     expect(membership).toContain('const nextCapacity = await fetchFounderCapacity(supabase)');
-    expect(membership).toContain('latestApplication.planId === "founder" && nextCapacity?.isFull');
+    expect(membership).toContain('if (latestApplication.planId === "founder")');
+    expect(membership).toContain('setError(nextCapacity?.isFull');
   });
 
-  it("fails closed for an unknown Founder capacity without blocking Teacher applications", () => {
+  it("fails closed globally for schema drift and only applies Founder facts to Founder flows", () => {
     expect(membership).toContain('if (applicationPlanId === "founder" && !capacity)');
-    expect(membership).toContain('applicationPlanId === "founder" && !capacity ? (');
-    expect(membership).not.toContain('if (!userId || submitting || !capacity)');
+    expect(membership).toContain('const founderChecksUnavailable = schemaReadiness !== "ready"');
+    expect(membership).toContain('const selectedFounderChecksUnavailable = founderChecksBlockPlan(selectedPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('const shouldLoadFounderChecks = founderChecksRequiredForPlanSelection(selectedPlanPreference)');
+    expect(membership).toContain('shouldLoadFounderChecks ? fetchFounderCapacity(supabase) : Promise.resolve(null)');
+    expect(membership).toContain('user && shouldLoadFounderChecks');
+    expect(membership).toContain('const founderChecksDeferred = plan.id === "founder" && !shouldLoadFounderChecks');
+    expect(membership).toContain('founderChecksBlockPlanSelection(planId, founderChecksUnavailable, founderChecksDeferred)');
+    expect(membership).toContain('const applicationFounderChecksUnavailable = founderChecksBlockPlan(applicationPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable)');
+    expect(membership).toContain('const teacherRequestedForPendingFounder = selectedPlanId === "teacher"');
+    expect(membership).toContain('&& schemaReadiness === "ready"');
+    expect(membership).toContain('if (schemaReadiness !== "ready")');
+    expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
+    expect(membership).toContain('|| pendingFounderChecksUnavailable');
+    expect(membership).toContain('!founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('applicationPlanId === "founder" ? (');
+    expect(membership).toContain('<strong>Teacher Pro</strong>');
+    expect(membership).toContain('{applicationPlanId === "founder" && (');
+
+    const paymentHandler = membership.slice(
+      membership.indexOf("const handleReportPayment"),
+      membership.indexOf("const handleConvertToTeacher"),
+    );
+    expect(paymentHandler).toContain("if (pendingFounderChecksUnavailable)");
+    expect(paymentHandler).not.toContain("if (founderChecksUnavailable)");
+    expect(paymentHandler.indexOf('if (schemaReadiness !== "ready")')).toBeLessThan(
+      paymentHandler.indexOf("if (pendingFounderChecksUnavailable)"),
+    );
+    expect(paymentHandler).toContain('if (latestApplication.planId === "founder")');
+
+    const conversionHandler = membership.slice(
+      membership.indexOf("const handleConvertToTeacher"),
+      membership.indexOf("const handleCopyReference"),
+    );
+    expect(conversionHandler).toContain('if (schemaReadiness !== "ready")');
+    expect(conversionHandler).not.toContain("if (founderChecksUnavailable)");
+    expect(conversionHandler).not.toContain("fetchFounderCapacity");
+  });
+
+  it("never exposes stale pending-payment actions when the application refresh fails", () => {
+    expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
+    expect(membership).toContain('if (applicationsError) {');
+    expect(membership).toContain("ยังตรวจสอบใบสมัครล่าสุดไม่ได้");
+    expect(membership).toContain("เพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว");
+    expect(membership).toContain("membershipDisplayError(result.error");
   });
 
   it("gates every new membership path behind the old-schema readiness marker", () => {
@@ -78,25 +125,116 @@ describe("canonical manual membership flow", () => {
   });
 
   it("keeps membership public, sends auth back safely, and redirects the old payment route", () => {
-    expect(membership).toContain('const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?plan=${applicationPlanId}`)}`');
+    expect(membership).toContain("membershipReturnTarget");
+    expect(membership).toContain("new URLSearchParams({ plan: applicationPlanId, returnTo })");
+    expect(membership).toContain('const signupHref = `/login?mode=signup&next=${encodeURIComponent(`/membership?${membershipReturnQuery.toString()}`)}`');
     expect(membership.match(/href=\{signupHref\}/g)).toHaveLength(2);
     expect(payment).toContain('redirect("/membership#how-to-pay")');
   });
 
-  it("routes all sales CTAs through membership without an insert-and-external-navigation race", () => {
+  it("separates free signup from intentional paid-upgrade CTAs", () => {
     expect(landing).toContain('href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}');
-    expect(landing.match(/href="\/membership"/g)).toHaveLength(3);
-    expect(landing).not.toContain('/login?mode=signup');
+    expect(landing).toContain("initialPublicAuthState(isSupabaseConfigured)");
+    expect(landing).toContain("observePublicAuthState(createClient().auth, setPublicAuthState)");
+    expect(landing.match(/freeAccountAction\.href/g)).toHaveLength(2);
+    expect(landing).not.toContain('href="/membership"');
     expect(memberApp).toContain('href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}');
     expect(landing).not.toContain("LINE_OA_URL");
     expect(memberApp).not.toContain("submitUpgradeRequest");
     expect(memberApp).not.toContain("onClick={() => void handleRequestUpgrade");
+    expect(memberApp).toContain("membershipUpgradeHref(r, `/app?resource=${r.id}`)");
   });
 
   it("preserves founder and teacher selection in membership URLs", () => {
     expect(membership).toContain('useSearchParams()');
-    expect(membership).toContain('requestedPlan === "teacher" || requestedPlan === "founder"');
+    expect(membership).toContain("requestedMembershipPlan(requestedPlan)");
     expect(membership).toContain('nextUrl.searchParams.set("plan", planId)');
+    expect(membership).toContain('searchParams.getAll("returnTo")');
+  });
+
+  it("refreshes live membership access and returns an approved member to the validated resource", () => {
+    expect(membership).toContain("fetchMemberSubscription");
+    expect(membership.match(/fetchEntitlementsResult\(supabase\)/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(membership).toContain("membershipAutoReturnDestination");
+    expect(membership).toContain("router.replace(destination)");
+    expect(membership).toContain("กลับไปเปิดสื่อ");
+    expect(membership).toContain("ไปพื้นที่สมาชิก");
+    expect(memberApp).toContain("fetchEntitlementsResult(supabase)");
+    expect(memberApp).toContain("if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements)");
+    expect(membership).toContain("fetchMembershipReturnResource");
+    expect(membership).toContain("returnResourcePlanIds");
+    expect(membership).toContain("membershipPlanUnlocksResource");
+    expect(membership).toContain("membershipReturnResourceState(returnResourceId, returnResourceRead)");
+    expect(membership).toContain("pendingPlanMismatch");
+    expect(membership).toContain("pendingPaymentBlocked");
+    expect(membership).toContain("ปิดปุ่ม LINE และการแจ้งหลักฐาน");
+  });
+
+  it("does not sell an unrelated plan for Plus-only or Lifetime-only resources", () => {
+    expect(membership).toContain("noSelectablePlanForResource");
+    expect(membership).toContain("membershipResourceHasSelectablePlan(returnResourcePlanIds)");
+    expect(membership).toContain("&& !noSelectablePlanForResource");
+    expect(membership).toContain("ไม่มีแพ็กที่เปิดขายสำหรับสื่อนี้");
+    expect(membership).toContain("ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้");
+    const legacyGuestBranch = membership.indexOf("!userId && noSelectablePlanForResource");
+    const genericGuestBranch = membership.indexOf(") : !userId ? (");
+    expect(legacyGuestBranch).toBeGreaterThan(-1);
+    expect(genericGuestBranch).toBeGreaterThan(legacyGuestBranch);
+    expect(membership).toContain("เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม");
+    expect(membership).toContain("const legacyReturnQuery = new URLSearchParams({ returnTo })");
+    expect(membership).toContain("const signInHref = `/login?next=");
+    expect(membership).toContain("เข้าสู่ระบบตรวจสอบสิทธิ์");
+    expect(membership).toContain('href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"');
+    expect(membership).toContain("ใช้สิทธิ์สมาชิกเดิม");
+    expect(membership).toContain("ตรวจสอบสิทธิ์เดิม");
+    expect(membership).toContain("ตรวจสอบสิทธิ์สมาชิกเดิม");
+    expect(membership).toContain("{!noSelectablePlanForResource && (");
+    expect(membership).toContain("ไม่ได้เปิดรับสมัครด้วยแพ็ก Founder หรือ Teacher Pro");
+    expect(membership).toContain("const showLegacySupportOnly = noSelectablePlanForResource");
+    expect(membership).toContain("&& pendingApplication === null");
+    expect(membership).toContain("{showLegacySupportOnly ? (");
+    expect(membership).toContain("membershipApplicationPlanLabel(application.planId)");
+
+    expect(membership.slice(legacyGuestBranch, genericGuestBranch)).not.toContain("LINE_OA_URL");
+
+    const unlockedAction = membership.indexOf(") : hasUnlockedMembership ? (");
+    const pendingAction = membership.indexOf(") : latestApplication && hasOpenApplication ? (", unlockedAction);
+    const noSelectableAction = membership.indexOf(") : noSelectablePlanForResource ? (", pendingAction);
+    const genericActiveAction = membership.indexOf(") : hasCurrentMembership && !requestedPlanMismatch", noSelectableAction);
+    expect(unlockedAction).toBeGreaterThan(-1);
+    expect(pendingAction).toBeGreaterThan(unlockedAction);
+    expect(noSelectableAction).toBeGreaterThan(pendingAction);
+    expect(genericActiveAction).toBeGreaterThan(noSelectableAction);
+    expect(membership.slice(noSelectableAction, genericActiveAction)).not.toContain("LINE_OA_URL");
+
+    const paymentStart = membership.indexOf('id="membership-payment-title"');
+    const paymentUnlocked = membership.indexOf(") : hasUnlockedMembership ? (", paymentStart);
+    const paymentBlocked = membership.indexOf(") : pendingPaymentBlocked ? (", paymentUnlocked);
+    const paymentPending = membership.indexOf(') : latestApplication?.status === "pending" ? (', paymentBlocked);
+    const paymentGenericActive = membership.indexOf(") : hasCurrentMembership && !requestedPlanMismatch", paymentPending);
+    expect(paymentStart).toBeGreaterThan(-1);
+    expect(paymentUnlocked).toBeGreaterThan(paymentStart);
+    expect(paymentBlocked).toBeGreaterThan(paymentUnlocked);
+    expect(paymentPending).toBeGreaterThan(paymentBlocked);
+    expect(paymentGenericActive).toBeGreaterThan(paymentPending);
+    const legacyPaymentStart = membership.indexOf("{showLegacySupportOnly ? (");
+    expect(membership.slice(legacyPaymentStart, paymentStart)).not.toContain("LINE_OA_URL");
+  });
+
+  it("fails closed on repeat Founder eligibility and warns before irreversible plan changes", () => {
+    expect(membership).toContain("fetchMyFounderHistory");
+    expect(membership).toContain("founderOfferUnavailable");
+    expect(membership).toContain("membershipPlanChangeConfirmation");
+    expect(membership).toContain("founderApplicationConversionConfirmation");
+    expect(membership).toContain("สิทธิ์ Founder 299 บาทใช้ได้เฉพาะปีแรกและครั้งแรกเท่านั้น");
+    expect(membership).toContain("สื่อที่ต้องการรองรับเฉพาะ Founder");
+  });
+
+  it("keeps approved applications as history while only pending work blocks another submission", () => {
+    expect(membership).toContain("pendingMembershipApplication(applications)");
+    expect(membership).toContain("รายการนี้เป็นประวัติที่อนุมัติแล้ว");
+    expect(membership).not.toContain('latestApplication?.status === "pending" || latestApplication?.status === "approved"');
+    expect(membership).toContain("สิทธิ์สมาชิกที่ใช้งานอยู่แล้ว");
   });
 
   it("uses explicit payment confirmation and records the audit fields in admin", () => {

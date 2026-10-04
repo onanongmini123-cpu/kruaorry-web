@@ -10,6 +10,7 @@ import {
   fetchMembershipSchemaReadiness,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
+import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -152,7 +153,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
       gradeLevels: r.grade_levels ?? [],
       accessMode,
       requiredPlanIds: r.required_plan_ids ?? [],
-      requiredPlanNames: r.required_plan_names ?? [],
+      requiredPlanNames: planDisplayNames(r.required_plan_ids ?? [], r.required_plan_names ?? []),
       free: accessMode === "public" || accessMode === "authenticated",
       isNew: r.is_new === true,
       fileSize: r.file_size,
@@ -237,7 +238,7 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
 
   return data.map((p) => ({
     id: p.id,
-    name: p.name,
+    name: planDisplayName(p.id, p.name),
     priceLabel: p.price_label,
     note: p.note,
     benefits: benefitRows
@@ -287,11 +288,16 @@ interface EntitlementRow {
   limit_value: number | null;
 }
 
-export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+export interface EntitlementsResult {
+  entitlements: EntitlementSnapshot;
+  error: boolean;
+}
+
+export async function fetchEntitlementsResult(supabase: SupabaseClient): Promise<EntitlementsResult> {
   const { data, error } = await supabase.rpc("get_my_entitlements");
   if (error) {
     logError("fetchEntitlements failed", error);
-    return EMPTY_ENTITLEMENTS;
+    return { entitlements: EMPTY_ENTITLEMENTS, error: true };
   }
 
   const rows = (data ?? []) as EntitlementRow[];
@@ -299,7 +305,11 @@ export async function fetchEntitlements(supabase: SupabaseClient): Promise<Entit
   const features = Object.fromEntries(
     rows.map((row) => [row.feature_id, { enabled: row.enabled, limit: row.limit_value }]),
   );
-  return { planId, features };
+  return { entitlements: { planId, features }, error: false };
+}
+
+export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+  return (await fetchEntitlementsResult(supabase)).entitlements;
 }
 
 export interface TeacherRequest {
@@ -443,8 +453,70 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
   };
 }
 
-export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
-  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return [];
+export interface UpgradeRequestsResult {
+  applications: UpgradeRequest[];
+  error: boolean;
+}
+
+export interface FounderHistoryResult {
+  hasFounderHistory: boolean;
+  error: boolean;
+}
+
+export interface MembershipReturnResourceResult {
+  requiredPlanIds: string[];
+  error: boolean;
+}
+
+export async function fetchMyFounderHistory(supabase: SupabaseClient): Promise<FounderHistoryResult> {
+  const outcome = await withTimeout(
+    Promise.resolve(supabase.rpc("has_my_founder_history")),
+    "Founder membership history",
+  );
+  if (!outcome.ok) {
+    console.error(`fetchMyFounderHistory failed: ${outcome.reason}`);
+    return { hasFounderHistory: false, error: true };
+  }
+  const { data, error } = outcome.value;
+  if (error || typeof data !== "boolean") {
+    if (error) logError("fetchMyFounderHistory failed", error);
+    return { hasFounderHistory: false, error: true };
+  }
+  return { hasFounderHistory: data, error: false };
+}
+
+export async function fetchMembershipReturnResource(
+  supabase: SupabaseClient,
+  resourceId: string,
+): Promise<MembershipReturnResourceResult> {
+  const outcome = await withTimeout(Promise.resolve(supabase
+    .from("resource_catalog")
+    .select("access_mode, required_plan_ids")
+    .eq("id", resourceId)
+    .maybeSingle()), "membership return resource");
+  if (!outcome.ok) {
+    console.error(`fetchMembershipReturnResource failed: ${outcome.reason}`);
+    return { requiredPlanIds: [], error: true };
+  }
+  const { data, error } = outcome.value;
+  if (error || !data || data.access_mode !== "plans" || !Array.isArray(data.required_plan_ids)) {
+    if (error) logError("fetchMembershipReturnResource failed", error);
+    return { requiredPlanIds: [], error: true };
+  }
+  return {
+    requiredPlanIds: [...new Set(data.required_plan_ids.filter(
+      (planId): planId is string => typeof planId === "string" && planId.trim().length > 0,
+    ).map(
+      (planId) => planId.trim(),
+    ))],
+    error: false,
+  };
+}
+
+export async function fetchUpgradeRequestsResult(supabase: SupabaseClient, userId: string): Promise<UpgradeRequestsResult> {
+  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
+    return { applications: [], error: true };
+  }
 
   const { data, error } = await supabase
     .from("upgrade_requests")
@@ -453,10 +525,17 @@ export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: str
     .order("created_at", { ascending: false });
 
   if (error) logError("fetchUpgradeRequests failed", error);
-  if (error || !data) return [];
-  return (data as UpgradeRequestRow[])
+  if (error || !data) return { applications: [], error: true };
+  return {
+    applications: (data as UpgradeRequestRow[])
     .map(membershipApplicationFromRow)
-    .filter((application): application is UpgradeRequest => application !== null);
+    .filter((application): application is UpgradeRequest => application !== null),
+    error: false,
+  };
+}
+
+export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
+  return (await fetchUpgradeRequestsResult(supabase, userId)).applications;
 }
 
 export async function createMembershipApplication(supabase: SupabaseClient, planId: string): Promise<MembershipApplicationMutationResult> {

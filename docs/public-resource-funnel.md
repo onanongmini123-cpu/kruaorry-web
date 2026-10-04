@@ -29,7 +29,7 @@ Before applying migrations 022–023, confirm `resource_files_entitled_read` is 
 1. In the admin resource editor, create a resource with an original title, description, category, and real cover image. Do not use the starter rows' placeholder links.
 2. For a downloadable sample, upload the actual PDF/DOCX/PPTX/XLSX/ZIP file to the private `resource-files` bucket through the editor and choose `file_download`. For a Google template or web tool, use its verified real HTTPS destination.
 3. Mark it **free** (`is_free = true`) and **published**. Confirm that the public detail appears at `/resources/<id>` and that the homepage shows it under “ลองดูก่อนสมัคร”.
-4. In a clean browser session, open the public detail, choose the signup CTA, confirm the email if required, and verify the browser returns to that exact file's download page or resource detail. Also verify a paid file remains denied to a free account.
+4. In a clean browser session, open the public detail and verify the free-account CTA is shown only for a genuinely free resource. Confirm the email if required and verify the browser returns to that exact resource inside `/app`; downloading or opening is then a separate click that rechecks authorization. A premium card must stay visible but use an explicit upgrade CTA to `/membership`, never the free-signup CTA. Also verify copied premium open/download URLs remain denied to a free account while public and signed-in-free media still work for their intended audiences.
 
 The code path is ready without an initial sample file, but a real end-to-end download cannot be certified until a genuine resource has been published and a test account has completed the live email flow.
 

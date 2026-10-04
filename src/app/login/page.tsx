@@ -3,11 +3,26 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, Eye, EyeOff, CheckCircle2, User } from "lucide-react";
-import { Mascot } from "@/components/Mascot";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { safeAuthNext } from "@/lib/authReturnPath";
+import { LINE_OA_URL } from "@/lib/config";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
+import {
+  buildSignupConfirmationRedirect,
+  canResendSignupConfirmation,
+  createSignupConfirmationResendController,
+  INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE,
+  isPlausibleEmail,
+  PASSWORD_RESET_REQUEST_MESSAGE,
+  resendSignupConfirmation,
+  signupConfirmationFeedback,
+  SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE,
+  SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
+  SIGNUP_PENDING_MESSAGE,
+  thaiAuthErrorMessage,
+} from "@/lib/signupEmailConfirmation";
 
 const POINTS = [
   "สื่อพร้อมสอนภาษาไทย ใช้ได้ทันที ไม่ต้องทำเอง",
@@ -33,6 +48,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = safeAuthNext(searchParams.get("next"));
+  const hasConfirmationError = searchParams.get("error") === "confirmation";
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "signup" ? "signup" : "signin");
   const [fullName, setFullName] = useState("");
@@ -44,10 +60,37 @@ function LoginForm() {
   const [passwordConfirmationError, setPasswordConfirmationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
-    searchParams.get("error") === "confirmation" ? "ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบหรือสมัครใหม่" : null
+    hasConfirmationError ? "ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ กรุณากรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง" : null
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [confirmationHelpOpen, setConfirmationHelpOpen] = useState(hasConfirmationError);
+  const [resendState, setResendState] = useState(INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE);
+  const resendController = useMemo(
+    () => createSignupConfirmationResendController(setResendState),
+    [],
+  );
+  const resendCooldown = resendState.cooldownSeconds;
+  const resendingConfirmation = resendState.resending;
+
+  const applySignupFailureTransition = (failure: unknown) => {
+    const transition = resendController.applySignupFailure(failure);
+    if (transition.presentation === "error") {
+      setError(transition.message);
+      setNotice(null);
+    } else {
+      setError(null);
+      setNotice(transition.message);
+    }
+    setMode(transition.mode);
+    setConfirmationHelpOpen(transition.openConfirmationHelp);
+    if (transition.clearPasswords) {
+      setPassword("");
+      setConfirmPassword("");
+      setShowPassword(false);
+      setShowConfirmPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -57,6 +100,14 @@ function LoginForm() {
       // A temporary auth/network failure must not prevent manual sign-in.
     });
   }, [supabase, router, next]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setTimeout(() => {
+      resendController.elapseSecond();
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendController, resendCooldown]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,21 +129,31 @@ function LoginForm() {
 
     try {
       if (mode === "signup") {
+        const emailRedirectTo = buildSignupConfirmationRedirect(window.location.origin, next);
+        if (!emailRedirectTo) {
+          setError(SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE);
+          return;
+        }
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: { full_name: fullName },
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+            emailRedirectTo,
           },
         });
         if (signUpError) {
-          setError(signUpError.message);
+          // Some provider failures can happen after an unconfirmed account was
+          // created. Never expose that provider detail; offer the same recovery
+          // path whether the account exists or not.
+          applySignupFailureTransition(signUpError);
           return;
         }
         if (!data.session) {
-          setNotice("สมัครสำเร็จ กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตนก่อนเข้าสู่ระบบ");
+          setNotice(SIGNUP_PENDING_MESSAGE);
           setMode("signin");
+          setConfirmationHelpOpen(true);
+          resendController.startCooldown(SIGNUP_CONFIRMATION_COOLDOWN_SECONDS);
           setPassword("");
           setConfirmPassword("");
           setShowPassword(false);
@@ -106,16 +167,55 @@ function LoginForm() {
 
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) {
-        setError(signInError.message === "Invalid login credentials" ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : signInError.message);
+        setError(thaiAuthErrorMessage("signin", signInError));
+        // Keep every failed sign-in on the same recovery surface. Varying the
+        // panel by provider error code would disclose an account's state.
+        setConfirmationHelpOpen(true);
         return;
       }
       router.replace(next);
       router.refresh();
     } catch {
-      setError("เชื่อมต่อระบบสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      if (mode === "signup") {
+        // A disconnected response cannot prove whether Auth created the
+        // account before delivery failed. Use the same privacy-safe recovery
+        // state as a returned provider error and never ask the visitor to
+        // submit the password again.
+        applySignupFailureTransition(null);
+      } else {
+        setError("เชื่อมต่อระบบสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResendConfirmation = async () => {
+    setError(null);
+    setNotice(null);
+    setConfirmationHelpOpen(true);
+    if (!isSupabaseConfigured) {
+      setError("ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
+      return;
+    }
+    if (!isPlausibleEmail(email)) {
+      setError("กรอกอีเมลให้ถูกต้องก่อนส่งอีเมลยืนยัน");
+      return;
+    }
+    const result = await resendController.requestResend(
+      () => resendSignupConfirmation(
+        (credentials) => supabase.auth.resend(credentials),
+        email,
+        window.location.origin,
+        next,
+      ),
+    );
+
+    if (result.outcome === "blocked") return;
+
+    const feedback = signupConfirmationFeedback(result);
+    if (feedback.presentation === "error") setError(feedback.message);
+    else setNotice(feedback.message);
   };
 
   const handleForgotPassword = async () => {
@@ -125,22 +225,20 @@ function LoginForm() {
       setError("ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
       return;
     }
-    if (!email.trim()) {
-      setError("กรอกอีเมลก่อนกดลืมรหัสผ่าน");
+    if (!isPlausibleEmail(email)) {
+      setError("กรอกอีเมลให้ถูกต้องก่อนกดลืมรหัสผ่าน");
       return;
     }
     setResetting(true);
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (resetError) {
-        setError(resetError.message);
-        return;
-      }
-      setNotice("ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่อีเมลแล้ว กรุณาตรวจสอบกล่องจดหมาย");
+      setNotice(PASSWORD_RESET_REQUEST_MESSAGE);
     } catch {
-      setError("ส่งลิงก์ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      // Network/provider outcomes use the same accepted copy so this flow
+      // cannot be used to enumerate accounts or SMTP delivery state.
+      setNotice(PASSWORD_RESET_REQUEST_MESSAGE);
     } finally {
       setResetting(false);
     }
@@ -149,8 +247,7 @@ function LoginForm() {
   return (
     <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "1fr" }} className="kru-login-grid">
       <div className="kru-login-brand" style={{ background: "var(--wash-hero)", padding: "var(--sp-9)", display: "none", flexDirection: "column", justifyContent: "center" }}>
-        <Mascot size={72} />
-        <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-24)", fontWeight: "var(--fw-bold)", marginTop: "var(--sp-5)" }}>KruAorry</div>
+        <BrandLogo href="/" mascotSize={104} layout="stacked" className="kru-login-brand-logo" />
         <h1 style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-36)" }}>
           ครูมีงานเยอะพออยู่แล้ว
           <br />
@@ -168,6 +265,7 @@ function LoginForm() {
 
       <div style={{ padding: "var(--sp-7) var(--sp-5)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: 420, margin: "0 auto" }}>
+          <BrandLogo href="/" mascotSize={64} className="kru-login-form-brand" />
           <h2 style={{ fontSize: "var(--fs-30)" }}>{mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิกครู"}</h2>
           <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
             {mode === "signin" ? "ยังไม่มีบัญชี? " : "มีบัญชีอยู่แล้ว? "}
@@ -182,6 +280,7 @@ function LoginForm() {
                 setShowPassword(false);
                 setShowConfirmPassword(false);
                 setPasswordConfirmationError(null);
+                setConfirmationHelpOpen(false);
               }}
               style={{ color: "var(--purple-600)", fontWeight: "var(--fw-semibold)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
             >
@@ -190,7 +289,7 @@ function LoginForm() {
           </p>
 
           {notice && (
-            <p style={{ fontSize: "var(--fs-14)", color: "var(--status-success-fg)", background: "var(--status-success-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
+            <p role="status" aria-live="polite" style={{ fontSize: "var(--fs-14)", color: "var(--status-success-fg)", background: "var(--status-success-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: "var(--sp-5)" }}>
               {notice}
             </p>
           )}
@@ -258,7 +357,18 @@ function LoginForm() {
               </div>
             )}
             {mode === "signin" && (
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmationHelpOpen(true);
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  style={{ color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                >
+                  ยังไม่ได้ยืนยันอีเมล?
+                </button>
                 <button
                   type="button"
                   onClick={handleForgotPassword}
@@ -273,12 +383,41 @@ function LoginForm() {
               {mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
             </Button>
           </form>
+
+          {confirmationHelpOpen && (
+            <div style={{ marginTop: "var(--sp-5)", padding: "var(--sp-4)", border: "1px solid var(--border-subtle)", borderRadius: "var(--r-md)", background: "var(--surface-brand-wash)" }}>
+              <p style={{ fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>ยังไม่ได้รับอีเมลยืนยัน?</p>
+              <p style={{ margin: "var(--sp-2) 0 var(--sp-4)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                กรอกอีเมลด้านบน แล้วลองส่งใหม่ได้โดยไม่ต้องสมัครซ้ำ
+              </p>
+              <Button
+                type="button"
+                variant="soft"
+                size="sm"
+                block
+                loading={resendingConfirmation}
+                disabled={!isSupabaseConfigured || !canResendSignupConfirmation(resendCooldown, resendingConfirmation)}
+                onClick={handleResendConfirmation}
+              >
+                {resendCooldown > 0 ? `ส่งใหม่ได้ใน ${resendCooldown} วินาที` : "ส่งอีเมลยืนยันอีกครั้ง"}
+              </Button>
+              <p style={{ marginTop: "var(--sp-3)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                หากยังไม่ได้รับอีเมล กรุณาติดต่อทีมงานทาง{" "}
+                <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" style={{ color: "var(--purple-600)", fontWeight: "var(--fw-semibold)" }}>
+                  LINE Official Account
+                </a>
+              </p>
+            </div>
+          )}
         </div>
       </div>
       <style>{`
+        .kru-login-form-brand { margin: 0 auto var(--sp-7); }
+        .kru-login-brand-logo .kru-brand-logo__copy strong { font-size: var(--fs-30); }
         @media (min-width: 900px) {
           .kru-login-grid { grid-template-columns: 1fr 1fr !important; }
           .kru-login-brand { display: flex !important; }
+          .kru-login-form-brand { display: none; }
         }
       `}</style>
     </div>

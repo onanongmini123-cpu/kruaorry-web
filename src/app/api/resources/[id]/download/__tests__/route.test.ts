@@ -52,13 +52,34 @@ afterEach(() => {
 });
 
 describe("GET /api/resources/[id]/download", () => {
-  it("redirects to the signed URL on success, with no-store and no-referrer headers", async () => {
+  it("redirects an entitled paid member to the signed URL, with no-store and no-referrer headers", async () => {
     mockedCreateClient.mockResolvedValue(fakeSupabase({}) as never);
     const response = await GET(resourceRequest(), makeParams(RESOURCE_ID));
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://storage.example/signed?token=abc");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("preserves an explicitly public file for a signed-out visitor when both resolver and Storage authorize it", async () => {
+    mockedCreateClient.mockResolvedValue(fakeSupabase({
+      getUserImpl: async () => ({ data: { user: null } }),
+    }) as never);
+    const response = await GET(resourceRequest(), makeParams(RESOURCE_ID));
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://storage.example/signed?token=abc");
+  });
+
+  it("blocks a copied premium download URL for a signed-in Free member before signing", async () => {
+    const signedUrlImpl = vi.fn(async () => ({ data: { signedUrl: "https://storage.example/should-not-leak" }, error: null }));
+    mockedCreateClient.mockResolvedValue(fakeSupabase({
+      resourceImpl: async () => ({ data: null, error: null }),
+      signedUrlImpl,
+    }) as never);
+    const response = await GET(resourceRequest(), makeParams(RESOURCE_ID));
+    expect(response.status).toBe(404);
+    expect(response.headers.get("location")).toBeNull();
+    expect(signedUrlImpl).not.toHaveBeenCalled();
   });
 
   it("returns a Thai 401 error page when there is no signed-in user", async () => {
