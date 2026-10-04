@@ -9,38 +9,77 @@ const BASE = "https://return-path.invalid";
 const APP_VIEWS = new Set(["home", "library", "favorites", "plans", "requests"]);
 const APP_FILTER_PARAMS = ["resource", "view", "q", "category", "grade"] as const;
 
+export const SIGNUP_DESTINATION = "/app";
+export const FREE_SIGNUP_HREF = "/login?mode=signup&next=%2Fapp";
+export type AuthEntryMode = "signin" | "signup";
+
 function hasOnlyParams(params: URLSearchParams, allowed: readonly string[]): boolean {
   const keys = [...params.keys()];
   return keys.every((key) => allowed.includes(key) && params.getAll(key).length === 1);
 }
 
-export function safeAuthNext(raw: string | null | undefined): string {
+function internalUrl(raw: string | null | undefined): URL | null {
   if (!raw || raw.length > 700 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || CONTROL.test(raw)) {
-    return "/app";
+    return null;
   }
 
   try {
     const url = new URL(raw, BASE);
-    if (url.origin !== BASE || url.hash) return "/app";
+    return url.origin === BASE && !url.hash ? url : null;
+  } catch {
+    return null;
+  }
+}
 
-    if (url.pathname === "/app") {
-      if (!hasOnlyParams(url.searchParams, APP_FILTER_PARAMS)) return "/app";
-      const resource = url.searchParams.get("resource");
-      if (resource !== null && !UUID.test(resource)) return "/app";
-      const view = url.searchParams.get("view");
-      if (view !== null && !APP_VIEWS.has(view)) return "/app";
-      const query = url.searchParams.get("q");
-      if (query !== null && (!query.trim() || query.length > 100 || CONTROL.test(query))) return "/app";
-      const category = url.searchParams.get("category");
-      if (category !== null && (!category.trim() || category.length > 100 || CONTROL.test(category))) return "/app";
-      const grade = url.searchParams.get("grade");
-      if (grade !== null && !isResourceGrade(grade)) return "/app";
-      return url.pathname + url.search;
-    }
+function safeAppPath(url: URL): string | null {
+  if (url.pathname !== "/app" || !hasOnlyParams(url.searchParams, APP_FILTER_PARAMS)) return null;
+  const resource = url.searchParams.get("resource");
+  if (resource !== null && !UUID.test(resource)) return null;
+  const view = url.searchParams.get("view");
+  if (view !== null && !APP_VIEWS.has(view)) return null;
+  const query = url.searchParams.get("q");
+  if (query !== null && (!query.trim() || query.length > 100 || CONTROL.test(query))) return null;
+  const category = url.searchParams.get("category");
+  if (category !== null && (!category.trim() || category.length > 100 || CONTROL.test(category))) return null;
+  const grade = url.searchParams.get("grade");
+  if (grade !== null && !isResourceGrade(grade)) return null;
+  return url.pathname + url.search;
+}
 
-    if (url.pathname === "/membership" && hasOnlyParams(url.searchParams, ["plan"])) {
+function safeResourceDetailPath(url: URL): string | null {
+  const match = /^\/resources\/([^/]+)$/.exec(url.pathname);
+  return match && UUID.test(match[1]) && hasOnlyParams(url.searchParams, [])
+    ? url.pathname
+    : null;
+}
+
+/**
+ * A membership CTA may remember only a member-app state or a public resource
+ * detail. Keeping this narrower than the login allowlist prevents a crafted
+ * `returnTo` from becoming an open redirect (or a loop back into membership).
+ */
+export function safeUpgradeReturnPath(raw: string | null | undefined): string {
+  const url = internalUrl(raw);
+  if (!url) return "/app";
+  return safeAppPath(url) ?? safeResourceDetailPath(url) ?? "/app";
+}
+
+export function safeAuthNext(raw: string | null | undefined): string {
+  const url = internalUrl(raw);
+  if (!url) return "/app";
+
+  const appPath = safeAppPath(url);
+  if (appPath) return appPath;
+
+  const resourcePath = safeResourceDetailPath(url);
+  if (resourcePath) return resourcePath;
+
+  try {
+    if (url.pathname === "/membership" && hasOnlyParams(url.searchParams, ["plan", "returnTo"])) {
       const plan = url.searchParams.get("plan");
       if (plan !== null && plan !== "founder" && plan !== "teacher") return "/app";
+      const returnTo = url.searchParams.get("returnTo");
+      if (returnTo !== null && safeUpgradeReturnPath(returnTo) !== returnTo) return "/app";
       return url.pathname + url.search;
     }
 
@@ -56,4 +95,17 @@ export function safeAuthNext(raw: string | null | undefined): string {
   } catch {
     return "/app";
   }
+}
+
+/**
+ * Signup is intentionally a single-purpose account-creation flow. It never
+ * carries a paid offer, download, or resource deep link through confirmation;
+ * those are selected again from the authenticated app. Sign-in may retain the
+ * small allowlist above because it resumes an action for an existing account.
+ */
+export function authCompletionDestination(
+  mode: AuthEntryMode,
+  rawNext: string | null | undefined,
+): string {
+  return mode === "signup" ? SIGNUP_DESTINATION : safeAuthNext(rawNext);
 }

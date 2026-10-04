@@ -24,6 +24,7 @@ const migrations = [
   "20261001150000_045_public_ar_phonics_quest_resource.sql",
   "20261001165640_046_authenticated_electric_circuit_lab_resource.sql",
   "20261001180000_047_authenticated_ecosystem_guardians_resource.sql",
+  "20261004110000_051_deterministic_profile_avatars.sql",
 ];
 
 const USERS = {
@@ -1439,13 +1440,17 @@ try {
   ));
   assert.equal((await db.query("select status from public.resource_issue_reports where id = $1", [firstReport])).rows[0].status, "resolved");
 
-  // Self-service profile updates cannot alter identity, role, plan, or another
-  // profile. Avatar paths are opaque, private and accepted only when the
-  // corresponding Storage object belongs to the authenticated caller.
-  const avatarPath = "avatars/44444444-4444-4444-8444-444444444444.webp";
+  // Self-service profile updates cannot alter identity, role, plan,
+  // entitlements, or another profile. New avatars use exactly one private
+  // deterministic object owned by the authenticated caller.
+  const avatarPath = `avatars/${USERS.free}/avatar.webp`;
+  const legacyAvatarPath = "avatars/44444444-4444-4444-8444-444444444444.webp";
+  const entitlementRowsBeforeAvatar = (await db.query(
+    "select count(*)::integer as count from public.plan_features",
+  )).rows[0].count;
   await rejectsWith(
     () => asRole("authenticated", USERS.free, () => db.query(
-      "select * from public.update_my_profile('ครูคนใหม่', $1)", [avatarPath],
+      "select * from public.update_my_avatar($1)", [avatarPath],
     )),
     /does not belong/,
   );
@@ -1454,36 +1459,69 @@ try {
     [avatarPath, USERS.free],
   ));
   await asRole("authenticated", USERS.free, () => db.query(
-    "select * from public.update_my_profile('ครูคนใหม่', $1)", [avatarPath],
+    "select * from public.update_my_display_name('ครูคนใหม่')",
   ));
   await asRole("authenticated", USERS.free, () => db.query(
-    "update public.profiles set email = 'spoof@test.invalid', plan = 'teacher', role = 'owner' where id = $1",
-    [USERS.free],
+    "select * from public.update_my_avatar($1)", [avatarPath],
+  ));
+  // The compatibility RPC must ignore the stale avatar argument while still
+  // allowing an older client to save a display name during rollout.
+  await asRole("authenticated", USERS.free, () => db.query(
+    "select * from public.update_my_profile('ครูเวอร์ชันเก่า', $1)", [legacyAvatarPath],
+  ));
+  await rejectsWith(
+    () => asRole("authenticated", USERS.free, () => db.query(
+      "update public.profiles set email = 'spoof@test.invalid', plan = 'teacher' where id = $1",
+      [USERS.free],
+    )),
+    /permission denied/,
+  );
+  // Role and plan are the only direct UPDATE grants retained for existing
+  // admin flows; the trigger pins a member's attempted self-promotion.
+  await asRole("authenticated", USERS.free, () => db.query(
+    "update public.profiles set role = 'owner' where id = $1", [USERS.free],
   ));
   const protectedProfile = await db.query("select email, full_name, role, plan, avatar_path from public.profiles where id = $1", [USERS.free]);
   assert.deepEqual(protectedProfile.rows[0], {
     email: "free@test.invalid",
-    full_name: "ครูคนใหม่",
+    full_name: "ครูเวอร์ชันเก่า",
     role: "member",
     plan: "free",
     avatar_path: avatarPath,
   });
   await asRole("authenticated", USERS.free, () => db.query(
-    "update public.profiles set full_name = 'แก้คนอื่น' where id = $1", [USERS.other],
+    "update public.profiles set role = 'admin' where id = $1", [USERS.other],
   ));
-  assert.equal((await db.query("select full_name from public.profiles where id = $1", [USERS.other])).rows[0].full_name, "Other Teacher");
+  assert.equal((await db.query("select role from public.profiles where id = $1", [USERS.other])).rows[0].role, "member");
+  assert.equal(
+    (await db.query("select count(*)::integer as count from public.plan_features")).rows[0].count,
+    entitlementRowsBeforeAvatar,
+  );
+
+  const otherAvatarPath = `avatars/${USERS.other}/avatar.webp`;
+  await db.query(
+    "insert into storage.objects(bucket_id, name, owner_id) values ('profile-avatars', $1, $2)",
+    [otherAvatarPath, USERS.other],
+  );
   await rejectsWith(
     () => asRole("authenticated", USERS.free, () => db.query(
-      "select * from public.update_my_profile('ครูคนใหม่', $1)", ["avatars/55555555-5555-4555-8555-555555555555.webp"],
+      "select * from public.update_my_avatar($1)", [otherAvatarPath],
     )),
     /does not belong/,
   );
   await rejectsWith(
     () => asRole("authenticated", USERS.free, () => db.query(
       "insert into storage.objects(bucket_id, name, owner_id) values ('profile-avatars', $1, $2)",
-      ["avatars/55555555-5555-4555-8555-555555555555.webp", USERS.other],
+      [legacyAvatarPath, USERS.free],
     )),
     /row-level security policy/,
+  );
+  await asRole("authenticated", USERS.free, () => db.query(
+    "delete from storage.objects where bucket_id = 'profile-avatars' and name = $1", [otherAvatarPath],
+  ));
+  assert.equal(
+    (await db.query("select count(*)::integer as count from storage.objects where name = $1", [otherAvatarPath])).rows[0].count,
+    1,
   );
   const avatarPublicRead = await asRole("anon", null, async () => (
     await db.query("select name from storage.objects where bucket_id = 'profile-avatars'")
@@ -1496,7 +1534,7 @@ try {
   const avatarOtherRead = await asRole("authenticated", USERS.other, async () => (
     await db.query("select name from storage.objects where bucket_id = 'profile-avatars'")
   ).rows);
-  assert.deepEqual(avatarOtherRead, []);
+  assert.deepEqual(avatarOtherRead, [{ name: otherAvatarPath }]);
   const feedAfterProfile = await db.query("select reviewer_name, reviewer_avatar_path from public.resource_review_feed where id = $1", [firstReview]);
   assert.deepEqual(feedAfterProfile.rows[0], { reviewer_name: "สมาชิก KruAorry", reviewer_avatar_path: null });
 

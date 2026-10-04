@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { withTimeout } from "@/lib/asyncTimeout";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import { PUBLIC_RESOURCE_SELECT, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
 import { collectResourcePages } from "./pagination";
@@ -10,6 +11,7 @@ const GUEST_VIEWER: PublicResourceViewer = {
   authenticated: false,
   role: null,
   entitlements: EMPTY_ENTITLEMENTS,
+  pendingPlanIds: [],
 };
 
 type EntitlementRow = {
@@ -86,18 +88,22 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
   try {
     const client = await createClient();
     const auth = await withTimeout(client.auth.getUser(), "public resource viewer auth");
-    const user = auth.ok ? auth.value.data.user : null;
+    const user = auth.ok && !auth.value.error ? auth.value.data.user : null;
     // Supabase anonymous sign-ins have a user id, but are still guests for
     // review/report and member entitlement purposes. Never query a profile or
     // capabilities for that temporary identity.
-    if (!user || user.is_anonymous === true) return GUEST_VIEWER;
+    if (!isPermanentAuthUser(user)) return GUEST_VIEWER;
 
-    const [profileResult, entitlementResult] = await Promise.all([
+    const [profileResult, entitlementResult, pendingResult] = await Promise.all([
       withTimeout(
         Promise.resolve(client.from("profiles").select("role").eq("id", user.id).maybeSingle()),
         "public resource viewer profile",
       ),
       withTimeout(Promise.resolve(client.rpc("get_my_entitlements")), "public resource viewer entitlements"),
+      withTimeout(
+        Promise.resolve(client.from("upgrade_requests").select("plan_id").eq("user_id", user.id).eq("status", "pending").limit(5)),
+        "public resource viewer pending upgrade",
+      ),
     ]);
 
     const roleValue = profileResult.ok && !profileResult.value.error ? profileResult.value.data?.role : null;
@@ -105,8 +111,13 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
     const entitlements = entitlementResult.ok && !entitlementResult.value.error
       ? toEntitlements(entitlementResult.value.data)
       : EMPTY_ENTITLEMENTS;
+    const pendingPlanIds = pendingResult.ok && !pendingResult.value.error && Array.isArray(pendingResult.value.data)
+      ? [...new Set(pendingResult.value.data
+          .map((row) => row && typeof row === "object" ? (row as { plan_id?: unknown }).plan_id : null)
+          .filter((planId): planId is string => typeof planId === "string" && planId.length > 0))]
+      : [];
 
-    return { authenticated: true, role, entitlements };
+    return { authenticated: true, role, entitlements, pendingPlanIds };
   } catch {
     // Fail closed: a temporary session lookup failure must never turn into
     // premium access or reveal a protected destination.

@@ -4,12 +4,16 @@ import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
-import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
+import { type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
 import {
+  fetchFounderFirstYearReadiness,
+  fetchMembershipLineSlipWorkflowReadiness,
   fetchMembershipSchemaReadiness,
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
+import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -152,7 +156,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
       gradeLevels: r.grade_levels ?? [],
       accessMode,
       requiredPlanIds: r.required_plan_ids ?? [],
-      requiredPlanNames: r.required_plan_names ?? [],
+      requiredPlanNames: planDisplayNames(r.required_plan_ids ?? [], r.required_plan_names ?? []),
       free: accessMode === "public" || accessMode === "authenticated",
       isNew: r.is_new === true,
       fileSize: r.file_size,
@@ -237,7 +241,7 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
 
   return data.map((p) => ({
     id: p.id,
-    name: p.name,
+    name: planDisplayName(p.id, p.name),
     priceLabel: p.price_label,
     note: p.note,
     benefits: benefitRows
@@ -287,11 +291,24 @@ interface EntitlementRow {
   limit_value: number | null;
 }
 
-export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
-  const { data, error } = await supabase.rpc("get_my_entitlements");
+export type EntitlementsResult =
+  | { entitlements: EntitlementSnapshot; error: false }
+  | { entitlements: null; error: true };
+
+export async function fetchEntitlementsResult(supabase: SupabaseClient): Promise<EntitlementsResult> {
+  const outcome = await withTimeout(
+    Promise.resolve().then(() => supabase.rpc("get_my_entitlements")),
+    "member entitlements",
+  );
+  if (!outcome.ok) {
+    console.error(`fetchEntitlements failed: ${outcome.reason}`);
+    return { entitlements: null, error: true };
+  }
+
+  const { data, error } = outcome.value;
   if (error) {
     logError("fetchEntitlements failed", error);
-    return EMPTY_ENTITLEMENTS;
+    return { entitlements: null, error: true };
   }
 
   const rows = (data ?? []) as EntitlementRow[];
@@ -299,7 +316,11 @@ export async function fetchEntitlements(supabase: SupabaseClient): Promise<Entit
   const features = Object.fromEntries(
     rows.map((row) => [row.feature_id, { enabled: row.enabled, limit: row.limit_value }]),
   );
-  return { planId, features };
+  return { entitlements: { planId, features }, error: false };
+}
+
+export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot | null> {
+  return (await fetchEntitlementsResult(supabase)).entitlements;
 }
 
 export interface TeacherRequest {
@@ -374,6 +395,7 @@ export interface UpgradeRequest {
   status: "pending" | "approved" | "declined";
   quotedAmountThb: number;
   paymentReportedAt: string | null;
+  lineSlipReceivedAt: string | null;
   paymentPaidAt: string | null;
   paymentConfirmedAt: string | null;
   paymentConfirmedAmountThb: number | null;
@@ -389,6 +411,7 @@ interface UpgradeRequestRow {
   status: "pending" | "approved" | "declined";
   quoted_amount_thb: number;
   payment_reported_at: string | null;
+  line_slip_received_at?: string | null;
   payment_paid_at: string | null;
   payment_confirmed_at: string | null;
   payment_confirmed_amount_thb: number | null;
@@ -404,6 +427,7 @@ interface CreatedMembershipApplicationRow {
   status: "pending" | "approved" | "declined";
   quoted_amount_thb: number;
   payment_reported_at: string | null;
+  line_slip_received_at?: string | null;
   created_at: string;
 }
 
@@ -432,6 +456,7 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
     status: row.status,
     quotedAmountThb,
     paymentReportedAt: persisted.payment_reported_at ?? null,
+    lineSlipReceivedAt: persisted.line_slip_received_at ?? null,
     paymentPaidAt: persisted.payment_paid_at ?? null,
     paymentConfirmedAt: persisted.payment_confirmed_at ?? null,
     paymentConfirmedAmountThb: persisted.payment_confirmed_amount_thb === null || persisted.payment_confirmed_amount_thb === undefined
@@ -443,20 +468,100 @@ function membershipApplicationFromRow(row: CreatedMembershipApplicationRow | Upg
   };
 }
 
-export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
-  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") return [];
+export interface UpgradeRequestsResult {
+  applications: UpgradeRequest[];
+  error: boolean;
+}
 
-  const { data, error } = await supabase
-    .from("upgrade_requests")
-    .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at")
+export interface FounderHistoryResult {
+  hasFounderHistory: boolean;
+  error: boolean;
+}
+
+export interface MembershipReturnResourceResult {
+  requiredPlanIds: string[];
+  error: boolean;
+}
+
+export async function fetchMyFounderHistory(supabase: SupabaseClient): Promise<FounderHistoryResult> {
+  if (await fetchFounderFirstYearReadiness(supabase) !== "ready") {
+    return { hasFounderHistory: false, error: true };
+  }
+  const outcome = await withTimeout(
+    Promise.resolve(supabase.rpc("has_my_founder_history")),
+    "Founder membership history",
+  );
+  if (!outcome.ok) {
+    console.error(`fetchMyFounderHistory failed: ${outcome.reason}`);
+    return { hasFounderHistory: false, error: true };
+  }
+  const { data, error } = outcome.value;
+  if (error || typeof data !== "boolean") {
+    if (error) logError("fetchMyFounderHistory failed", error);
+    return { hasFounderHistory: false, error: true };
+  }
+  return { hasFounderHistory: data, error: false };
+}
+
+export async function fetchMembershipReturnResource(
+  supabase: SupabaseClient,
+  resourceId: string,
+): Promise<MembershipReturnResourceResult> {
+  const outcome = await withTimeout(Promise.resolve(supabase
+    .from("resource_catalog")
+    .select("access_mode, required_plan_ids")
+    .eq("id", resourceId)
+    .maybeSingle()), "membership return resource");
+  if (!outcome.ok) {
+    console.error(`fetchMembershipReturnResource failed: ${outcome.reason}`);
+    return { requiredPlanIds: [], error: true };
+  }
+  const { data, error } = outcome.value;
+  if (error || !data || data.access_mode !== "plans" || !Array.isArray(data.required_plan_ids)) {
+    if (error) logError("fetchMembershipReturnResource failed", error);
+    return { requiredPlanIds: [], error: true };
+  }
+  return {
+    requiredPlanIds: [...new Set(data.required_plan_ids.filter(
+      (planId): planId is string => typeof planId === "string" && planId.trim().length > 0,
+    ).map(
+      (planId) => planId.trim(),
+    ))],
+    error: false,
+  };
+}
+
+export async function fetchUpgradeRequestsResult(supabase: SupabaseClient, userId: string): Promise<UpgradeRequestsResult> {
+  const [schemaReadiness, lineSlipReadiness] = await Promise.all([
+    fetchMembershipSchemaReadiness(supabase),
+    fetchMembershipLineSlipWorkflowReadiness(supabase),
+  ]);
+  if (schemaReadiness !== "ready") {
+    return { applications: [], error: true };
+  }
+
+  const requestQuery = lineSlipReadiness === "ready"
+    ? supabase.from("upgrade_requests")
+      .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, line_slip_received_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at")
+    : supabase.from("upgrade_requests")
+      .select("id, reference_code, plan_id, status, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at");
+
+  const { data, error } = await requestQuery
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) logError("fetchUpgradeRequests failed", error);
-  if (error || !data) return [];
-  return (data as UpgradeRequestRow[])
+  if (error || !data) return { applications: [], error: true };
+  return {
+    applications: (data as UpgradeRequestRow[])
     .map(membershipApplicationFromRow)
-    .filter((application): application is UpgradeRequest => application !== null);
+    .filter((application): application is UpgradeRequest => application !== null),
+    error: false,
+  };
+}
+
+export async function fetchUpgradeRequests(supabase: SupabaseClient, userId: string): Promise<UpgradeRequest[]> {
+  return (await fetchUpgradeRequestsResult(supabase, userId)).applications;
 }
 
 export async function createMembershipApplication(supabase: SupabaseClient, planId: string): Promise<MembershipApplicationMutationResult> {
@@ -483,12 +588,14 @@ export async function createMembershipApplication(supabase: SupabaseClient, plan
 
 async function mutateMembershipApplication(
   supabase: SupabaseClient,
-  rpcName: "report_membership_payment" | "convert_founder_application_to_teacher",
+  rpcName: "record_membership_line_slip_received" | "convert_founder_application_to_teacher",
   requestId: string,
   operationLabel: string,
+  readiness: (client: SupabaseClient) => Promise<"ready" | "unavailable"> = fetchMembershipSchemaReadiness,
+  unavailableMessage = MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 ): Promise<MembershipApplicationMutationResult> {
-  if (await fetchMembershipSchemaReadiness(supabase) !== "ready") {
-    return { application: null, error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE };
+  if (await readiness(supabase) !== "ready") {
+    return { application: null, error: unavailableMessage };
   }
 
   const outcome = await withTimeout(Promise.resolve(supabase.rpc(rpcName, {
@@ -508,11 +615,18 @@ async function mutateMembershipApplication(
     : { application: null, error: "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา กรุณาลองอีกครั้ง" };
 }
 
-export async function reportMembershipPayment(
+export async function recordMembershipLineSlipReceived(
   supabase: SupabaseClient,
   requestId: string,
 ): Promise<MembershipApplicationMutationResult> {
-  return mutateMembershipApplication(supabase, "report_membership_payment", requestId, "report membership payment");
+  return mutateMembershipApplication(
+    supabase,
+    "record_membership_line_slip_received",
+    requestId,
+    "record membership LINE slip receipt",
+    fetchMembershipLineSlipWorkflowReadiness,
+    MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
+  );
 }
 
 export async function convertFounderApplicationToTeacher(
@@ -709,17 +823,20 @@ export async function submitResourceIssue(
   return null;
 }
 
-export async function updateMyProfile(
+export async function updateMyDisplayName(
   supabase: SupabaseClient,
   fullName: string,
-  avatarPath: string | null,
 ): Promise<string | null> {
-  const { error } = await supabase.rpc("update_my_profile", {
+  const outcome = await withTimeout(Promise.resolve().then(() => supabase.rpc("update_my_display_name", {
     p_full_name: fullName.trim(),
-    p_avatar_path: avatarPath,
-  });
+  })), "profile display-name update");
+  if (!outcome.ok) {
+    console.error(`updateMyDisplayName failed: ${outcome.reason}`);
+    return "บันทึกชื่อที่แสดงไม่สำเร็จ กรุณาลองอีกครั้ง";
+  }
+  const { error } = outcome.value;
   if (error) {
-    logError("updateMyProfile failed", error);
+    logError("updateMyDisplayName failed", error);
     return error.message;
   }
   return null;

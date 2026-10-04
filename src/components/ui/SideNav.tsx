@@ -7,6 +7,7 @@ export interface SideNavItem {
   key: string;
   label: string;
   icon: LucideIcon;
+  badge?: number | null;
 }
 
 export interface SideNavGroup {
@@ -18,11 +19,12 @@ interface SideNavProps {
   groups: SideNavGroup[];
   value: string;
   onChange: (key: string) => void;
+  ariaLabel?: string;
 }
 
-export function SideNav({ groups, value, onChange }: SideNavProps) {
+export function SideNav({ groups, value, onChange, ariaLabel = "เมนูหลัก" }: SideNavProps) {
   return (
-    <nav style={{ display: "flex", flexDirection: "column", gap: "var(--sp-6)" }}>
+    <nav aria-label={ariaLabel} style={{ display: "flex", flexDirection: "column", gap: "var(--sp-6)" }}>
       {groups.map((group, gi) => (
         <div key={group.label || gi}>
           {group.label && (
@@ -44,15 +46,28 @@ export function SideNav({ groups, value, onChange }: SideNavProps) {
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = item.key === value;
+              const showBadge = item.badge === null || (typeof item.badge === "number" && item.badge > 0);
+              const badgeLabel = item.badge === null
+                ? `${item.label} ยังตรวจจำนวนรายการที่ต้องดำเนินการไม่ได้`
+                : showBadge
+                  ? `${item.label} มี ${item.badge?.toLocaleString("th-TH")} รายการที่ต้องดำเนินการ`
+                  : undefined;
               return (
                 <button
                   key={item.key}
                   type="button"
                   onClick={() => onChange(item.key)}
                   className={`kru-sidenav__item ${active ? "kru-sidenav__item--active" : ""}`}
+                  aria-label={badgeLabel}
+                  aria-current={active ? "page" : undefined}
                 >
-                  <Icon size={20} strokeWidth={1.75} />
+                  <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
                   <span>{item.label}</span>
+                  {showBadge && (
+                    <span className="kru-sidenav__badge" aria-hidden="true">
+                      {item.badge === null ? "—" : item.badge! > 99 ? "99+" : item.badge!.toLocaleString("th-TH")}
+                    </span>
+                  )}
                 </button>
               );
             })}

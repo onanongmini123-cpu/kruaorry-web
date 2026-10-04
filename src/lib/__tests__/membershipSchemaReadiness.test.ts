@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
+  fetchFounderFirstYearReadiness,
+  fetchMembershipLineSlipWorkflowReadiness,
   fetchMembershipSchemaReadiness,
+  FOUNDER_FIRST_YEAR_READINESS_MARKER,
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER,
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
 } from "../membershipSchemaReadiness";
 
@@ -29,6 +33,30 @@ describe("membership schema readiness", () => {
     await expect(fetchMembershipSchemaReadiness(client)).resolves.toBe("ready");
     expect(from).toHaveBeenCalledWith("features");
     expect(from).not.toHaveBeenCalledWith("upgrade_requests");
+  });
+
+  it("gates migration 050 independently without changing the 048 membership marker", async () => {
+    const lineSlip = fakeReadinessClient({
+      data: { id: MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER },
+      error: null,
+    });
+
+    await expect(fetchMembershipLineSlipWorkflowReadiness(lineSlip.client)).resolves.toBe("ready");
+    await expect(fetchMembershipSchemaReadiness(lineSlip.client)).resolves.toBe("unavailable");
+    expect(MEMBERSHIP_SCHEMA_READINESS_MARKER).toBe("system.membership_payment_confirmation_v1_ready");
+    expect(lineSlip.from).toHaveBeenCalledWith("features");
+  });
+
+  it("gates migration 049 independently before calling Founder-history RPCs", async () => {
+    const founderHistory = fakeReadinessClient({
+      data: { id: FOUNDER_FIRST_YEAR_READINESS_MARKER },
+      error: null,
+    });
+
+    await expect(fetchFounderFirstYearReadiness(founderHistory.client)).resolves.toBe("ready");
+    await expect(fetchMembershipSchemaReadiness(founderHistory.client)).resolves.toBe("unavailable");
+    expect(FOUNDER_FIRST_YEAR_READINESS_MARKER).toBe("system.founder_first_year_once_v1_ready");
+    expect(founderHistory.from).toHaveBeenCalledWith("features");
   });
 
   it("fails closed when the marker is absent or unreadable", async () => {

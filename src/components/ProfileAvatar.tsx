@@ -9,7 +9,9 @@ import { useEffect, useState, type CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   avatarSignedUrl,
-  PROFILE_AVATAR_SIGNED_URL_REFRESH_MS,
+  avatarUrlRefreshDelay,
+  cachedAvatarUrl,
+  subscribeAvatarCache,
 } from "@/lib/profileAvatar";
 
 type Props = {
@@ -22,8 +24,18 @@ type Props = {
 
 export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: Props) {
   const [signedAvatar, setSignedAvatar] = useState<{ path: string; url: string } | null>(null);
-  const url = avatarPath && signedAvatar?.path === avatarPath ? signedAvatar.url : null;
+  const [cacheRevision, setCacheRevision] = useState(0);
+  const url = avatarPath
+    ? cachedAvatarUrl(supabase, avatarPath) ?? (signedAvatar?.path === avatarPath ? signedAvatar.url : null)
+    : null;
   const initials = (name.trim() || "ค").slice(0, 2).toLocaleUpperCase("th");
+
+  useEffect(() => {
+    if (!avatarPath) return;
+    return subscribeAvatarCache(supabase, avatarPath, () => {
+      setCacheRevision((current) => current + 1);
+    });
+  }, [avatarPath, supabase]);
 
   useEffect(() => {
     if (!avatarPath) return;
@@ -37,7 +49,7 @@ export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: 
       } catch {
         if (active) setSignedAvatar(null);
       }
-      if (active) refreshTimer = setTimeout(refresh, PROFILE_AVATAR_SIGNED_URL_REFRESH_MS);
+      if (active) refreshTimer = setTimeout(refresh, avatarUrlRefreshDelay(supabase, avatarPath));
     };
 
     void refresh();
@@ -45,7 +57,7 @@ export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: 
       active = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [avatarPath, supabase]);
+  }, [avatarPath, cacheRevision, supabase]);
 
   return (
     <span

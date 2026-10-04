@@ -511,6 +511,45 @@ img {
   border-radius: var(--r-card);
 }
 
+/* -------------------------------------------------------------- Brand logo */
+.kru-brand-logo {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  border-radius: var(--r-lg);
+  color: var(--text-strong);
+  text-decoration: none;
+}
+.kru-brand-logo:hover {
+  color: var(--purple-700);
+  text-decoration: none;
+}
+.kru-brand-logo:focus-visible {
+  outline: 0;
+  box-shadow: var(--ring-focus);
+}
+.kru-brand-logo--stacked {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.kru-brand-logo__copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  line-height: 1.2;
+}
+.kru-brand-logo__copy strong {
+  font-family: var(--font-display);
+  font-size: var(--fs-24);
+  font-weight: var(--fw-bold);
+}
+.kru-brand-logo__copy small {
+  color: var(--text-muted);
+  font-size: var(--fs-13);
+}
+
 /* ---------------------------------------------------------------- SideNav */
 .kru-sidenav__item {
   display: flex;
@@ -535,6 +574,25 @@ img {
   background: var(--brand-soft);
   color: var(--text-link);
   font-weight: var(--fw-semibold);
+}
+.kru-sidenav__badge {
+  min-width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+}
+.kru-sidenav__item--active .kru-sidenav__badge {
+  background: var(--purple-700);
+  color: var(--white);
 }
 
 /* ------------------------------------------------------------------- Tabs */

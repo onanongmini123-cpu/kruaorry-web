@@ -270,7 +270,9 @@ or protected catalogue metadata conflicts. The Site and cover were verified,
 the dry-run named only this migration, and it was applied on 2026-10-01; a
 post-apply ledger check confirmed local and remote version `20261001180000`.
 
-Migration `20261001190000_048_founder_payment_confirmation.sql` is **pending**.
+Migration `20261001190000_048_founder_payment_confirmation.sql` is **applied
+and recorded** on the live project. Migrations `049`, `050`, and `051` below
+remain pending and must be checked against the live ledger before rollout.
 It makes 299 THB a first-year Founder offer for only the first 100 payments
 confirmed by an admin, sets Founder and Teacher renewal to 599 THB/year, and
 adds idempotent application, activation and renewal RPCs. Pending applications
@@ -282,14 +284,16 @@ consumed after expiry, cancellation or account deletion. The migration also
 adds an admin-readable, browser-append-only payment-confirmation audit
 containing reference metadata only, never a slip.
 
-Members first call an authenticated idempotent reporting RPC. Its
+Migration 048 originally lets members call an authenticated idempotent
+reporting RPC. Its
 `payment_reported_at` marker separates awaiting-payment from awaiting-review
 without granting access or reserving a Founder place. A retry returns the
 original marker even if capacity filled after that first report. Once Founder
 is full, a new report or admin confirmation for a pending Founder quote is
 blocked; the request can only proceed through the explicit conversion RPC,
 which preserves its reference, requotes canonical Teacher at 599 THB and clears
-any report made against the old quote.
+any report made against the old quote. Migration 050 below supersedes the
+member-facing reporting step while retaining this function for schema history.
 
 Migration 048 contains one narrowly scoped, fail-closed reconciliation for the
 two owner test applications confirmed by the production read-only audit. It
@@ -360,6 +364,69 @@ list after the rehearsal and again after any authorized production apply.
 
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
+
+Migration `20261003120000_049_founder_first_year_once.sql` is **pending** and
+must run after `048`. It exposes only the signed-in member's boolean Founder
+history and rejects any new pending Founder application when that member is
+already present in the permanent Founder ledger. The trigger takes the same
+Founder-allocation advisory lock as payment confirmation before reading that
+ledger, so a direct pending write cannot race a first grant. It does not rewrite
+existing applications, subscriptions, payments, or ledger rows; Founder renewal
+at the regular 599 THB/year price continues through the existing renewal RPC.
+Its final readiness marker lets staggered clients avoid calling the new history
+RPC until the migration has completed.
+
+Migration `20261004100000_050_admin_line_slip_workflow.sql` is **pending** and
+must run after `049`. It removes the member-facing execution grant from the old
+self-report RPC and adds the admin-only, idempotent
+`record_membership_line_slip_received(uuid)` RPC. For rollout compatibility the
+RPC writes distinct `line_slip_received_at` and `line_slip_received_by`
+provenance. It preserves any legacy, member-self-attested
+`payment_reported_at`; when that field is empty, the RPC fills it only so old
+readers keep working. A legacy timestamp alone never enables the new admin
+confirmation UI. Recording receipt never activates a plan or reserves/consumes
+a Founder place. A transition trigger clears receipt provenance whenever the
+application plan or quote changes, and rejects a new payment confirmation until
+an admin receipt exists. The existing confirmation transaction continues to
+serialize the permanent 1–100 Founder allocation, validate the quoted amount,
+write immutable payment/resolution audits, and safely return the original
+result for an identical idempotency-key retry. The guard applies only to a new
+confirmation transition, so previously completed payments and their retries
+remain compatible. The migration asserts that 049's permanent-history function
+and trigger still exist, changes no production row, and publishes the separate
+`system.membership_line_slip_workflow_v1_ready` marker only after its privilege
+checks pass. Clients continue to use 048's marker for the broader membership
+page. Admin and member readers use legacy selects until 050's separate marker
+is present, so a staggered rollout does not disable application creation or
+read-only member statuses.
+
+Migration `20261004110000_051_deterministic_profile_avatars.sql` is **pending**
+and must run after `050`. It keeps the avatar bucket private and WebP-only with
+the existing 5 MB object limit, but replaces unbounded random writes with the
+single exact key `avatars/<auth.uid()>/avatar.webp`. Existing random-key
+avatars remain readable and owner-deletable until the next successful edit;
+they cannot be newly uploaded or reattached. Separate self-targeting
+`update_my_display_name(text)` and `update_my_avatar(text)` RPCs prevent a name
+save from restoring a stale avatar. The old two-argument RPC remains only as a
+rollout compatibility wrapper: it saves the name and ignores its avatar
+argument. Table-wide profile UPDATE is revoked from browser roles; only the
+existing trigger-guarded admin `role` and `plan` columns remain directly
+updatable. Migration postconditions verify the bucket, path constraint,
+exact-key policies, RPC grants, column grants, and privilege trigger.
+
+Roll out `051` before the matching frontend and deploy that frontend promptly:
+the old frontend can still save names during this interval, but its random-key
+avatar upload fails closed; the new frontend must not be deployed first because
+the pre-051 policy rejects deterministic keys. The browser accepts only JPEG,
+PNG, or WebP files up to 5 MB, crops and re-encodes them to WebP, then upserts
+the fixed key before attaching it through the avatar-only RPC. A lost RPC
+response is reconciled by reading the caller's profile. Removal clears the
+profile reference but deliberately retains the fixed object, because Storage
+deletion cannot be atomic with a concurrent replacement; this is bounded to
+one object per user. Legacy deletion is best-effort after the database commit.
+Storage validates declared MIME, size, ownership, and exact key, but does not
+inspect file magic bytes; stronger content verification would require a
+trusted server-side processing boundary.
 
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025

@@ -1,3 +1,5 @@
+import { isMembershipRenewalDue } from "@/lib/membershipRenewal";
+
 export interface AdminSubscription {
   id: string;
   user_id: string;
@@ -29,7 +31,7 @@ const TEST_APPLICATION_CLEANUP_REASONS = new Set([
 export function adminMembershipApplicationStatusLabel(
   status: "pending" | "approved" | "declined",
   resolutionReasonCode: string | null,
-  paymentReportedAt: string | null,
+  lineSlipReceivedAt: string | null,
 ): string {
   if (status === "approved") return "อนุมัติแล้ว";
   if (status === "declined") {
@@ -37,7 +39,7 @@ export function adminMembershipApplicationStatusLabel(
       ? "ยกเลิกรายการทดสอบ"
       : "ปฏิเสธแล้ว";
   }
-  return paymentReportedAt ? "แจ้งหลักฐานแล้ว · รอตรวจสอบ" : "รอแจ้งชำระ";
+  return lineSlipReceivedAt ? "รับสลิปทาง LINE แล้ว · รอตรวจยอด" : "รอรับสลิปทาง LINE";
 }
 
 const STATUS_PRIORITY: Record<AdminSubscription["status"], number> = {
@@ -87,15 +89,13 @@ export function effectiveMemberPlan(subscription: AdminSubscription | null, now 
   return subscription.plan_id;
 }
 
-export function canRenewMember(subscription: AdminSubscription | null): boolean {
+export function canRenewMember(subscription: AdminSubscription | null, now = Date.now()): boolean {
   if (!subscription || !["active", "past_due", "expired"].includes(subscription.status)) return false;
   if (subscription.source === "legacy" || subscription.billing_interval !== "year" || !subscription.current_period_end) return false;
-  const end = Date.parse(subscription.current_period_end);
-  if (!Number.isFinite(end)) return false;
   // Founder is a first-year acquisition promotion, not a perpetual price
   // lock. It remains renewable at 599 after the first period and after a late
   // payment, just like another current annual plan.
-  return true;
+  return isMembershipRenewalDue(subscription.status, subscription.current_period_end, now);
 }
 
 export function memberPlanChangeConfirmation(

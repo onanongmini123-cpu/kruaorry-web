@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { safeAuthNext } from "@/lib/authReturnPath";
+import { SIGNUP_DESTINATION } from "@/lib/authReturnPath";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "no-store",
@@ -13,9 +14,8 @@ const PRIVATE_HEADERS = {
 // the download API. Never put an auth token into the post-login destination.
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const next = safeAuthNext(url.searchParams.get("next"));
   const failure = new URL("/login", url.origin);
-  failure.searchParams.set("next", next);
+  failure.searchParams.set("next", SIGNUP_DESTINATION);
   failure.searchParams.set("error", "confirmation");
 
   const code = url.searchParams.get("code");
@@ -32,7 +32,9 @@ export async function GET(request: Request) {
         code,
         flowId ? { flowId } : undefined,
       );
-      if (error || !data.user) return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      if (error || !isPermanentAuthUser(data.user)) {
+        return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      }
     } else {
       // Only the signup confirmation template's email token is accepted.
       // Recovery/invite tokens have their own routes and must not be used as
@@ -41,10 +43,12 @@ export async function GET(request: Request) {
         return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
       }
       const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "email" });
-      if (error || !data.user) return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      if (error || !isPermanentAuthUser(data.user)) {
+        return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      }
     }
 
-    return NextResponse.redirect(new URL(next, url.origin), { headers: PRIVATE_HEADERS });
+    return NextResponse.redirect(new URL(SIGNUP_DESTINATION, url.origin), { headers: PRIVATE_HEADERS });
   } catch {
     // Never reflect provider errors or single-use codes into the URL or page.
     return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });

@@ -21,8 +21,8 @@ describe("admin membership application status", () => {
 
   it("preserves approved and pending workflow labels", () => {
     expect(adminMembershipApplicationStatusLabel("approved", "payment_confirmed", null)).toBe("อนุมัติแล้ว");
-    expect(adminMembershipApplicationStatusLabel("pending", null, null)).toBe("รอแจ้งชำระ");
-    expect(adminMembershipApplicationStatusLabel("pending", null, "2026-10-01T00:00:00Z")).toBe("แจ้งหลักฐานแล้ว · รอตรวจสอบ");
+    expect(adminMembershipApplicationStatusLabel("pending", null, null)).toBe("รอรับสลิปทาง LINE");
+    expect(adminMembershipApplicationStatusLabel("pending", null, "2026-10-01T00:00:00Z")).toBe("รับสลิปทาง LINE แล้ว · รอตรวจยอด");
   });
 });
 
@@ -93,19 +93,25 @@ describe("admin membership display", () => {
     expect(canRenewMember(legacy)).toBe(false);
   });
 
+  it("offers active renewal at seven days, but not at eight days", () => {
+    expect(canRenewMember(member({ current_period_end: "2026-09-26T00:00:00.000Z" }), now)).toBe(false);
+    expect(canRenewMember(member({ current_period_end: "2026-09-25T00:00:00.000Z" }), now)).toBe(true);
+    expect(canRenewMember(member({ current_period_end: "2026-09-18T00:00:00.000Z" }), now)).toBe(true);
+  });
+
   it("allows late annual renewals, including Founder at its regular renewal price", () => {
-    expect(canRenewMember(member({ current_period_end: "2026-09-17T00:00:00.000Z" }))).toBe(true);
-    const founder = member({ plan_id: "founder", founder_status: "active", founder_price_lock: true });
-    expect(canRenewMember(founder)).toBe(true);
-    expect(canRenewMember({ ...founder, current_period_end: "2026-09-17T00:00:00.000Z" })).toBe(true);
-    expect(canRenewMember({ ...founder, founder_price_lock: false })).toBe(true);
-    expect(canRenewMember({ ...founder, status: "expired", founder_status: "expired", founder_price_lock: false })).toBe(true);
+    expect(canRenewMember(member({ status: "past_due" }), now)).toBe(true);
+    const founder = member({ plan_id: "founder", founder_status: "active", founder_price_lock: true, current_period_end: "2026-09-25T00:00:00.000Z" });
+    expect(canRenewMember(founder, now)).toBe(true);
+    expect(canRenewMember({ ...founder, current_period_end: "2026-09-17T00:00:00.000Z" }, now)).toBe(true);
+    expect(canRenewMember({ ...founder, founder_price_lock: false }, now)).toBe(true);
+    expect(canRenewMember({ ...founder, status: "expired", founder_status: "expired", founder_price_lock: false }, now)).toBe(true);
   });
 
   it("blocks cancelled and revoked subscriptions while displaying expired access as Free", () => {
     for (const status of ["cancelled", "revoked"] as const) {
       expect(effectiveMemberPlan(member({ status }), now)).toBe("free");
-      expect(canRenewMember(member({ status }))).toBe(false);
+      expect(canRenewMember(member({ status }), now)).toBe(false);
     }
     expect(effectiveMemberPlan(member({ status: "expired" }), now)).toBe("free");
   });

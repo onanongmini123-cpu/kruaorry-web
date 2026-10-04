@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchFounderCapacity, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, reportMembershipPayment, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, recordMembershipLineSlipReceived, setResourceSaved } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER,
+  MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "../membershipSchemaReadiness";
@@ -17,9 +19,12 @@ function fakeSupabase(createSignedUrl: (path: string, expiresIn: number, options
   } as unknown as SupabaseClient;
 }
 
-function readinessFrom(ready = true): ReturnType<typeof vi.fn> {
+function readinessFrom(
+  ready = true,
+  marker = MEMBERSHIP_SCHEMA_READINESS_MARKER,
+): ReturnType<typeof vi.fn> {
   const maybeSingle = vi.fn().mockResolvedValue({
-    data: ready ? { id: MEMBERSHIP_SCHEMA_READINESS_MARKER } : null,
+    data: ready ? { id: marker } : null,
     error: null,
   });
   const eq = vi.fn(() => ({ maybeSingle }));
@@ -167,7 +172,7 @@ describe("fetchEntitlements", () => {
     });
   });
 
-  it("fails closed to free with no capabilities when the RPC fails", async () => {
+  it("returns unknown rather than Free when the RPC fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const supabase = {
       rpc: vi.fn().mockResolvedValue({
@@ -176,7 +181,35 @@ describe("fetchEntitlements", () => {
       }),
     } as unknown as SupabaseClient;
 
-    await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+    await expect(fetchEntitlements(supabase)).resolves.toBeNull();
+    await expect(fetchEntitlementsResult(supabase)).resolves.toEqual({
+      entitlements: null,
+      error: true,
+    });
+  });
+
+  it("returns unknown on timeout instead of hanging or manufacturing Free", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      rpc: vi.fn(() => new Promise(() => {})),
+    } as unknown as SupabaseClient;
+
+    const resultPromise = fetchEntitlementsResult(supabase);
+    await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
+
+    await expect(resultPromise).resolves.toEqual({ entitlements: null, error: true });
+  });
+
+  it("treats an empty successful RPC response as a known Free account", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchEntitlementsResult(supabase)).resolves.toEqual({
+      entitlements: { planId: "free", features: {} },
+      error: false,
+    });
   });
 });
 
@@ -217,6 +250,72 @@ describe("fetchFounderCapacity", () => {
   });
 });
 
+describe("membership Founder history and return-resource access", () => {
+  it("reads only the caller's aggregate Founder history", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+    const supabase = { from: readinessFrom(true, "system.founder_first_year_once_v1_ready"), rpc } as unknown as SupabaseClient;
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: true,
+      error: false,
+    });
+    expect(rpc).toHaveBeenCalledWith("has_my_founder_history");
+  });
+
+  it("fails closed when Founder history cannot be verified", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      from: readinessFrom(true, "system.founder_first_year_once_v1_ready"),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: { message: "missing", code: "42883" } }),
+    } as unknown as SupabaseClient;
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: false,
+      error: true,
+    });
+  });
+
+  it("does not call the Founder-history RPC before migration 049 is ready", async () => {
+    const rpc = vi.fn();
+    const supabase = { from: readinessFrom(false), rpc } as unknown as SupabaseClient;
+
+    await expect(fetchMyFounderHistory(supabase)).resolves.toEqual({
+      hasFounderHistory: false,
+      error: true,
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("keeps every actual supported plan for a shared resource", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { access_mode: "plans", required_plan_ids: ["founder", "teacher", "teacher", "plus", " retired ", ""] },
+      error: null,
+    });
+    const eq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq }));
+    const supabase = { from: vi.fn(() => ({ select })) } as unknown as SupabaseClient;
+
+    await expect(fetchMembershipReturnResource(supabase, "resource-1")).resolves.toEqual({
+      requiredPlanIds: ["founder", "teacher", "plus", "retired"],
+      error: false,
+    });
+    expect(supabase.from).toHaveBeenCalledWith("resource_catalog");
+    expect(eq).toHaveBeenCalledWith("id", "resource-1");
+  });
+
+  it("fails closed when the return resource is missing or is not plan-protected", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { access_mode: "authenticated", required_plan_ids: [] },
+      error: null,
+    });
+    const supabase = {
+      from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) })),
+    } as unknown as SupabaseClient;
+    await expect(fetchMembershipReturnResource(supabase, "resource-1")).resolves.toEqual({
+      requiredPlanIds: [],
+      error: true,
+    });
+  });
+});
+
 describe("manual membership payment RPC wrappers", () => {
   it("creates an application and normalizes the RETURNS TABLE array row", async () => {
     const rpc = vi.fn().mockResolvedValue({
@@ -240,6 +339,7 @@ describe("manual membership payment RPC wrappers", () => {
         status: "pending",
         quotedAmountThb: 299,
         paymentReportedAt: null,
+        lineSlipReceivedAt: null,
         paymentPaidAt: null,
         paymentConfirmedAt: null,
         paymentConfirmedAmountThb: null,
@@ -252,7 +352,7 @@ describe("manual membership payment RPC wrappers", () => {
     expect(rpc).toHaveBeenCalledWith("create_membership_application", { p_plan_id: "founder" });
   });
 
-  it("reports payment and converts a Founder application through narrow authenticated RPCs", async () => {
+  it("records an admin-observed LINE slip and converts a Founder application through narrow RPCs", async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
         data: [{
@@ -262,6 +362,7 @@ describe("manual membership payment RPC wrappers", () => {
           status: "pending",
           quoted_amount_thb: 299,
           payment_reported_at: "2026-10-01T02:30:00.000Z",
+          line_slip_received_at: "2026-10-01T02:31:00.000Z",
           created_at: "2026-10-01T02:00:00.000Z",
         }],
         error: null,
@@ -278,21 +379,26 @@ describe("manual membership payment RPC wrappers", () => {
         }],
         error: null,
       });
-    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
+    const lineSlipSupabase = {
+      from: readinessFrom(true, MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER),
+      rpc,
+    } as unknown as SupabaseClient;
 
-    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toMatchObject({
+    await expect(recordMembershipLineSlipReceived(lineSlipSupabase, "request-1")).resolves.toMatchObject({
       application: {
         id: "request-1",
         planId: "founder",
         quotedAmountThb: 299,
         paymentReportedAt: "2026-10-01T02:30:00.000Z",
+        lineSlipReceivedAt: "2026-10-01T02:31:00.000Z",
       },
       error: null,
     });
-    expect(rpc).toHaveBeenNthCalledWith(1, "report_membership_payment", {
+    expect(rpc).toHaveBeenNthCalledWith(1, "record_membership_line_slip_received", {
       p_request_id: "request-1",
     });
 
+    const supabase = { from: readinessFrom(), rpc } as unknown as SupabaseClient;
     await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toMatchObject({
       application: {
         id: "request-1",
@@ -300,6 +406,7 @@ describe("manual membership payment RPC wrappers", () => {
         planId: "teacher",
         quotedAmountThb: 599,
         paymentReportedAt: null,
+        lineSlipReceivedAt: null,
       },
       error: null,
     });
@@ -335,6 +442,22 @@ describe("manual membership payment RPC wrappers", () => {
       p_paid_at: "2026-10-01T03:00:00.000Z",
       p_idempotency_key: "admin-action-1",
     });
+  });
+
+  it("keeps only the new admin LINE-receipt action closed when migration 050 is absent", async () => {
+    const rpc = vi.fn();
+    const supabase = {
+      // The broad 048 marker is present, but the probe receives that old id
+      // instead of migration 050's dedicated marker.
+      from: readinessFrom(true, MEMBERSHIP_SCHEMA_READINESS_MARKER),
+      rpc,
+    } as unknown as SupabaseClient;
+
+    await expect(recordMembershipLineSlipReceived(supabase, "request-1")).resolves.toEqual({
+      application: null,
+      error: MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
+    });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("never logs a payment reference echoed by PostgREST error details", async () => {
@@ -385,9 +508,9 @@ describe("manual membership payment RPC wrappers", () => {
       application: null,
       error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
     });
-    await expect(reportMembershipPayment(supabase, "request-1")).resolves.toEqual({
+    await expect(recordMembershipLineSlipReceived(supabase, "request-1")).resolves.toEqual({
       application: null,
-      error: MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
+      error: MEMBERSHIP_LINE_SLIP_WORKFLOW_UNAVAILABLE_MESSAGE,
     });
     await expect(convertFounderApplicationToTeacher(supabase, "request-1")).resolves.toEqual({
       application: null,
@@ -406,7 +529,7 @@ describe("manual membership payment RPC wrappers", () => {
       idempotencyKey: "admin-action-2",
     })).resolves.toBe(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
 
-    expect(touchedTables).toEqual(Array(6).fill("features"));
+    expect(touchedTables).toEqual(Array(7).fill("features"));
     expect(from).not.toHaveBeenCalledWith("upgrade_requests");
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -433,9 +556,10 @@ describe("manual membership payment RPC wrappers", () => {
       }],
       error: null,
     });
-    const upgradeSelect = vi.fn(() => ({
-      eq: vi.fn(() => ({ order })),
-    }));
+    const upgradeSelect = vi.fn((columns: string) => {
+      void columns;
+      return { eq: vi.fn(() => ({ order })) };
+    });
     const from = vi.fn((table: string) => table === "features"
       ? { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) }
       : { select: upgradeSelect });
@@ -449,6 +573,51 @@ describe("manual membership payment RPC wrappers", () => {
       }),
     ]);
     expect(upgradeSelect).toHaveBeenCalledWith(expect.stringContaining("resolution_reason_code"));
+    expect(upgradeSelect.mock.calls[0]?.[0]).not.toContain("line_slip_received_at");
+  });
+
+  it("selects admin LINE-receipt provenance only after migration 050 is ready", async () => {
+    const order = vi.fn().mockResolvedValue({
+      data: [{
+        id: "request-line-slip",
+        reference_code: "KA-LINE",
+        plan_id: "teacher",
+        status: "pending",
+        quoted_amount_thb: 599,
+        payment_reported_at: "2026-10-01T02:30:00.000Z",
+        line_slip_received_at: "2026-10-01T02:31:00.000Z",
+        payment_paid_at: null,
+        payment_confirmed_at: null,
+        payment_confirmed_amount_thb: null,
+        payment_reference: null,
+        resolution_reason_code: null,
+        created_at: "2026-10-01T02:00:00.000Z",
+      }],
+      error: null,
+    });
+    const upgradeSelect = vi.fn((columns: string) => {
+      void columns;
+      return { eq: vi.fn(() => ({ order })) };
+    });
+    const from = vi.fn((table: string) => table === "features"
+      ? {
+          select: vi.fn(() => ({
+            eq: vi.fn((_column: string, marker: string) => ({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { id: marker }, error: null }),
+            })),
+          })),
+        }
+      : { select: upgradeSelect });
+    const supabase = { from } as unknown as SupabaseClient;
+
+    await expect(fetchUpgradeRequests(supabase, "user-1")).resolves.toEqual([
+      expect.objectContaining({
+        id: "request-line-slip",
+        paymentReportedAt: "2026-10-01T02:30:00.000Z",
+        lineSlipReceivedAt: "2026-10-01T02:31:00.000Z",
+      }),
+    ]);
+    expect(upgradeSelect).toHaveBeenCalledWith(expect.stringContaining("line_slip_received_at"));
   });
 });
 
@@ -515,8 +684,8 @@ describe("public catalog reads", () => {
         tags: [],
         grade_levels: [],
         access_mode: "authenticated",
-        required_plan_ids: [],
-        required_plan_names: [],
+        required_plan_ids: ["teacher_pro", "teacher"],
+        required_plan_names: ["Teacher"],
         is_free: true,
         is_new: true,
         file_size: 100,
@@ -528,7 +697,12 @@ describe("public catalog reads", () => {
     const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: rows, error: null }) };
     const client = { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
 
-    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{ id: "one", title: "แบบฝึกจริง", isNew: true }]);
+    await expect(fetchPublishedResources(client)).resolves.toMatchObject([{
+      id: "one",
+      title: "แบบฝึกจริง",
+      isNew: true,
+      requiredPlanNames: ["Teacher Pro (แพ็กเดิม)", "Teacher Pro"],
+    }]);
     expect(client.from).toHaveBeenCalledWith("resource_catalog");
     expect(query.select).toHaveBeenCalledWith(expect.not.stringMatching(/cta_url|file_path|file_name/));
     expect(query.select).toHaveBeenCalledWith(expect.stringMatching(/grade_levels.*access_mode.*required_plan_ids.*required_plan_names.*is_new.*featured_rank.*review_average.*review_count/));
@@ -557,6 +731,33 @@ describe("public catalog reads", () => {
     await expect(result).resolves.toEqual([]);
     expect(client.from).toHaveBeenCalledWith("plans");
     expect(client.from).toHaveBeenCalledWith("plan_benefit_catalog");
+  });
+
+  it("uses customer-facing labels while keeping canonical plan ids unchanged", async () => {
+    const planQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({
+        data: [
+          { id: "teacher", name: "Teacher", price_label: "599 บาท/ปี", note: null, is_popular: true, billing_interval: "year" },
+          { id: "teacher_pro", name: "Teacher Pro", price_label: "แพ็กเดิม", note: null, is_popular: false, billing_interval: "year" },
+        ],
+        error: null,
+      }),
+    };
+    const benefitQuery = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn(),
+    };
+    benefitQuery.order.mockReturnValueOnce(benefitQuery).mockResolvedValueOnce({ data: [], error: null });
+    const client = {
+      from: vi.fn((table: string) => table === "plans" ? planQuery : benefitQuery),
+    } as unknown as SupabaseClient;
+
+    await expect(fetchPlans(client)).resolves.toMatchObject([
+      { id: "teacher", name: "Teacher Pro" },
+      { id: "teacher_pro", name: "Teacher Pro (แพ็กเดิม)" },
+    ]);
   });
 });
 

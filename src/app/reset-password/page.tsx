@@ -6,6 +6,7 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { scrubRecoverySecrets, updateRecoveryPassword, verifyRecoveryCredential } from "./recovery";
 
 export const dynamic = "force-dynamic";
 
@@ -50,28 +51,12 @@ function ResetPasswordForm() {
   const handleConfirmLink = async () => {
     setStage("verifying");
     setError(null);
-
-    if (tokenHash) {
-      const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
-      if (verifyError) {
-        setError("ลิงก์หมดอายุหรือถูกใช้ไปแล้ว กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
-        setStage("error");
-        return;
-      }
-    } else if (code) {
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-      if (exchangeError) {
-        setError("ลิงก์หมดอายุหรือถูกใช้ไปแล้ว กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
-        setStage("error");
-        return;
-      }
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setError("ลิงก์หมดอายุหรือถูกใช้ไปแล้ว กรุณาขอลิงก์ใหม่จากหน้าเข้าสู่ระบบ");
+    const result = await verifyRecoveryCredential(supabase.auth, tokenHash, code);
+    scrubRecoverySecrets(window.history);
+    if (!result.ok) {
+      setPassword("");
+      setConfirmPassword("");
+      setError(result.message);
       setStage("error");
       return;
     }
@@ -89,11 +74,13 @@ function ResetPasswordForm() {
       setError("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
       return;
     }
-    setLoading(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setLoading(false);
-    if (updateError) {
-      setError(updateError.message);
+    const result = await updateRecoveryPassword(supabase.auth, password, setLoading);
+    if (result.clearPasswords) {
+      setPassword("");
+      setConfirmPassword("");
+    }
+    if (!result.ok) {
+      setError(result.message);
       return;
     }
     setDone(true);
