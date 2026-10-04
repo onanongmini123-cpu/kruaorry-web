@@ -27,6 +27,12 @@ import {
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import { FeaturedResourceCarousel, featuredAccessLabel } from "@/app/landing/FeaturedResourceCarousel";
 import { PlanBenefits, billingIntervalLabel } from "@/app/landing/PlanBenefits";
+import {
+  initialPublicAuthState,
+  observePublicAuthState,
+  publicFreeAccountAction,
+  publicHeaderActions,
+} from "@/lib/publicAuthState";
 
 const PILLARS = [
   { icon: FolderOpen, tone: "purple" as const, title: "คลังสื่อพร้อมสอน", desc: "ดาวน์โหลดแล้วใช้สอนได้เลย ไม่ต้องทำเอง", href: "/resources" },
@@ -47,7 +53,6 @@ function toLandingResource(resource: Resource): LandingResource {
 }
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-const FREE_SIGNUP_HREF = "/login?mode=signup&next=%2Fapp";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -61,6 +66,7 @@ export default function LandingPage() {
   const [discoveryInput, setDiscoveryInput] = useState("");
   const [discoveryQuery, setDiscoveryQuery] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
+  const [publicAuthState, setPublicAuthState] = useState(() => initialPublicAuthState(isSupabaseConfigured));
 
   const discoverableResources = useMemo(() => resources.map(toLandingResource), [resources]);
   const freeSamples = useMemo(
@@ -72,12 +78,19 @@ export default function LandingPage() {
     [discoveryQuery, discoverableResources],
   );
   const discoveryResultsHref = resourceDiscoveryHref("/resources", { query: discoveryQuery });
+  const headerActions = publicHeaderActions(publicAuthState);
+  const freeAccountAction = publicFreeAccountAction(publicAuthState);
 
   const handleDiscoverySubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setDiscoveryQuery(discoveryInput.trim().slice(0, 100));
     setHasSearched(true);
   };
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    return observePublicAuthState(createClient().auth, setPublicAuthState);
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -166,8 +179,19 @@ export default function LandingPage() {
             KruAorry
           </span>
           <div style={{ flex: 1 }} />
-          <Link href="/login" className="kru-btn kru-btn--ghost kru-btn--sm">เข้าสู่ระบบ</Link>
-          <Link href={FREE_SIGNUP_HREF} className="kru-btn kru-btn--primary kru-btn--sm">สมัครฟรี</Link>
+          {publicAuthState === "checking" ? (
+            <span className="kru-public-auth-placeholder kru-public-auth-placeholder--header" role="status">
+              <span className="kru-visually-hidden">กำลังตรวจสอบบัญชีสมาชิก</span>
+            </span>
+          ) : headerActions.map((action) => (
+            <Link
+              key={action.href}
+              href={action.href}
+              className={`kru-btn kru-btn--${action.emphasis} kru-btn--sm`}
+            >
+              {action.label}
+            </Link>
+          ))}
         </div>
       </header>
 
@@ -203,7 +227,11 @@ export default function LandingPage() {
 
               <div className="kru-discovery-hero__secondary">
                 <span>สื่อพร้อมสอนภาษาไทย เทมเพลต Google พร้อมใช้ และเครื่องมือในห้องเรียน</span>
-                <Link href={FREE_SIGNUP_HREF}>สมัครสมาชิกฟรี <ArrowRight size={16} aria-hidden="true" /></Link>
+                {freeAccountAction ? (
+                  <Link href={freeAccountAction.href}>{freeAccountAction.label} <ArrowRight size={16} aria-hidden="true" /></Link>
+                ) : (
+                  <span className="kru-public-auth-placeholder kru-public-auth-placeholder--inline" aria-hidden="true" />
+                )}
               </div>
             </div>
 
@@ -290,9 +318,13 @@ export default function LandingPage() {
               <Link href="/resources?access=free" className="kru-btn kru-btn--primary kru-btn--lg">
                 ดูสื่อฟรีทั้งหมด <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link href={FREE_SIGNUP_HREF} className="kru-btn kru-btn--secondary">
-                สมัครสมาชิกฟรี
-              </Link>
+              {freeAccountAction ? (
+                <Link href={freeAccountAction.href} className="kru-btn kru-btn--secondary">
+                  {freeAccountAction.label}
+                </Link>
+              ) : (
+                <span className="kru-public-auth-placeholder kru-public-auth-placeholder--button" aria-hidden="true" />
+              )}
             </div>
           </div>
 
@@ -419,6 +451,35 @@ export default function LandingPage() {
           clip: rect(0, 0, 0, 0);
           white-space: nowrap;
           border: 0;
+        }
+
+        .kru-public-auth-placeholder {
+          display: inline-block;
+          border-radius: var(--r-button);
+          background: linear-gradient(100deg, var(--purple-50) 20%, var(--purple-100) 50%, var(--purple-50) 80%);
+          background-size: 220% 100%;
+          animation: kru-public-auth-pulse 1.4s ease-in-out infinite;
+        }
+
+        .kru-public-auth-placeholder--header {
+          width: 132px;
+          height: 36px;
+          flex: 0 0 132px;
+        }
+
+        .kru-public-auth-placeholder--inline {
+          width: 132px;
+          height: 24px;
+        }
+
+        .kru-public-auth-placeholder--button {
+          width: 148px;
+          height: var(--tap-min);
+        }
+
+        @keyframes kru-public-auth-pulse {
+          from { background-position: 100% 0; }
+          to { background-position: -100% 0; }
         }
 
         .kru-discovery-hero {
@@ -998,9 +1059,11 @@ export default function LandingPage() {
         }
 
         @media (prefers-reduced-motion: reduce) {
+          .kru-public-auth-placeholder,
           .kru-discovery-result-card,
           .kru-sample-card {
             transition: none;
+            animation: none;
           }
         }
       `}</style>

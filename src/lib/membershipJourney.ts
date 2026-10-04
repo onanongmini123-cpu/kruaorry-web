@@ -16,6 +16,14 @@ export function requestedMembershipPlan(raw: string | null | undefined): Members
   return raw === "founder" || raw === "teacher" ? raw : null;
 }
 
+/** Founder capacity/history failures must never disable the Teacher plan. */
+export function founderChecksBlockPlan(
+  planId: string | null | undefined,
+  founderChecksUnavailable: boolean,
+): boolean {
+  return planId === "founder" && founderChecksUnavailable;
+}
+
 export function pendingMembershipApplication(applications: UpgradeRequest[]): UpgradeRequest | null {
   return applications.find((application) => application.status === "pending") ?? null;
 }

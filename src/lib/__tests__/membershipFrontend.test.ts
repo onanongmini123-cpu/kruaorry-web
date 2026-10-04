@@ -40,26 +40,44 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("convertFounderApplicationToTeacher");
     expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี");
     expect(membership).toContain('const nextCapacity = await fetchFounderCapacity(supabase)');
-    expect(membership).toContain('latestApplication.planId === "founder" && nextCapacity?.isFull');
+    expect(membership).toContain('if (latestApplication.planId === "founder")');
+    expect(membership).toContain('setError(nextCapacity?.isFull');
   });
 
-  it("fails closed for unknown Founder checks while preserving an already-selected Teacher application", () => {
+  it("fails closed globally for schema drift and only applies Founder facts to Founder flows", () => {
     expect(membership).toContain('if (applicationPlanId === "founder" && !capacity)');
     expect(membership).toContain('const founderChecksUnavailable = schemaReadiness !== "ready"');
-    expect(membership).toContain('&& (selectedPlanId !== "founder" || !founderChecksUnavailable)');
-    expect(membership).toContain('if (applicationPlanId === "founder" && founderChecksUnavailable)');
+    expect(membership).toContain('const selectedFounderChecksUnavailable = founderChecksBlockPlan(selectedPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('const applicationFounderChecksUnavailable = founderChecksBlockPlan(applicationPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable)');
+    expect(membership).toContain('const teacherRequestedForPendingFounder = selectedPlanId === "teacher"');
+    expect(membership).toContain('&& schemaReadiness === "ready"');
+    expect(membership).toContain('if (schemaReadiness !== "ready")');
     expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
-    expect(membership).toContain('|| founderChecksUnavailable');
-    expect(membership).toContain('membershipNeedsRenewal && !noSelectablePlanForResource && !founderChecksUnavailable && !applicationsError');
+    expect(membership).toContain('|| pendingFounderChecksUnavailable');
+    expect(membership).toContain('!founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('applicationPlanId === "founder" ? (');
+    expect(membership).toContain('<strong>Teacher Pro</strong>');
+    expect(membership).toContain('{applicationPlanId === "founder" && (');
 
     const paymentHandler = membership.slice(
       membership.indexOf("const handleReportPayment"),
       membership.indexOf("const handleConvertToTeacher"),
     );
-    expect(paymentHandler.indexOf("if (founderChecksUnavailable)")).toBeGreaterThan(-1);
-    expect(paymentHandler.indexOf("if (pendingPaymentBlocked) return;")).toBeGreaterThan(
-      paymentHandler.indexOf("if (founderChecksUnavailable)"),
+    expect(paymentHandler).toContain("if (pendingFounderChecksUnavailable)");
+    expect(paymentHandler).not.toContain("if (founderChecksUnavailable)");
+    expect(paymentHandler.indexOf('if (schemaReadiness !== "ready")')).toBeLessThan(
+      paymentHandler.indexOf("if (pendingFounderChecksUnavailable)"),
     );
+    expect(paymentHandler).toContain('if (latestApplication.planId === "founder")');
+
+    const conversionHandler = membership.slice(
+      membership.indexOf("const handleConvertToTeacher"),
+      membership.indexOf("const handleCopyReference"),
+    );
+    expect(conversionHandler).toContain('if (schemaReadiness !== "ready")');
+    expect(conversionHandler).not.toContain("if (founderChecksUnavailable)");
+    expect(conversionHandler).not.toContain("fetchFounderCapacity");
   });
 
   it("never exposes stale pending-payment actions when the application refresh fails", () => {
@@ -111,8 +129,9 @@ describe("canonical manual membership flow", () => {
 
   it("separates free signup from intentional paid-upgrade CTAs", () => {
     expect(landing).toContain('href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}');
-    expect(landing).toContain('const FREE_SIGNUP_HREF = "/login?mode=signup&next=%2Fapp"');
-    expect(landing.match(/href=\{FREE_SIGNUP_HREF\}/g)).toHaveLength(3);
+    expect(landing).toContain("initialPublicAuthState(isSupabaseConfigured)");
+    expect(landing).toContain("observePublicAuthState(createClient().auth, setPublicAuthState)");
+    expect(landing.match(/freeAccountAction\.href/g)).toHaveLength(2);
     expect(landing).not.toContain('href="/membership"');
     expect(memberApp).toContain('href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}');
     expect(landing).not.toContain("LINE_OA_URL");

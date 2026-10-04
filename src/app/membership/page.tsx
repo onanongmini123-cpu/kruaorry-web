@@ -37,6 +37,7 @@ import {
 import {
   canStartMembershipApplication,
   entitlementSatisfiesRequestedPlan,
+  founderChecksBlockPlan,
   founderApplicationConversionConfirmation,
   hasCurrentPaidMembership,
   membershipApplicationPlanMismatch,
@@ -191,6 +192,7 @@ function MembershipContent() {
     returnResourceLoaded,
     founderOfferUnavailable,
   );
+  const selectedFounderChecksUnavailable = founderChecksBlockPlan(selectedPlanId, founderChecksUnavailable);
   const hasCurrentMembership = memberStatusLoaded && hasCurrentPaidMembership(entitlements, subscription);
   const currentPlanId = entitlements.planId !== "free"
     ? entitlements.planId
@@ -218,9 +220,10 @@ function MembershipContent() {
       ? membershipPlanUnlocksResource(entitlements.planId, returnResourcePlanIds)
       : entitlementSatisfiesRequestedPlan(entitlements, requestedPlanId));
   const canCreateApplication = memberStatusLoaded
+    && schemaReadiness === "ready"
     && !memberStatusError
     && !applicationsError
-    && (selectedPlanId !== "founder" || !founderChecksUnavailable)
+    && !selectedFounderChecksUnavailable
     && !noSelectablePlanForResource
     && (selectedPlanId !== "founder" || founderHistoryKnown)
     && (!returnResourceId || (
@@ -243,6 +246,9 @@ function MembershipContent() {
     : hasCurrentMembership && !requestedPlanMismatch && currentMembershipPlanId
       ? currentMembershipPlanId
       : selectedPlanId;
+  const applicationFounderChecksUnavailable = founderChecksBlockPlan(applicationPlanId, founderChecksUnavailable);
+  const applicationFounderHistoryError = founderChecksBlockPlan(applicationPlanId, founderHistoryError);
+  const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable);
   const applicationAmount = applicationPlanId === "founder" ? 299 : 599;
   const selectedPlan = plans.find((plan) => plan.id === applicationPlanId) ?? null;
   const membershipNeedsRenewal = canRequestMembershipRenewal(subscription);
@@ -258,6 +264,10 @@ function MembershipContent() {
   ));
   const canConvertPendingFounderToTeacher = !returnResourceId
     || (returnResourceLoaded && !returnResourceError && returnResourcePlanIds.includes("teacher"));
+  const teacherRequestedForPendingFounder = selectedPlanId === "teacher"
+    && latestApplication?.status === "pending"
+    && latestApplication.planId === "founder"
+    && canConvertPendingFounderToTeacher;
   const founderRenewalOrAlternativeCopy = canConvertPendingFounderToTeacher
     ? "กรุณาต่ออายุ 599 บาท/ปี หรือเลือก Teacher Pro"
     : "สื่อนี้รองรับเฉพาะสิทธิ์ Founder เดิม กรุณาใช้ขั้นตอนต่ออายุ 599 บาท/ปี";
@@ -275,7 +285,7 @@ function MembershipContent() {
     && returnResourceId !== null
     && (!returnResourceLoaded || returnResourceError);
   const pendingPaymentBlocked = applicationsError
-    || founderChecksUnavailable
+    || pendingFounderChecksUnavailable
     || pendingFounderUnavailable
     || pendingPlanMismatch
     || pendingResourceEligibilityUnknown
@@ -460,7 +470,8 @@ function MembershipContent() {
 
   const selectPlan = (planId: MembershipPlanId) => {
     if (hasOpenApplication || (hasCurrentMembership && !requestedPlanMismatch)) return;
-    if (founderChecksUnavailable || applicationsError) return;
+    if (schemaReadiness !== "ready" || applicationsError) return;
+    if (founderChecksBlockPlan(planId, founderChecksUnavailable)) return;
     if (returnResourceId && (!returnResourceLoaded || !returnResourcePlanIds.includes(planId))) return;
     if (planId === "founder" && founderOfferUnavailable) return;
     setSelectedPlanPreference(planId);
@@ -471,22 +482,22 @@ function MembershipContent() {
 
   const handleCreateApplication = async () => {
     if (!userId || submitting) return;
-    if (applicationPlanId === "founder" && founderChecksUnavailable) {
+    if (schemaReadiness !== "ready") {
+      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    if (applicationFounderChecksUnavailable) {
       setError("ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ จึงยังไม่รับใบสมัครหรือการชำระ กรุณาลองตรวจสอบอีกครั้ง");
       return;
     }
     if (!canCreateApplication) {
-      setError(memberStatusError || applicationsError || founderHistoryError
+      setError(memberStatusError || applicationsError || applicationFounderHistoryError
         ? "ยังตรวจสอบสถานะสมาชิกไม่ได้ จึงปิดการส่งใบสมัครซ้ำชั่วคราว กรุณาลองใหม่"
         : hasOpenApplication
           ? "มีใบสมัครที่รอดำเนินการอยู่แล้ว กรุณาใช้เลขอ้างอิงเดิม"
           : applicationPlanId === "founder" && hasFounderHistory
             ? `บัญชีนี้เคยได้รับสิทธิ์ Founder ปีแรก 299 บาทแล้ว ${founderRenewalOrAlternativeCopy}`
           : "บัญชีนี้มีสิทธิ์สมาชิกที่ใช้งานอยู่แล้ว ไม่จำเป็นต้องส่งใบสมัครซ้ำ");
-      return;
-    }
-    if (schemaReadiness !== "ready") {
-      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
       return;
     }
     if (applicationPlanId === "founder" && !capacity) {
@@ -511,11 +522,11 @@ function MembershipContent() {
       // displays that original reference instead of inviting a duplicate.
       const [applicationResult, nextCapacity] = await Promise.all([
         fetchUpgradeRequestsResult(supabase, userId),
-        fetchFounderCapacity(supabase),
+        applicationPlanId === "founder" ? fetchFounderCapacity(supabase) : Promise.resolve(capacity),
       ]);
       if (!applicationResult.error) setApplications(applicationResult.applications);
       setApplicationsError(applicationResult.error);
-      setCapacity(nextCapacity);
+      if (applicationPlanId === "founder") setCapacity(nextCapacity);
       setError(applicationResult.error
         ? "ยังตรวจสอบใบสมัครล่าสุดไม่ได้ กรุณาอย่าส่งซ้ำและลองใหม่"
         : applicationResult.applications.some((application) => application.status === "pending")
@@ -528,12 +539,16 @@ function MembershipContent() {
     const application = result.application;
     setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
     setApplicationsError(false);
-    setCapacity(await fetchFounderCapacity(supabase));
+    if (applicationPlanId === "founder") setCapacity(await fetchFounderCapacity(supabase));
   };
 
   const handleReportPayment = async () => {
     if (!latestApplication || latestApplication.status !== "pending" || reporting) return;
-    if (founderChecksUnavailable) {
+    if (schemaReadiness !== "ready") {
+      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    if (pendingFounderChecksUnavailable) {
       setError("ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ จึงปิดการแจ้งชำระชั่วคราว");
       return;
     }
@@ -542,21 +557,21 @@ function MembershipContent() {
       return;
     }
     if (pendingPaymentBlocked) return;
-    if (schemaReadiness !== "ready") {
-      setError(MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE);
-      return;
-    }
     setReporting(true);
     setError(null);
     const result = await reportMembershipPayment(supabase, latestApplication.id);
     if (result.error || !result.application) {
-      const nextCapacity = await fetchFounderCapacity(supabase);
-      setCapacity(nextCapacity);
-      setError(latestApplication.planId === "founder" && nextCapacity?.isFull
-        ? canConvertPendingFounderToTeacher
-          ? "Founder ครบ 100 สิทธิ์แล้ว กรุณาเปลี่ยนใบสมัครเป็น Teacher Pro ก่อนแจ้งชำระ"
-          : "Founder ครบ 100 สิทธิ์แล้ว และ Teacher Pro ไม่สามารถเปิดสื่อรายการนี้ได้"
-        : `แจ้งทีมงานไม่สำเร็จ: ${membershipDisplayError(result.error, "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา")}`);
+      if (latestApplication.planId === "founder") {
+        const nextCapacity = await fetchFounderCapacity(supabase);
+        setCapacity(nextCapacity);
+        setError(nextCapacity?.isFull
+          ? canConvertPendingFounderToTeacher
+            ? "Founder ครบ 100 สิทธิ์แล้ว กรุณาเปลี่ยนใบสมัครเป็น Teacher Pro ก่อนแจ้งชำระ"
+            : "Founder ครบ 100 สิทธิ์แล้ว และ Teacher Pro ไม่สามารถเปิดสื่อรายการนี้ได้"
+          : `แจ้งทีมงานไม่สำเร็จ: ${membershipDisplayError(result.error, "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา")}`);
+      } else {
+        setError(`แจ้งทีมงานไม่สำเร็จ: ${membershipDisplayError(result.error, "ระบบไม่ได้ส่งข้อมูลใบสมัครกลับมา")}`);
+      }
     } else if (userId) {
       const application = result.application;
       setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
@@ -566,10 +581,6 @@ function MembershipContent() {
 
   const handleConvertToTeacher = async () => {
     if (!latestApplication || latestApplication.status !== "pending" || latestApplication.planId !== "founder" || converting) return;
-    if (founderChecksUnavailable) {
-      setError("ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ จึงปิดการเปลี่ยนแพ็กชั่วคราว");
-      return;
-    }
     if (applicationsError) {
       setError("ยังตรวจสอบใบสมัครล่าสุดไม่ได้ จึงปิดการเปลี่ยนแพ็กชั่วคราว");
       return;
@@ -592,7 +603,6 @@ function MembershipContent() {
       const application = result.application;
       setSelectedPlanPreference("teacher");
       setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
-      setCapacity(await fetchFounderCapacity(supabase));
     }
     setConverting(false);
   };
@@ -650,7 +660,7 @@ function MembershipContent() {
               <strong>ใช้สิทธิ์สมาชิกเดิม</strong>
               <p>เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์ Plus, Lifetime หรือสิทธิ์เฉพาะที่เคยได้รับ</p>
             </aside>
-          ) : (
+          ) : applicationPlanId === "founder" ? (
             <aside className="kru-membership-capacity" aria-live="polite" aria-busy={!capacityLoaded}>
               <span>จำนวนสิทธิ์จากฐานข้อมูล</span>
               {schemaReadiness === "unavailable" ? (
@@ -666,6 +676,12 @@ function MembershipContent() {
               ) : (
                 <strong>{schemaReadiness === "checking" || !capacityLoaded ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ตรวจสอบจำนวนสิทธิ์ไม่ได้ในขณะนี้"}</strong>
               )}
+            </aside>
+          ) : (
+            <aside className="kru-membership-capacity" aria-live="polite">
+              <span>แพ็กสมาชิกรายปี</span>
+              <strong>Teacher Pro</strong>
+              <p>599 บาท/ปี</p>
             </aside>
           )}
         </section>
@@ -693,7 +709,7 @@ function MembershipContent() {
                   {hasUnlockedMembership && (
                     <Link className="kru-btn kru-btn--primary" href={returnTo}>{returnActionLabel}</Link>
                   )}
-                  {membershipNeedsRenewal && !noSelectablePlanForResource && !founderChecksUnavailable && !applicationsError && (
+                  {membershipNeedsRenewal && !noSelectablePlanForResource && schemaReadiness === "ready" && !applicationsError && !founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable) && (
                     <a className="kru-btn kru-btn--soft" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
                       <MessageCircle size={17} aria-hidden="true" /> ขอเลขอ้างอิงต่ออายุ
                     </a>
@@ -719,10 +735,13 @@ function MembershipContent() {
                 <div className="kru-membership-plan__choices" role="group" aria-label="เลือกแพ็กสมาชิก">
                   {planChoices.map((plan) => {
                     const active = applicationPlanId === plan.id;
-                    const unavailable = founderChecksUnavailable || applicationsError || (plan.id === "founder"
-                      && (capacity?.isFull === true || founderOfferUnavailable)
-                      && !hasOpenApplication
-                      && currentPlanId !== "founder");
+                    const founderUnavailable = plan.id === "founder" && (
+                      founderChecksUnavailable
+                      || ((capacity?.isFull === true || founderOfferUnavailable)
+                        && !hasOpenApplication
+                        && currentPlanId !== "founder")
+                    );
+                    const unavailable = schemaReadiness !== "ready" || applicationsError || founderUnavailable;
                     return (
                       <button
                         key={plan.id}
@@ -735,7 +754,7 @@ function MembershipContent() {
                         <strong>{plan.name}</strong>
                         <span>{plan.priceLabel}</span>
                         {unavailable && (
-                          <small>{founderChecksUnavailable || applicationsError ? "กำลังตรวจสอบสิทธิ์" : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
+                          <small>{schemaReadiness !== "ready" || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? "กำลังตรวจสอบสิทธิ์" : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
                         )}
                       </button>
                     );
@@ -797,7 +816,7 @@ function MembershipContent() {
                     <strong>
                       {applicationsError
                         ? "ยังตรวจสอบใบสมัครล่าสุดไม่ได้"
-                        : founderChecksUnavailable
+                        : pendingFounderChecksUnavailable
                         ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้"
                         : pendingResourceEligibilityUnknown
                         ? "กำลังตรวจสอบแพ็กที่ใช้เปิดสื่อนี้"
@@ -814,10 +833,17 @@ function MembershipContent() {
                         <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กเพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว</p>
                         <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
                       </>
-                    ) : founderChecksUnavailable ? (
+                    ) : pendingFounderChecksUnavailable ? (
                       <>
-                        <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กไว้จนกว่าจะตรวจสอบข้อมูลสำเร็จ</p>
-                        <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+                        <p>ระบบปิดปุ่ม LINE และการแจ้งชำระสำหรับใบสมัคร Founder ไว้จนกว่าจะตรวจสอบข้อมูลสำเร็จ</p>
+                        {teacherRequestedForPendingFounder && (
+                          <Button size="lg" block loading={converting} onClick={() => void handleConvertToTeacher()}>
+                            ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี
+                          </Button>
+                        )}
+                        {!teacherRequestedForPendingFounder && (
+                          <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+                        )}
                       </>
                     ) : pendingResourceEligibilityUnknown ? (
                       <p>ระบบปิดการแจ้งชำระไว้จนกว่าจะตรวจสอบสิทธิ์ของสื่อสำเร็จ กรุณาลองใหม่อีกครั้ง</p>
@@ -855,9 +881,13 @@ function MembershipContent() {
                 )}
                 <p role="status" className="kru-membership-alert">ระบบอนุมัติแพ็ก {currentMembershipPlanName} แล้ว กำลังอัปเดตสิทธิ์เปิดสื่อให้บัญชีนี้…</p>
               </div>
-            ) : memberStatusError || applicationsError || founderHistoryError || returnResourceError || (applicationPlanId === "founder" && founderChecksUnavailable) ? (
+            ) : memberStatusError || applicationsError || applicationFounderHistoryError || returnResourceError || applicationFounderChecksUnavailable ? (
               <div className="kru-membership-action-block">
-                <p role="alert" className="kru-membership-alert kru-membership-alert--warning">ยังตรวจสอบสถานะสมาชิก ประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ ระบบจึงปิดใบสมัคร การเปลี่ยนแพ็ก และการชำระไว้ชั่วคราว</p>
+                <p role="alert" className="kru-membership-alert kru-membership-alert--warning">
+                  {applicationFounderHistoryError || applicationFounderChecksUnavailable
+                    ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ ระบบจึงปิดใบสมัคร การเปลี่ยนแพ็ก และการชำระไว้ชั่วคราว"
+                    : "ยังตรวจสอบสถานะสมาชิกหรือใบสมัครล่าสุดไม่ได้ ระบบจึงปิดการดำเนินการไว้ชั่วคราว"}
+                </p>
                 <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
               </div>
             ) : (
@@ -974,7 +1004,9 @@ function MembershipContent() {
         {!noSelectablePlanForResource && (
           <section className="kru-membership-facts" aria-label="เงื่อนไขสำคัญ">
             <article><Check size={20} aria-hidden="true" /><div><strong>นับจากยอดจริง</strong><p>นับสิทธิ์เมื่อครูอรรี่ตรวจสอบและยืนยันการชำระเงินจริงในระบบเท่านั้น</p></div></article>
-            <article><Check size={20} aria-hidden="true" /><div><strong>จำกัด 100 คน</strong><p>ระบบฐานข้อมูลป้องกันการอนุมัติสิทธิ์ราคา 299 บาทเกิน 100 คน</p></div></article>
+            {applicationPlanId === "founder" && (
+              <article><Check size={20} aria-hidden="true" /><div><strong>จำกัด 100 คน</strong><p>ระบบฐานข้อมูลป้องกันการอนุมัติสิทธิ์ราคา 299 บาทเกิน 100 คน</p></div></article>
+            )}
             <article><Check size={20} aria-hidden="true" /><div><strong>ไม่เก็บสลิปบนเว็บไซต์</strong><p>ส่งหลักฐานใน LINE OA เว็บไซต์เก็บเฉพาะเลขอ้างอิง ยอด สถานะ และเวลายืนยันเพื่อดูแลสมาชิก</p></div></article>
           </section>
         )}
