@@ -1034,7 +1034,7 @@ function MembershipContent() {
         .kru-membership-capacity__track { height: 9px; margin-top: var(--sp-3); overflow: hidden; border-radius: var(--r-pill); background: var(--purple-100); }
         .kru-membership-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-600), var(--pink-500)); }
         .kru-membership-layout { margin-top: var(--sp-8); display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(300px, .88fr); gap: var(--gap-grid); align-items: start; }
-        .kru-membership-application, .kru-membership-payment { min-width: 0; padding: clamp(20px, 4vw, 32px); display: grid; gap: var(--sp-5); }
+        .kru-membership-application, .kru-membership-payment { min-width: 0; padding: clamp(20px, 4vw, 32px); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }
         .kru-membership-application h2, .kru-membership-payment h2 { margin-top: var(--sp-2); font-size: var(--fs-24); }
         .kru-membership-application > div > p, .kru-membership-payment > p { margin-top: var(--sp-3); color: var(--text-muted); }
         .kru-membership-plan { padding: var(--sp-4); display: grid; gap: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-sunken); }

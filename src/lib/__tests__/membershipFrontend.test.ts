@@ -47,6 +47,12 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี");
   });
 
+  it("lets membership card content shrink without overflowing narrow screens", () => {
+    expect(membership).toContain(
+      ".kru-membership-application, .kru-membership-payment { min-width: 0; padding: clamp(20px, 4vw, 32px); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }",
+    );
+  });
+
   it("fails closed globally for schema drift and only applies Founder facts to Founder flows", () => {
     expect(membership).toContain('if (applicationPlanId === "founder" && !capacity)');
     expect(membership).toContain('const founderChecksUnavailable = schemaReadiness !== "ready"');
