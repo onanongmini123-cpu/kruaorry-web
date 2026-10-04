@@ -6,6 +6,8 @@ import {
   entitlementSatisfiesRequestedPlan,
   founderApplicationConversionConfirmation,
   founderChecksBlockPlan,
+  founderChecksBlockPlanSelection,
+  founderChecksRequiredForPlanSelection,
   hasCurrentPaidMembership,
   membershipApplicationPlanMismatch,
   membershipAutoReturnDestination,
@@ -108,6 +110,12 @@ describe("membership journey state", () => {
     expect(founderChecksBlockPlan("teacher_pro", true)).toBe(false);
     expect(founderChecksBlockPlan(null, true)).toBe(false);
     expect(founderChecksBlockPlan("founder", false)).toBe(false);
+    expect(founderChecksRequiredForPlanSelection("teacher")).toBe(false);
+    expect(founderChecksRequiredForPlanSelection("founder")).toBe(true);
+    expect(founderChecksRequiredForPlanSelection(null)).toBe(true);
+    expect(founderChecksBlockPlanSelection("founder", true, true)).toBe(false);
+    expect(founderChecksBlockPlanSelection("founder", true, false)).toBe(true);
+    expect(founderChecksBlockPlanSelection("teacher", true, false)).toBe(false);
   });
 
   it("returns once only to a validated internal target and keeps unsafe or missing input on the safe fallback", () => {

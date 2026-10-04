@@ -24,6 +24,21 @@ export function founderChecksBlockPlan(
   return planId === "founder" && founderChecksUnavailable;
 }
 
+export function founderChecksBlockPlanSelection(
+  planId: string | null | undefined,
+  founderChecksUnavailable: boolean,
+  founderChecksDeferred: boolean,
+): boolean {
+  return founderChecksBlockPlan(planId, founderChecksUnavailable) && !founderChecksDeferred;
+}
+
+/** Teacher selection does not need Founder-only RPCs until Founder is chosen. */
+export function founderChecksRequiredForPlanSelection(
+  selectedPlanId: string | null | undefined,
+): boolean {
+  return selectedPlanId !== "teacher";
+}
+
 export function pendingMembershipApplication(applications: UpgradeRequest[]): UpgradeRequest | null {
   return applications.find((application) => application.status === "pending") ?? null;
 }

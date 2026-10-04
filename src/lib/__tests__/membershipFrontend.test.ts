@@ -48,6 +48,11 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain('if (applicationPlanId === "founder" && !capacity)');
     expect(membership).toContain('const founderChecksUnavailable = schemaReadiness !== "ready"');
     expect(membership).toContain('const selectedFounderChecksUnavailable = founderChecksBlockPlan(selectedPlanId, founderChecksUnavailable)');
+    expect(membership).toContain('const shouldLoadFounderChecks = founderChecksRequiredForPlanSelection(selectedPlanPreference)');
+    expect(membership).toContain('shouldLoadFounderChecks ? fetchFounderCapacity(supabase) : Promise.resolve(null)');
+    expect(membership).toContain('user && shouldLoadFounderChecks');
+    expect(membership).toContain('const founderChecksDeferred = plan.id === "founder" && !shouldLoadFounderChecks');
+    expect(membership).toContain('founderChecksBlockPlanSelection(planId, founderChecksUnavailable, founderChecksDeferred)');
     expect(membership).toContain('const applicationFounderChecksUnavailable = founderChecksBlockPlan(applicationPlanId, founderChecksUnavailable)');
     expect(membership).toContain('const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable)');
     expect(membership).toContain('const teacherRequestedForPendingFounder = selectedPlanId === "teacher"');

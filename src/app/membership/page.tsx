@@ -38,6 +38,8 @@ import {
   canStartMembershipApplication,
   entitlementSatisfiesRequestedPlan,
   founderChecksBlockPlan,
+  founderChecksBlockPlanSelection,
+  founderChecksRequiredForPlanSelection,
   founderApplicationConversionConfirmation,
   hasCurrentPaidMembership,
   membershipApplicationPlanMismatch,
@@ -136,6 +138,7 @@ function MembershipContent() {
   const [selectedPlanPreference, setSelectedPlanPreference] = useState<MembershipPlanId>(
     requestedPlanId ?? "founder",
   );
+  const shouldLoadFounderChecks = founderChecksRequiredForPlanSelection(selectedPlanPreference);
   const [applications, setApplications] = useState<UpgradeRequest[]>([]);
   const [applicationsError, setApplicationsError] = useState(false);
   const [founderHistory, setFounderHistory] = useState(false);
@@ -336,11 +339,13 @@ function MembershipContent() {
         return;
       }
       const [founderCapacity, applicationResult, entitlementResult, subscriptionResult, founderHistoryResult] = await Promise.all([
-        fetchFounderCapacity(supabase),
+        shouldLoadFounderChecks ? fetchFounderCapacity(supabase) : Promise.resolve(null),
         user ? fetchUpgradeRequestsResult(supabase, user.id) : Promise.resolve({ applications: [], error: false }),
         user ? fetchEntitlementsResult(supabase) : Promise.resolve({ entitlements: EMPTY_ENTITLEMENTS, error: false }),
         user ? fetchMemberSubscription(supabase, user.id) : Promise.resolve({ subscription: null, error: false }),
-        user ? fetchMyFounderHistory(supabase) : Promise.resolve({ hasFounderHistory: false, error: false }),
+        user && shouldLoadFounderChecks
+          ? fetchMyFounderHistory(supabase)
+          : Promise.resolve({ hasFounderHistory: false, error: false }),
       ]);
       if (!active) return;
       setCapacity(founderCapacity);
@@ -360,17 +365,19 @@ function MembershipContent() {
     };
     void load();
     return () => { active = false; };
-  }, [returnResourceId, supabase]);
+  }, [returnResourceId, shouldLoadFounderChecks, supabase]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || schemaReadiness !== "ready") return;
     const runner = createLatestRefreshRunner(
       () => Promise.all([
-        fetchFounderCapacity(supabase),
+        shouldLoadFounderChecks ? fetchFounderCapacity(supabase) : Promise.resolve(null),
         userId ? fetchUpgradeRequestsResult(supabase, userId) : Promise.resolve({ applications: [], error: false }),
         userId ? fetchEntitlementsResult(supabase) : Promise.resolve({ entitlements: EMPTY_ENTITLEMENTS, error: false }),
         userId ? fetchMemberSubscription(supabase, userId) : Promise.resolve({ subscription: null, error: false }),
-        userId ? fetchMyFounderHistory(supabase) : Promise.resolve({ hasFounderHistory: false, error: false }),
+        userId && shouldLoadFounderChecks
+          ? fetchMyFounderHistory(supabase)
+          : Promise.resolve({ hasFounderHistory: false, error: false }),
         returnResourceId
           ? fetchMembershipReturnResource(supabase, returnResourceId)
           : Promise.resolve({ requiredPlanIds: [] as string[], error: false }),
@@ -401,7 +408,7 @@ function MembershipContent() {
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshStatus);
     };
-  }, [returnResourceId, schemaReadiness, supabase, userId]);
+  }, [returnResourceId, schemaReadiness, shouldLoadFounderChecks, supabase, userId]);
 
   useEffect(() => {
     if (!memberStatusLoaded || !returnResourceLoaded || returnResourceError) return;
@@ -441,11 +448,13 @@ function MembershipContent() {
       return;
     }
     const [nextCapacity, applicationResult, entitlementResult, subscriptionResult, founderHistoryResult, returnResourceResult] = await Promise.all([
-      fetchFounderCapacity(supabase),
+      shouldLoadFounderChecks ? fetchFounderCapacity(supabase) : Promise.resolve(null),
       userId ? fetchUpgradeRequestsResult(supabase, userId) : Promise.resolve({ applications: [], error: false }),
       userId ? fetchEntitlementsResult(supabase) : Promise.resolve({ entitlements: EMPTY_ENTITLEMENTS, error: false }),
       userId ? fetchMemberSubscription(supabase, userId) : Promise.resolve({ subscription: null, error: false }),
-      userId ? fetchMyFounderHistory(supabase) : Promise.resolve({ hasFounderHistory: false, error: false }),
+      userId && shouldLoadFounderChecks
+        ? fetchMyFounderHistory(supabase)
+        : Promise.resolve({ hasFounderHistory: false, error: false }),
       returnResourceId
         ? fetchMembershipReturnResource(supabase, returnResourceId)
         : Promise.resolve({ requiredPlanIds: [] as string[], error: false }),
@@ -471,7 +480,8 @@ function MembershipContent() {
   const selectPlan = (planId: MembershipPlanId) => {
     if (hasOpenApplication || (hasCurrentMembership && !requestedPlanMismatch)) return;
     if (schemaReadiness !== "ready" || applicationsError) return;
-    if (founderChecksBlockPlan(planId, founderChecksUnavailable)) return;
+    const founderChecksDeferred = planId === "founder" && !shouldLoadFounderChecks;
+    if (founderChecksBlockPlanSelection(planId, founderChecksUnavailable, founderChecksDeferred)) return;
     if (returnResourceId && (!returnResourceLoaded || !returnResourcePlanIds.includes(planId))) return;
     if (planId === "founder" && founderOfferUnavailable) return;
     setSelectedPlanPreference(planId);
@@ -735,8 +745,9 @@ function MembershipContent() {
                 <div className="kru-membership-plan__choices" role="group" aria-label="เลือกแพ็กสมาชิก">
                   {planChoices.map((plan) => {
                     const active = applicationPlanId === plan.id;
+                    const founderChecksDeferred = plan.id === "founder" && !shouldLoadFounderChecks;
                     const founderUnavailable = plan.id === "founder" && (
-                      founderChecksUnavailable
+                      founderChecksBlockPlanSelection(plan.id, founderChecksUnavailable, founderChecksDeferred)
                       || ((capacity?.isFull === true || founderOfferUnavailable)
                         && !hasOpenApplication
                         && currentPlanId !== "founder")
