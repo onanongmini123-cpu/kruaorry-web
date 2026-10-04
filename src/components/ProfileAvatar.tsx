@@ -11,6 +11,7 @@ import {
   avatarSignedUrl,
   avatarUrlRefreshDelay,
   cachedAvatarUrl,
+  subscribeAvatarCache,
 } from "@/lib/profileAvatar";
 
 type Props = {
@@ -23,10 +24,18 @@ type Props = {
 
 export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: Props) {
   const [signedAvatar, setSignedAvatar] = useState<{ path: string; url: string } | null>(null);
+  const [cacheRevision, setCacheRevision] = useState(0);
   const url = avatarPath
     ? cachedAvatarUrl(supabase, avatarPath) ?? (signedAvatar?.path === avatarPath ? signedAvatar.url : null)
     : null;
   const initials = (name.trim() || "ค").slice(0, 2).toLocaleUpperCase("th");
+
+  useEffect(() => {
+    if (!avatarPath) return;
+    return subscribeAvatarCache(supabase, avatarPath, () => {
+      setCacheRevision((current) => current + 1);
+    });
+  }, [avatarPath, supabase]);
 
   useEffect(() => {
     if (!avatarPath) return;
@@ -48,7 +57,7 @@ export function ProfileAvatar({ supabase, avatarPath, name, size = 40, style }: 
       active = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [avatarPath, supabase]);
+  }, [avatarPath, cacheRevision, supabase]);
 
   return (
     <span

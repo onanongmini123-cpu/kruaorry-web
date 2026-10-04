@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { SIGNUP_DESTINATION } from "@/lib/authReturnPath";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "no-store",
@@ -31,7 +32,9 @@ export async function GET(request: Request) {
         code,
         flowId ? { flowId } : undefined,
       );
-      if (error || !data.user) return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      if (error || !isPermanentAuthUser(data.user)) {
+        return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      }
     } else {
       // Only the signup confirmation template's email token is accepted.
       // Recovery/invite tokens have their own routes and must not be used as
@@ -40,7 +43,9 @@ export async function GET(request: Request) {
         return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
       }
       const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "email" });
-      if (error || !data.user) return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      if (error || !isPermanentAuthUser(data.user)) {
+        return NextResponse.redirect(failure, { headers: PRIVATE_HEADERS });
+      }
     }
 
     return NextResponse.redirect(new URL(SIGNUP_DESTINATION, url.origin), { headers: PRIVATE_HEADERS });

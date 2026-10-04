@@ -6,7 +6,7 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { updateRecoveryPassword, verifyRecoveryCredential } from "./recovery";
+import { scrubRecoverySecrets, updateRecoveryPassword, verifyRecoveryCredential } from "./recovery";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +52,7 @@ function ResetPasswordForm() {
     setStage("verifying");
     setError(null);
     const result = await verifyRecoveryCredential(supabase.auth, tokenHash, code);
+    scrubRecoverySecrets(window.history);
     if (!result.ok) {
       setPassword("");
       setConfirmPassword("");

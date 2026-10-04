@@ -5,6 +5,13 @@ const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const mobileNavSource = readFileSync(new URL("./AdminMobileNav.tsx", import.meta.url), "utf8");
 
 describe("responsive admin console contracts", () => {
+  it("keeps anonymous and expired identities outside the admin console", () => {
+    expect(pageSource).toContain("supabase.auth.getUser().catch(() => null)");
+    expect(pageSource).toContain("!authResult.error");
+    expect(pageSource).toContain("isPermanentAuthUser(authResult.data.user)");
+    expect(pageSource).toContain('router.push("/login")');
+  });
+
   it("uses one permission-aware navigation model on desktop and mobile", () => {
     expect(pageSource).toContain("groups={navGroups}");
     expect(pageSource).toContain('key: "moderation"');

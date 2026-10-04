@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   RECOVERY_LINK_ERROR_MESSAGE,
   RECOVERY_PASSWORD_ERROR_MESSAGE,
+  scrubRecoverySecrets,
   updateRecoveryPassword,
   verifyRecoveryCredential,
 } from "./recovery";
@@ -10,6 +11,20 @@ import {
 const providerDetail = "SMTP rejected secret-user@example.com with private token";
 
 describe("password recovery link verification", () => {
+  it("replaces the current history entry with a credential-free URL", () => {
+    const replaceState = vi.fn();
+    scrubRecoverySecrets({ state: { preserved: true }, replaceState });
+
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(replaceState).toHaveBeenCalledWith(
+      { preserved: true },
+      "",
+      "/reset-password",
+    );
+    expect(JSON.stringify(replaceState.mock.calls)).not.toContain("token_hash");
+    expect(JSON.stringify(replaceState.mock.calls)).not.toContain("code=");
+  });
+
   it("verifies a recovery token before reading the authenticated user", async () => {
     const verifyOtp = vi.fn(async () => ({ error: null }));
     const exchangeCodeForSession = vi.fn();
@@ -83,6 +98,19 @@ describe("password recovery link verification", () => {
     expect(result).toEqual({ ok: false, message: RECOVERY_LINK_ERROR_MESSAGE });
   });
 
+  it("rejects an anonymous identity even after the recovery credential verifies", async () => {
+    const result = await verifyRecoveryCredential({
+      verifyOtp: vi.fn(async () => ({ error: null })),
+      exchangeCodeForSession: vi.fn(),
+      getUser: vi.fn(async () => ({
+        data: { user: { id: "anonymous-1", is_anonymous: true } },
+        error: null,
+      })),
+    }, "TOKEN", null);
+
+    expect(result).toEqual({ ok: false, message: RECOVERY_LINK_ERROR_MESSAGE });
+  });
+
   it("fails safely when the provider returns a malformed verification response", async () => {
     const getUser = vi.fn();
     const result = await verifyRecoveryCredential({
@@ -141,8 +169,14 @@ describe("password recovery update", () => {
 
   it("keeps the page wired to generic copy and clears both password fields", () => {
     const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const nextConfig = readFileSync(new URL("../../../next.config.ts", import.meta.url), "utf8");
     expect(source).not.toContain("setError(updateError.message)");
     expect(source).toContain('setPassword("")');
     expect(source).toContain('setConfirmPassword("")');
+    expect(source).toContain("scrubRecoverySecrets(window.history)");
+    expect(source).not.toContain("console.");
+    expect(nextConfig).toContain('source: "/reset-password"');
+    expect(nextConfig).toContain('{ key: "Cache-Control", value: "no-store, max-age=0" }');
+    expect(nextConfig).toContain('{ key: "Referrer-Policy", value: "no-referrer" }');
   });
 });

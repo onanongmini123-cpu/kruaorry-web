@@ -1,5 +1,6 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
-import type { UpgradeRequest } from "@/lib/data";
+import type { EntitlementsResult, UpgradeRequest } from "@/lib/data";
+import type { EntitlementSnapshot } from "@/lib/entitlement";
 import { isMembershipRenewalDue } from "@/lib/membershipRenewal";
 
 export type MemberSubscriptionStatus = "active" | "past_due" | "expired" | "cancelled" | "revoked";
@@ -29,6 +30,29 @@ interface MemberSubscriptionRow {
 export interface MemberSubscriptionResult {
   subscription: MemberSubscription | null;
   error: boolean;
+}
+
+export type MemberEntitlementsState =
+  | { status: "loading"; entitlements: EntitlementSnapshot | null }
+  | { status: "loaded"; entitlements: EntitlementSnapshot }
+  | { status: "error"; entitlements: EntitlementSnapshot | null };
+
+export const INITIAL_MEMBER_ENTITLEMENTS_STATE: MemberEntitlementsState = {
+  status: "loading",
+  entitlements: null,
+};
+
+export function beginMemberEntitlementsRefresh(previous: MemberEntitlementsState): MemberEntitlementsState {
+  return { status: "loading", entitlements: previous.entitlements };
+}
+
+export function completeMemberEntitlementsRefresh(
+  previous: MemberEntitlementsState,
+  result: EntitlementsResult,
+): MemberEntitlementsState {
+  return result.error
+    ? { status: "error", entitlements: previous.entitlements }
+    : { status: "loaded", entitlements: result.entitlements };
 }
 
 const STATUS_PRIORITY: Record<MemberSubscriptionStatus, number> = {
@@ -64,6 +88,23 @@ export function isMembershipExpired(subscription: MemberSubscription, now = Date
   if (["expired", "cancelled", "revoked"].includes(subscription.status)) return true;
   const end = parsedDate(subscription.currentPeriodEnd);
   return Number.isFinite(end) && end <= now;
+}
+
+export function memberPlanIdForDisplay(
+  entitlements: EntitlementSnapshot | null,
+  subscription: MemberSubscription | null,
+  now = Date.now(),
+): string | null {
+  if (entitlements?.planId && entitlements.planId !== "free") return entitlements.planId;
+
+  const hasCurrentPaidSubscription = Boolean(
+    subscription
+      && subscription.planId !== "free"
+      && ["active", "past_due"].includes(subscription.status)
+      && !isMembershipExpired(subscription, now),
+  );
+  if (hasCurrentPaidSubscription) return subscription?.planId ?? null;
+  return entitlements?.planId ?? null;
 }
 
 export function canRequestMembershipRenewal(subscription: MemberSubscription | null, now = Date.now()): boolean {

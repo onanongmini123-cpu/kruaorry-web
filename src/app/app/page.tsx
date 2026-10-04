@@ -18,7 +18,6 @@ import {
   fetchPublishedResources,
   fetchPlans,
   fetchFounderCapacity,
-  fetchEntitlements,
   fetchEntitlementsResult,
   fetchUpgradeRequestsResult,
   fetchProfile,
@@ -35,7 +34,7 @@ import {
   type TeacherRequest,
   type UpgradeRequest,
 } from "@/lib/data";
-import { canAccessResource, EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
+import { canAccessResource } from "@/lib/entitlement";
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import {
   fetchMembershipSchemaReadiness,
@@ -48,10 +47,19 @@ import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
 import { persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
-import { fetchMemberSubscription, type MemberSubscription } from "@/lib/memberAccount";
+import {
+  beginMemberEntitlementsRefresh,
+  completeMemberEntitlementsRefresh,
+  fetchMemberSubscription,
+  INITIAL_MEMBER_ENTITLEMENTS_STATE,
+  memberPlanIdForDisplay,
+  type MemberEntitlementsState,
+  type MemberSubscription,
+} from "@/lib/memberAccount";
 import { membershipUpgradeHref } from "@/app/resources/catalog";
-import { createLatestRefreshRunner } from "@/lib/latestRefresh";
+import { createLatestRefreshController, createLatestRefreshRunner } from "@/lib/latestRefresh";
 import { planDisplayName } from "@/lib/planDisplay";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -83,11 +91,12 @@ function benefitLabel(benefit: PlanBenefit): string {
 export default function TeacherAppPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const accountRefreshController = useMemo(() => createLatestRefreshController(), []);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [resources, setResources] = useState<Resource[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [entitlements, setEntitlements] = useState<EntitlementSnapshot>(EMPTY_ENTITLEMENTS);
+  const [entitlementState, setEntitlementState] = useState<MemberEntitlementsState>(INITIAL_MEMBER_ENTITLEMENTS_STATE);
   const [view, setView] = useState<View>("home");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailReturnView, setDetailReturnView] = useState<"library" | "favorites">("library");
@@ -111,23 +120,28 @@ export default function TeacherAppPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const entitlements = entitlementState.entitlements;
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const authResult = await supabase.auth.getUser().catch(() => null);
+      if (!active) return;
+      const user = authResult
+        && !authResult.error
+        && isPermanentAuthUser(authResult.data.user)
+        ? authResult.data.user
+        : null;
       if (!user) {
         const requestedPath = `${window.location.pathname}${window.location.search}`;
         router.replace(`/login?next=${encodeURIComponent(requestedPath)}`);
         return;
       }
-      setUserId(user.id);
-      const [profileData, resourceData, planData, entitlementData, requestData, savedIds, schemaReadiness, founderCapacityData, subscriptionResult, applicationData] = await Promise.all([
+      const [profileData, resourceData, planData, entitlementResult, requestData, savedIds, schemaReadiness, founderCapacityData, subscriptionResult, applicationData] = await Promise.all([
         fetchProfile(supabase, user.id),
         fetchPublishedResources(supabase),
         fetchPlans(supabase),
-        fetchEntitlements(supabase),
+        fetchEntitlementsResult(supabase),
         fetchRequests(supabase),
         fetchSavedResourceIds(supabase, user.id),
         fetchMembershipSchemaReadiness(supabase),
@@ -135,6 +149,7 @@ export default function TeacherAppPage() {
         fetchMemberSubscription(supabase, user.id),
         fetchUpgradeRequestsResult(supabase, user.id),
       ]);
+      if (!active) return;
       if (!profileData) {
         setLoadError("ยังโหลดข้อมูลสมาชิกไม่ได้ กรุณาลองใหม่อีกครั้ง");
         setLoading(false);
@@ -144,10 +159,11 @@ export default function TeacherAppPage() {
         router.replace("/");
         return;
       }
+      setUserId(user.id);
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
-      setEntitlements(entitlementData);
+      setEntitlementState((current) => completeMemberEntitlementsRefresh(current, entitlementResult));
       setRequests(requestData);
       setSaved(savedIds);
       setMembershipSchemaReadiness(schemaReadiness);
@@ -169,6 +185,9 @@ export default function TeacherAppPage() {
       }
       setLoading(false);
     })();
+    return () => {
+      active = false;
+    };
   }, [supabase, router]);
 
   useEffect(() => {
@@ -180,22 +199,23 @@ export default function TeacherAppPage() {
         fetchEntitlementsResult(supabase),
       ]),
       ([subscriptionResult, applicationData, entitlementResult]) => {
-        setSubscription(subscriptionResult.subscription);
+        if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
         setSubscriptionError(subscriptionResult.error);
         if (!applicationData.error) setUpgradeRequests(applicationData.applications);
         setUpgradeRequestsError(applicationData.error);
-        if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
+        setEntitlementState((current) => completeMemberEntitlementsRefresh(current, entitlementResult));
       },
     );
+    accountRefreshController.attach(runner);
     const refreshAccountStatus = () => { void runner.request(); };
     const timer = window.setInterval(refreshAccountStatus, 60_000);
     window.addEventListener("focus", refreshAccountStatus);
     return () => {
-      runner.dispose();
+      accountRefreshController.detach(runner);
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshAccountStatus);
     };
-  }, [supabase, userId]);
+  }, [accountRefreshController, supabase, userId]);
 
   useEffect(() => {
     let active = true;
@@ -280,15 +300,24 @@ export default function TeacherAppPage() {
     setView("detail");
   };
 
+  const retryEntitlements = () => {
+    setEntitlementState((current) => beginMemberEntitlementsRefresh(current));
+    void accountRefreshController.request();
+  };
+
   // Every published resource fetched by fetchPublishedResources already has
   // status "published", so it's hardcoded here rather than carried on Resource.
   const canAccess = (r: Resource) => canAccessResource(
     { status: "published", accessMode: r.accessMode, requiredPlanIds: r.requiredPlanIds },
-    { authenticated: Boolean(profile), role: profile?.role ?? null, planId: entitlements.planId },
+    { authenticated: Boolean(profile), role: profile?.role ?? null, planId: entitlements?.planId ?? null },
   );
 
   const openResource = (r: Resource) => {
     if (!canAccess(r)) {
+      if (r.accessMode === "plans" && entitlementState.status !== "loaded") {
+        retryEntitlements();
+        return;
+      }
       // Premium discovery stays visible to Free members, but the action is an
       // explicit upgrade journey. The remembered destination is a validated
       // same-origin app detail, never a private target URL.
@@ -334,13 +363,14 @@ export default function TeacherAppPage() {
       setSigningOut(false);
       return;
     }
+    accountRefreshController.dispose();
     setProfile(null);
     setUserId(null);
     setResources([]);
     setPlans([]);
     setRequests([]);
     setSaved([]);
-    setEntitlements(EMPTY_ENTITLEMENTS);
+    setEntitlementState(INITIAL_MEMBER_ENTITLEMENTS_STATE);
     setSubscription(null);
     setSubscriptionError(false);
     setUpgradeRequests([]);
@@ -358,10 +388,18 @@ export default function TeacherAppPage() {
   );
   const favoriteResources = filtered.filter((resource) => saved.includes(resource.id));
   const hasActiveFilters = Boolean(query.trim() || category || grade);
-  const currentPlanDisplayName = planDisplayName(
-    entitlements.planId,
-    plans.find((plan) => plan.id === entitlements.planId)?.name,
-  );
+  const currentPlanId = memberPlanIdForDisplay(entitlements, subscription);
+  const currentPlanDisplayName = entitlementState.status !== "loaded" && currentPlanId === "free"
+    ? entitlementState.status === "loading" ? "กำลังตรวจสอบสิทธิ์…" : "ยังตรวจสอบไม่ได้"
+    : currentPlanId
+    ? planDisplayName(
+      currentPlanId,
+      plans.find((plan) => plan.id === currentPlanId)?.name
+        ?? (subscription?.planId === currentPlanId ? subscription.planName : null),
+    )
+    : entitlementState.status === "loading"
+      ? "กำลังตรวจสอบสิทธิ์…"
+      : "ยังตรวจสอบไม่ได้";
 
   const clearFilters = () => {
     setQuery("");
@@ -486,6 +524,21 @@ export default function TeacherAppPage() {
           </header>
 
           <main style={{ padding: "var(--sp-6) var(--sp-5)", flex: 1 }} className="kru-app-content">
+            {view !== "account" && entitlementState.status === "error" && (
+              <div role="alert" className="kru-entitlement-alert">
+                <span>{subscription && currentPlanId !== null
+                  ? "ยังตรวจสอบสิทธิ์จากระบบไม่ได้ ขณะนี้แสดงแพ็กจากรอบสมาชิกที่ยืนยันล่าสุด"
+                  : entitlements
+                    ? "ยังตรวจสอบสิทธิ์ล่าสุดไม่ได้ ขณะนี้ยังใช้ข้อมูลที่ตรวจสอบสำเร็จก่อนหน้า"
+                  : "ยังตรวจสอบสิทธิ์แพ็กไม่ได้ ระบบจะไม่ถือว่าคุณใช้แพ็ก Free"}</span>
+                <Button size="sm" variant="soft" onClick={retryEntitlements}>ลองตรวจสอบสิทธิ์อีกครั้ง</Button>
+              </div>
+            )}
+            {view !== "account" && entitlementState.status === "loading" && (
+              <div role="status" className="kru-entitlement-alert">
+                <span>{entitlements ? "กำลังตรวจสอบสิทธิ์ล่าสุดอีกครั้ง…" : "กำลังตรวจสอบสิทธิ์แพ็กอีกครั้ง…"}</span>
+              </div>
+            )}
             {saveError && (
               <div role="alert" className="kru-save-alert">
                 <span>{saveError}</span>
@@ -617,17 +670,23 @@ export default function TeacherAppPage() {
                   <div className="kru-detail-side">
                     <div className="kru-card" style={{ padding: "var(--sp-7)" }}>
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
-                        {canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ" : "สื่อนี้สำหรับสมาชิก"}
+                        {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
+                          ? "ยังตรวจสอบสิทธิ์แพ็กไม่ได้"
+                          : canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ" : "สื่อนี้สำหรับสมาชิก"}
                       </div>
                       {!canAccess(detail) && detail.requiredPlanNames.length > 0 && (
                         <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
-                          {hasPendingUpgradeFor(detail)
+                          {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
+                            ? "ลองตรวจสอบสิทธิ์อีกครั้งก่อนเลือกแพ็กหรือชำระเงิน"
+                            : hasPendingUpgradeFor(detail)
                             ? "เข้าหน้าสมาชิกเพื่อดูเลขอ้างอิง สถานะการชำระ และผลการตรวจสอบ"
                             : `ปลดล็อกได้ด้วยแพ็ก ${detail.requiredPlanNames.join(" หรือ ")}`}
                         </p>
                       )}
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} disabled={!canAccess(detail) && detail.accessMode === "locked"} onClick={() => openResource(detail)}>
-                        {canAccess(detail) ? "เปิดใช้งาน" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "ติดตามคำขออัปเกรด" : "อัปเกรดเพื่อปลดล็อก"}
+                        {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
+                          ? entitlementState.status === "loading" ? "กำลังตรวจสอบ…" : "ลองตรวจสอบสิทธิ์อีกครั้ง"
+                          : canAccess(detail) ? "เปิดใช้งาน" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "ติดตามคำขออัปเกรด" : "อัปเกรดเพื่อปลดล็อก"}
                       </Button>
                       <Button
                         block
@@ -693,7 +752,8 @@ export default function TeacherAppPage() {
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-7)", color: "var(--text-muted)" }}>แพ็กปัจจุบันของคุณคือ {currentPlanDisplayName}</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--gap-grid)" }}>
                   {plans.map((plan) => {
-                    const isCurrent = entitlements.planId === plan.id;
+                    const isCurrent = currentPlanId === plan.id
+                      && !(entitlementState.status !== "loaded" && currentPlanId === "free");
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
@@ -731,6 +791,8 @@ export default function TeacherAppPage() {
                         <div style={{ marginTop: "var(--sp-6)" }}>
                           {isCurrent ? (
                             <Badge tone="success">แพ็กปัจจุบันของคุณ</Badge>
+                          ) : currentPlanId === null || entitlementState.status !== "loaded" ? (
+                            <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>กรุณาตรวจสอบสิทธิ์ก่อนเลือกแพ็ก</span>
                           ) : plan.id === "free" ? null : (
                             <Link
                               className="kru-btn kru-btn--primary kru-btn--block"
@@ -759,7 +821,9 @@ export default function TeacherAppPage() {
                 signingOut={signingOut}
                 membershipSummary={(
                   <MemberAccountStatus
-                    currentPlanId={entitlements.planId}
+                    currentPlanId={currentPlanId}
+                    entitlementsStatus={entitlementState.status}
+                    onRetryEntitlements={retryEntitlements}
                     plans={plans}
                     subscription={subscription}
                     subscriptionError={subscriptionError}
@@ -812,6 +876,7 @@ export default function TeacherAppPage() {
         .kru-filter-field select { width: 100%; min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--white); color: var(--text-strong); font: inherit; font-weight: var(--fw-regular); }
         .kru-save-alert { margin-bottom: var(--sp-5); padding: var(--sp-4) var(--sp-5); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg); font-size: var(--fs-14); }
         .kru-save-alert button { min-width: 36px; min-height: 36px; border: 0; border-radius: var(--r-pill); background: transparent; color: inherit; font-size: var(--fs-24); cursor: pointer; }
+        .kru-entitlement-alert { margin-bottom: var(--sp-5); padding: var(--sp-4) var(--sp-5); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg); font-size: var(--fs-14); line-height: 1.55; }
         .kru-detail-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-7); }
         .kru-member-home { display: grid; gap: var(--sp-7); }
         .kru-member-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--r-panel); padding: var(--sp-7); min-height: 300px; display: grid; align-items: center; background: radial-gradient(circle at 90% 20%, rgba(255,255,255,.95) 0 10%, transparent 42%), linear-gradient(135deg, var(--purple-100), var(--pink-50) 52%, var(--blue-100)); border: 1px solid rgba(195,176,252,.55); box-shadow: var(--shadow-lg); }

@@ -163,6 +163,17 @@ begin
 
   if not exists (
     select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.subscriptions'::regclass
+      and trigger_row.tgname = 'trg_enforce_founder_100_cap'
+      and trigger_row.tgenabled <> 'D'
+      and not trigger_row.tgisinternal
+  ) then
+    raise exception 'LINE slip workflow migration assertion failed: the Founder 100 allocation trigger is missing or disabled';
+  end if;
+
+  if not exists (
+    select 1
     from information_schema.columns
     where table_schema = 'public'
       and table_name = 'upgrade_requests'

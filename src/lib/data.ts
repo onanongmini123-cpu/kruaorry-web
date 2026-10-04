@@ -4,7 +4,7 @@ import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
-import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
+import { type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { normalizeFounderCapacity, type FounderCapacity } from "@/lib/founderCapacity";
 import {
   fetchMembershipLineSlipWorkflowReadiness,
@@ -290,16 +290,24 @@ interface EntitlementRow {
   limit_value: number | null;
 }
 
-export interface EntitlementsResult {
-  entitlements: EntitlementSnapshot;
-  error: boolean;
-}
+export type EntitlementsResult =
+  | { entitlements: EntitlementSnapshot; error: false }
+  | { entitlements: null; error: true };
 
 export async function fetchEntitlementsResult(supabase: SupabaseClient): Promise<EntitlementsResult> {
-  const { data, error } = await supabase.rpc("get_my_entitlements");
+  const outcome = await withTimeout(
+    Promise.resolve().then(() => supabase.rpc("get_my_entitlements")),
+    "member entitlements",
+  );
+  if (!outcome.ok) {
+    console.error(`fetchEntitlements failed: ${outcome.reason}`);
+    return { entitlements: null, error: true };
+  }
+
+  const { data, error } = outcome.value;
   if (error) {
     logError("fetchEntitlements failed", error);
-    return { entitlements: EMPTY_ENTITLEMENTS, error: true };
+    return { entitlements: null, error: true };
   }
 
   const rows = (data ?? []) as EntitlementRow[];
@@ -310,7 +318,7 @@ export async function fetchEntitlementsResult(supabase: SupabaseClient): Promise
   return { entitlements: { planId, features }, error: false };
 }
 
-export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot> {
+export async function fetchEntitlements(supabase: SupabaseClient): Promise<EntitlementSnapshot | null> {
   return (await fetchEntitlementsResult(supabase)).entitlements;
 }
 
@@ -811,17 +819,20 @@ export async function submitResourceIssue(
   return null;
 }
 
-export async function updateMyProfile(
+export async function updateMyDisplayName(
   supabase: SupabaseClient,
   fullName: string,
-  avatarPath: string | null,
 ): Promise<string | null> {
-  const { error } = await supabase.rpc("update_my_profile", {
+  const outcome = await withTimeout(Promise.resolve().then(() => supabase.rpc("update_my_display_name", {
     p_full_name: fullName.trim(),
-    p_avatar_path: avatarPath,
-  });
+  })), "profile display-name update");
+  if (!outcome.ok) {
+    console.error(`updateMyDisplayName failed: ${outcome.reason}`);
+    return "บันทึกชื่อที่แสดงไม่สำเร็จ กรุณาลองอีกครั้ง";
+  }
+  const { error } = outcome.value;
   if (error) {
-    logError("updateMyProfile failed", error);
+    logError("updateMyDisplayName failed", error);
     return error.message;
   }
   return null;

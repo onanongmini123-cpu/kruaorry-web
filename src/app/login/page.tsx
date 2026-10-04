@@ -13,6 +13,7 @@ import {
 } from "@/lib/authReturnPath";
 import { LINE_OA_URL } from "@/lib/config";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 import {
   buildSignupConfirmationRedirect,
   canResendSignupConfirmation,
@@ -99,8 +100,8 @@ function LoginForm() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) router.replace(authenticatedDestination);
+    supabase.auth.getUser().then(({ data: { user }, error: authError }) => {
+      if (!authError && isPermanentAuthUser(user)) router.replace(authenticatedDestination);
     }).catch(() => {
       // A temporary auth/network failure must not prevent manual sign-in.
     });

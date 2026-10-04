@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { GET } from "../route";
 
 interface FakeSupabaseOptions {
-  getUserImpl?: () => Promise<{ data: { user: { id: string } | null } }>;
+  getUserImpl?: () => Promise<{ data: { user: { id: string; is_anonymous?: boolean } | null } }>;
   resourceImpl?: () => Promise<{ data: { delivery_mode: string; cta_url: string | null; file_path: string | null; file_name: string | null } | null; error: { message: string } | null }>;
   signedUrlImpl?: () => Promise<{ data: { signedUrl: string } | null; error: { message: string } | null }>;
 }
@@ -93,6 +93,17 @@ describe("GET /api/resources/[id]/download", () => {
     expect(body).toMatch(/เข้าสู่ระบบ/);
     expect(body).toContain(`href="/login?next=%2Fdownload%2F${RESOURCE_ID}"`);
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("treats a Supabase anonymous identity as a signed-out visitor", async () => {
+    mockedCreateClient.mockResolvedValue(fakeSupabase({
+      getUserImpl: async () => ({ data: { user: { id: "anonymous-1", is_anonymous: true } } }),
+      resourceImpl: async () => ({ data: null, error: null }),
+    }) as never);
+
+    const response = await GET(resourceRequest(), makeParams(RESOURCE_ID));
+    expect(response.status).toBe(401);
+    expect(await response.text()).toContain(`href="/login?next=%2Fdownload%2F${RESOURCE_ID}"`);
   });
 
   it("rejects a malformed resource id before creating a Supabase client", async () => {

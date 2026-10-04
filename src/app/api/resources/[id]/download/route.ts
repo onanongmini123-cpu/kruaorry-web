@@ -5,6 +5,7 @@ import { withTimeout } from "@/lib/asyncTimeout";
 import { redactSensitive } from "@/lib/redact";
 import { downloadLoginHref } from "@/lib/downloadReturnPath";
 import { parseResourceTarget } from "@/lib/resourceTarget";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const authResult = await withTimeout(supabase.auth.getUser(), "auth.getUser");
-  const user = authResult.ok ? authResult.value.data.user : null;
+  const authUser = authResult.ok ? authResult.value.data.user : null;
+  const user = isPermanentAuthUser(authUser) ? authUser : null;
   if (!authResult.ok) console.error(`[download] ${authResult.reason}`);
 
   // The private file path is never selectable from public.resources. This

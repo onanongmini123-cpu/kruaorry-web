@@ -4,10 +4,19 @@ import { describe, expect, it } from "vitest";
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
 describe("member account integration", () => {
+  it("keeps anonymous and expired identities outside the member app", () => {
+    expect(pageSource).toContain("supabase.auth.getUser().catch(() => null)");
+    expect(pageSource).toContain("!authResult.error");
+    expect(pageSource).toContain("isPermanentAuthUser(authResult.data.user)");
+    expect(pageSource).toContain("router.replace(`/login?next=${encodeURIComponent(requestedPath)}`)");
+  });
+
   it("loads only the signed-in member lifecycle and application status", () => {
     expect(pageSource).toContain("fetchMemberSubscription(supabase, user.id)");
     expect(pageSource).toContain("fetchUpgradeRequestsResult(supabase, user.id)");
     expect(pageSource).toContain("subscription={subscription}");
+    expect(pageSource).toContain("entitlementsStatus={entitlementState.status}");
+    expect(pageSource).toContain("onRetryEntitlements={retryEntitlements}");
     expect(pageSource).toContain("applications={upgradeRequests}");
     expect(pageSource).toContain("applicationsError={upgradeRequestsError}");
     expect(pageSource).toContain("membershipSummary={(");
@@ -15,6 +24,7 @@ describe("member account integration", () => {
 
   it("renders the member plan through the shared display-name policy", () => {
     expect(pageSource).toContain("planDisplayName(");
+    expect(pageSource).toContain("memberPlanIdForDisplay(entitlements, subscription)");
     expect(pageSource).toContain("<small>แพ็ก {currentPlanDisplayName}</small>");
     expect(pageSource).toContain("แพ็กปัจจุบันของคุณคือ {currentPlanDisplayName}");
     expect(pageSource).not.toContain("<small>แพ็ก {entitlements.planId}</small>");

@@ -10,10 +10,21 @@ const mockedCreateServerClient = vi.mocked(createServerClient);
 
 beforeEach(() => vi.resetAllMocks());
 
-function mockSession(user: { id: string } | null) {
+function mockSession(
+  user: { id: string; is_anonymous?: boolean } | null,
+  error: unknown = null,
+) {
   mockedCreateServerClient.mockReturnValue({
     auth: {
-      getUser: vi.fn(async () => ({ data: { user }, error: null })),
+      getUser: vi.fn(async () => ({ data: { user }, error })),
+    },
+  } as never);
+}
+
+function mockRejectedSession() {
+  mockedCreateServerClient.mockReturnValue({
+    auth: {
+      getUser: vi.fn(async () => { throw new Error("auth unavailable"); }),
     },
   } as never);
 }
@@ -35,13 +46,30 @@ describe("application proxy", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
-  it("redirects anonymous application traffic to login with the full return path", async () => {
+  it("redirects signed-out application traffic to login with the full return path", async () => {
     mockSession(null);
     const response = await proxy(new NextRequest("https://example.com/app?memberPreview=1"));
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
       "https://example.com/login?next=%2Fapp%3FmemberPreview%3D1",
+    );
+  });
+
+  it("keeps a Supabase anonymous identity in the guest flow", async () => {
+    mockSession({ id: "anonymous-1", is_anonymous: true });
+
+    const login = await proxy(new NextRequest(
+      "https://example.com/login?mode=signup&next=%2Fapp",
+    ));
+    const application = await proxy(new NextRequest(
+      "https://example.com/app?resource=worksheet-1",
+    ));
+
+    expect(login.status).toBe(200);
+    expect(login.headers.get("location")).toBeNull();
+    expect(application.headers.get("location")).toBe(
+      "https://example.com/login?next=%2Fapp%3Fresource%3Dworksheet-1",
     );
   });
 
@@ -54,7 +82,7 @@ describe("application proxy", () => {
   });
 
   it("sends an authenticated visitor away from signup to the member app", async () => {
-    mockSession({ id: "member-1" });
+    mockSession({ id: "member-1", is_anonymous: false });
     const response = await proxy(new NextRequest(
       "https://example.com/login?mode=signup&next=%2Fmembership%3Fplan%3Dteacher",
     ));
@@ -85,5 +113,18 @@ describe("application proxy", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("treats an expired or unreadable session as a guest", async () => {
+    mockSession({ id: "stale-member" }, { message: "session expired" });
+    const expired = await proxy(new NextRequest("https://example.com/login?next=%2Fapp"));
+    expect(expired.status).toBe(200);
+    expect(expired.headers.get("location")).toBeNull();
+
+    mockRejectedSession();
+    const unreadable = await proxy(new NextRequest("https://example.com/app"));
+    expect(unreadable.headers.get("location")).toBe(
+      "https://example.com/login?next=%2Fapp",
+    );
   });
 });

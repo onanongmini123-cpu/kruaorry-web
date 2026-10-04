@@ -174,7 +174,7 @@ automatic expiry scheduling are intentionally outside Phase 1B.
 ## Verification and release limits
 
 `npm test` exercises UI/data helpers and static migration invariants.
-`npm run test:membership-sql` additionally runs the seven membership SQL files
+`npm run test:membership-sql` additionally runs the nine membership SQL files
 used by its regression chain against an isolated PGlite database with a
 minimal stub of the older schema.
 It checks the Plus copy, legacy backfill, Free favorite limit, Founder cap
@@ -187,11 +187,11 @@ the actual live dataset. No automatic payment is collected.
 The two older migrations executed manually (016d and 017) were verified
 against the live schema and recorded with `supabase migration repair` on
 2026-09-18 without rerunning their SQL. Later applied state is recorded in the
-migration README. Migration 048 is additive and pending; immediately before
-release, audit the live `founder_seat_ledger` provenance, recheck with
-`supabase migration list` and
-`supabase db push --dry-run`, then test RLS and payment-confirmation flows as
-real member and admin roles against a staging copy.
+migration README. Migration 048 is applied and recorded. Before releasing
+pending migrations 049–051, recheck the live ledger with
+`supabase migration list` and `supabase db push --dry-run`, then test RLS,
+payment-confirmation, and avatar flows as real member and admin roles against a
+staging copy.
 
 Migration 048 contains one narrowly scoped reconciliation for the reviewed
 owner test pair. It matches the exact non-identifying `created_at` instants plus

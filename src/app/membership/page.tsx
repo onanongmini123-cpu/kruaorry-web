@@ -57,6 +57,7 @@ import {
 import { createLatestRefreshRunner } from "@/lib/latestRefresh";
 import { planDisplayName } from "@/lib/planDisplay";
 import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -291,7 +292,8 @@ function MembershipContent() {
   const pendingResourceEligibilityUnknown = pendingApplication !== null
     && returnResourceId !== null
     && (!returnResourceLoaded || returnResourceError);
-  const pendingPaymentBlocked = applicationsError
+  const pendingPaymentBlocked = memberStatusError
+    || applicationsError
     || pendingFounderChecksUnavailable
     || pendingFounderUnavailable
     || pendingPlanMismatch
@@ -310,7 +312,7 @@ function MembershipContent() {
     const load = async () => {
       const [readiness, authResult, publicPlans, returnResourceResult] = await Promise.all([
         fetchMembershipSchemaReadiness(supabase),
-        supabase.auth.getUser(),
+        supabase.auth.getUser().catch(() => null),
         fetchPlans(supabase),
         returnResourceId
           ? fetchMembershipReturnResource(supabase, returnResourceId)
@@ -324,7 +326,11 @@ function MembershipContent() {
         requiredPlanIds: returnResourceResult.requiredPlanIds,
         error: returnResourceResult.error,
       } : null);
-      const user = authResult.data.user;
+      const user = authResult
+        && !authResult.error
+        && isPermanentAuthUser(authResult.data.user)
+        ? authResult.data.user
+        : null;
       setUserId(user?.id ?? null);
       if (readiness !== "ready") {
         setCapacity(null);
@@ -361,8 +367,8 @@ function MembershipContent() {
       setFounderHistoryLoaded(true);
       setFounderHistoryError(founderHistoryResult.error);
       if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
-      setSubscription(subscriptionResult.subscription);
-      setMemberStatusError(subscriptionResult.error);
+      if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
+      setMemberStatusError(entitlementResult.error || subscriptionResult.error);
       setMemberStatusLoaded(true);
       setAuthLoaded(true);
     };
@@ -398,8 +404,8 @@ function MembershipContent() {
           error: returnResourceResult.error,
         } : null);
         if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
-        setSubscription(subscriptionResult.subscription);
-        setMemberStatusError(subscriptionResult.error);
+        if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
+        setMemberStatusError(entitlementResult.error || subscriptionResult.error);
         setMemberStatusLoaded(true);
       },
     );
@@ -475,14 +481,14 @@ function MembershipContent() {
       error: returnResourceResult.error,
     } : null);
     if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
-    setSubscription(subscriptionResult.subscription);
-    setMemberStatusError(subscriptionResult.error);
+    if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
+    setMemberStatusError(entitlementResult.error || subscriptionResult.error);
     setMemberStatusLoaded(true);
   };
 
   const selectPlan = (planId: MembershipPlanId) => {
     if (hasOpenApplication || (hasCurrentMembership && !requestedPlanMismatch)) return;
-    if (schemaReadiness !== "ready" || applicationsError) return;
+    if (schemaReadiness !== "ready" || memberStatusError || applicationsError) return;
     const founderChecksDeferred = planId === "founder" && !shouldLoadFounderChecks;
     if (founderChecksBlockPlanSelection(planId, founderChecksUnavailable, founderChecksDeferred)) return;
     if (returnResourceId && (!returnResourceLoaded || !returnResourcePlanIds.includes(planId))) return;
@@ -740,7 +746,7 @@ function MembershipContent() {
                         && !hasOpenApplication
                         && currentPlanId !== "founder")
                     );
-                    const unavailable = schemaReadiness !== "ready" || applicationsError || founderUnavailable;
+                    const unavailable = schemaReadiness !== "ready" || memberStatusError || applicationsError || founderUnavailable;
                     return (
                       <button
                         key={plan.id}
@@ -753,7 +759,7 @@ function MembershipContent() {
                         <strong>{plan.name}</strong>
                         <span>{plan.priceLabel}</span>
                         {unavailable && (
-                          <small>{schemaReadiness !== "ready" || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? "กำลังตรวจสอบสิทธิ์" : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
+                          <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? "กำลังตรวจสอบสิทธิ์" : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
                         )}
                       </button>
                     );
@@ -813,7 +819,9 @@ function MembershipContent() {
                 {pendingPaymentBlocked && (
                   <div role="alert" className="kru-membership-conversion">
                     <strong>
-                      {applicationsError
+                      {memberStatusError
+                        ? "ยังตรวจสอบสิทธิ์สมาชิกไม่ได้"
+                        : applicationsError
                         ? "ยังตรวจสอบใบสมัครล่าสุดไม่ได้"
                         : pendingFounderChecksUnavailable
                         ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้"
@@ -827,7 +835,12 @@ function MembershipContent() {
                             ? "บัญชีนี้ใช้สิทธิ์ Founder ปีแรกแล้ว"
                             : "Founder ครบ 100 สิทธิ์ก่อนการยืนยันยอด"}
                     </strong>
-                    {applicationsError ? (
+                    {memberStatusError ? (
+                      <>
+                        <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กไว้จนกว่าจะตรวจสอบสิทธิ์สมาชิกสำเร็จ</p>
+                        <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+                      </>
+                    ) : applicationsError ? (
                       <>
                         <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กเพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว</p>
                         <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
@@ -863,13 +876,13 @@ function MembershipContent() {
                   </div>
                 )}
               </>
-            ) : noSelectablePlanForResource ? (
+            ) : noSelectablePlanForResource && !memberStatusError ? (
               <div className="kru-membership-action-block">
                 <p role="status" className="kru-membership-alert kru-membership-alert--warning">
                   สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายซึ่งใช้ปลดล็อกได้ ระบบจึงไม่แสดงปุ่มสมัครหรือ LINE สำหรับรายการนี้ กรุณาตรวจสอบด้วยบัญชีที่มีสิทธิ์เดิม
                 </p>
               </div>
-            ) : hasCurrentMembership && !requestedPlanMismatch && !returnResourceError ? (
+            ) : hasCurrentMembership && !requestedPlanMismatch && !returnResourceError && !memberStatusError ? (
               <div className="kru-membership-action-block">
                 {latestApplication?.status === "approved" && (
                   <ApplicationStatus

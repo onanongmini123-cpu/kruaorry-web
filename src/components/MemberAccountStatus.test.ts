@@ -38,6 +38,8 @@ describe("MemberAccountStatus", () => {
   it("shows plan, request, expiry, remaining days and the renewal action", () => {
     const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "teacher",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "teacher", name: "Teacher" }],
       subscription,
       subscriptionError: false,
@@ -61,6 +63,8 @@ describe("MemberAccountStatus", () => {
   it("does not present a legacy member timestamp as an admin-recorded LINE receipt", () => {
     const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "free",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "teacher", name: "Teacher" }],
       subscription: null,
       subscriptionError: false,
@@ -75,6 +79,8 @@ describe("MemberAccountStatus", () => {
   it("only offers active renewal inside the seven-day window", () => {
     const atEightDays = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "teacher",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "teacher", name: "Teacher" }],
       subscription: { ...subscription, currentPeriodEnd: "2099-10-03T00:00:00.000Z" },
       subscriptionError: false,
@@ -84,6 +90,8 @@ describe("MemberAccountStatus", () => {
     }));
     const atSevenDays = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "teacher",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "teacher", name: "Teacher" }],
       subscription: { ...subscription, currentPeriodEnd: "2099-10-02T00:00:00.000Z" },
       subscriptionError: false,
@@ -99,6 +107,8 @@ describe("MemberAccountStatus", () => {
   it("clearly distinguishes past-due and expired memberships", () => {
     const pastDue = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "teacher",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "teacher", name: "Teacher" }],
       subscription: { ...subscription, status: "past_due" },
       subscriptionError: false,
@@ -108,6 +118,8 @@ describe("MemberAccountStatus", () => {
     }));
     const expired = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "teacher",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "teacher", name: "Teacher" }],
       subscription: { ...subscription, status: "expired", currentPeriodEnd: "2099-09-24T00:00:00.000Z" },
       subscriptionError: false,
@@ -125,6 +137,8 @@ describe("MemberAccountStatus", () => {
   it("offers the membership page to Free accounts", () => {
     const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "free",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "free", name: "Free" }],
       subscription: null,
       subscriptionError: false,
@@ -140,6 +154,8 @@ describe("MemberAccountStatus", () => {
   it("fails closed when the latest application cannot be read", () => {
     const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
       currentPlanId: "free",
+      entitlementsStatus: "loaded",
+      onRetryEntitlements: () => {},
       plans: [{ id: "free", name: "Free" }],
       subscription: null,
       subscriptionError: false,
@@ -149,5 +165,81 @@ describe("MemberAccountStatus", () => {
 
     expect(markup).toContain("ตรวจสอบไม่ได้ในขณะนี้");
     expect(markup).not.toContain("ยังไม่มีคำขอ");
+  });
+
+  it("shows the known paid subscription and a Thai retry action when entitlements fail", () => {
+    const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "teacher",
+      entitlementsStatus: "error",
+      onRetryEntitlements: () => {},
+      plans: [{ id: "teacher", name: "Teacher" }],
+      subscription,
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+      now,
+    }));
+
+    expect(markup).toContain("Teacher Pro");
+    expect(markup).toContain("แสดงแพ็กจากรอบสมาชิกที่ยืนยันล่าสุด");
+    expect(markup).toContain("ลองตรวจสอบสิทธิ์อีกครั้ง");
+    expect(markup).not.toContain("บัญชีฟรี");
+    expect(markup).not.toContain("ดูแพ็กสมาชิก");
+  });
+
+  it("never labels an unknown entitlement read as Free", () => {
+    const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: null,
+      entitlementsStatus: "error",
+      onRetryEntitlements: () => {},
+      plans: [{ id: "free", name: "Free" }],
+      subscription: null,
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+    }));
+
+    expect(markup).toContain("ยังตรวจสอบไม่ได้");
+    expect(markup).toContain("ลองตรวจสอบสิทธิ์อีกครั้ง");
+    expect(markup).not.toContain("บัญชีฟรี");
+    expect(markup).not.toContain(">Free<");
+    expect(markup).not.toContain("ดูแพ็กสมาชิก");
+  });
+
+  it("does not turn a stale known-Free snapshot into an upsell after a refresh error", () => {
+    const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "free",
+      entitlementsStatus: "error",
+      onRetryEntitlements: () => {},
+      plans: [{ id: "free", name: "Free" }],
+      subscription: null,
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+    }));
+
+    expect(markup).toContain("ยังตรวจสอบไม่ได้");
+    expect(markup).toContain("ลองตรวจสอบสิทธิ์อีกครั้ง");
+    expect(markup).not.toContain("บัญชีฟรี");
+    expect(markup).not.toContain(">Free<");
+    expect(markup).not.toContain("ดูแพ็กสมาชิก");
+  });
+
+  it("keeps a retrying known-Free snapshot in the loading state", () => {
+    const markup = renderToStaticMarkup(React.createElement(MemberAccountStatus, {
+      currentPlanId: "free",
+      entitlementsStatus: "loading",
+      onRetryEntitlements: () => {},
+      plans: [{ id: "free", name: "Free" }],
+      subscription: null,
+      subscriptionError: false,
+      applications: [],
+      applicationsError: false,
+    }));
+
+    expect(markup).toContain("กำลังตรวจสอบสิทธิ์");
+    expect(markup).not.toContain("บัญชีฟรี");
+    expect(markup).not.toContain(">Free<");
+    expect(markup).not.toContain("ดูแพ็กสมาชิก");
   });
 });

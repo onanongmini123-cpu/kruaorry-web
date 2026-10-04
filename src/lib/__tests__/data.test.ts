@@ -172,7 +172,7 @@ describe("fetchEntitlements", () => {
     });
   });
 
-  it("fails closed to free with no capabilities when the RPC fails", async () => {
+  it("returns unknown rather than Free when the RPC fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const supabase = {
       rpc: vi.fn().mockResolvedValue({
@@ -181,10 +181,34 @@ describe("fetchEntitlements", () => {
       }),
     } as unknown as SupabaseClient;
 
-    await expect(fetchEntitlements(supabase)).resolves.toEqual({ planId: "free", features: {} });
+    await expect(fetchEntitlements(supabase)).resolves.toBeNull();
+    await expect(fetchEntitlementsResult(supabase)).resolves.toEqual({
+      entitlements: null,
+      error: true,
+    });
+  });
+
+  it("returns unknown on timeout instead of hanging or manufacturing Free", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      rpc: vi.fn(() => new Promise(() => {})),
+    } as unknown as SupabaseClient;
+
+    const resultPromise = fetchEntitlementsResult(supabase);
+    await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
+
+    await expect(resultPromise).resolves.toEqual({ entitlements: null, error: true });
+  });
+
+  it("treats an empty successful RPC response as a known Free account", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+    } as unknown as SupabaseClient;
+
     await expect(fetchEntitlementsResult(supabase)).resolves.toEqual({
       entitlements: { planId: "free", features: {} },
-      error: true,
+      error: false,
     });
   });
 });

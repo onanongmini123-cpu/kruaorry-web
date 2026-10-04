@@ -67,7 +67,8 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain('const teacherRequestedForPendingFounder = selectedPlanId === "teacher"');
     expect(membership).toContain('&& schemaReadiness === "ready"');
     expect(membership).toContain('if (schemaReadiness !== "ready")');
-    expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
+    expect(membership).toContain('const pendingPaymentBlocked = memberStatusError');
+    expect(membership).toContain('|| applicationsError');
     expect(membership).toContain('|| pendingFounderChecksUnavailable');
     expect(membership).toContain('!founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable)');
     expect(membership).toContain('applicationPlanId === "founder" ? (');
@@ -86,7 +87,8 @@ describe("canonical manual membership flow", () => {
   });
 
   it("never exposes stale pending-payment actions when the application refresh fails", () => {
-    expect(membership).toContain('const pendingPaymentBlocked = applicationsError');
+    expect(membership).toContain('const pendingPaymentBlocked = memberStatusError');
+    expect(membership).toContain('setMemberStatusError(entitlementResult.error || subscriptionResult.error)');
     expect(membership).toContain('if (applicationsError) {');
     expect(membership).toContain("ยังตรวจสอบใบสมัครล่าสุดไม่ได้");
     expect(membership).toContain("เพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว");
@@ -160,7 +162,7 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("กลับไปเปิดสื่อ");
     expect(membership).toContain("ไปพื้นที่สมาชิก");
     expect(memberApp).toContain("fetchEntitlementsResult(supabase)");
-    expect(memberApp).toContain("if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements)");
+    expect(memberApp).toContain("completeMemberEntitlementsRefresh(current, entitlementResult)");
     expect(membership).toContain("fetchMembershipReturnResource");
     expect(membership).toContain("returnResourcePlanIds");
     expect(membership).toContain("membershipPlanUnlocksResource");

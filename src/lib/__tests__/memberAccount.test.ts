@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  beginMemberEntitlementsRefresh,
   canRequestMembershipRenewal,
+  completeMemberEntitlementsRefresh,
+  INITIAL_MEMBER_ENTITLEMENTS_STATE,
   isMembershipExpired,
+  memberPlanIdForDisplay,
   membershipDaysRemaining,
   preferredMemberSubscription,
   preferredMembershipApplication,
@@ -85,5 +89,62 @@ describe("member account record selection", () => {
     const pending = application({ id: "pending", status: "pending", createdAt: "2026-10-01T00:00:00.000Z" });
     expect(preferredMembershipApplication([approved, pending])).toBe(pending);
     expect(preferredMembershipApplication([])).toBeNull();
+  });
+});
+
+describe("member entitlement UI state", () => {
+  it("keeps an initial error unknown instead of manufacturing a Free result", () => {
+    const failed = completeMemberEntitlementsRefresh(INITIAL_MEMBER_ENTITLEMENTS_STATE, {
+      entitlements: null,
+      error: true,
+    });
+
+    expect(failed).toEqual({ status: "error", entitlements: null });
+    expect(memberPlanIdForDisplay(failed.entitlements, null, now)).toBeNull();
+  });
+
+  it("preserves the last known snapshot through retry and a later failure", () => {
+    const loaded = completeMemberEntitlementsRefresh(INITIAL_MEMBER_ENTITLEMENTS_STATE, {
+      entitlements: { planId: "teacher", features: {} },
+      error: false,
+    });
+    const retrying = beginMemberEntitlementsRefresh(loaded);
+    const failed = completeMemberEntitlementsRefresh(retrying, { entitlements: null, error: true });
+
+    expect(retrying).toEqual({ status: "loading", entitlements: { planId: "teacher", features: {} } });
+    expect(failed).toEqual({ status: "error", entitlements: { planId: "teacher", features: {} } });
+  });
+
+  it("accepts a successful retry after an error", () => {
+    const failed = completeMemberEntitlementsRefresh(INITIAL_MEMBER_ENTITLEMENTS_STATE, {
+      entitlements: null,
+      error: true,
+    });
+    const retrying = beginMemberEntitlementsRefresh(failed);
+    const recovered = completeMemberEntitlementsRefresh(retrying, {
+      entitlements: { planId: "free", features: {} },
+      error: false,
+    });
+
+    expect(recovered).toEqual({ status: "loaded", entitlements: { planId: "free", features: {} } });
+  });
+
+  it("uses a current paid subscription as display-only fallback", () => {
+    expect(memberPlanIdForDisplay(null, subscription(), now)).toBe("teacher");
+    expect(memberPlanIdForDisplay({ planId: "free", features: {} }, subscription(), now)).toBe("teacher");
+    expect(memberPlanIdForDisplay(
+      { planId: "founder", features: {} },
+      subscription(),
+      now,
+    )).toBe("founder");
+  });
+
+  it("does not use expired or revoked subscription history as a paid fallback", () => {
+    expect(memberPlanIdForDisplay(null, subscription({ status: "expired" }), now)).toBeNull();
+    expect(memberPlanIdForDisplay(
+      { planId: "free", features: {} },
+      subscription({ status: "revoked" }),
+      now,
+    )).toBe("free");
   });
 });

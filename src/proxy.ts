@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isProtectedAppPath } from "@/lib/routeAccess";
 import { authCompletionDestination } from "@/lib/authReturnPath";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 
 function redirectWithRefreshedCookies(destination: URL, response: NextResponse): NextResponse {
   const redirect = NextResponse.redirect(destination);
@@ -31,19 +32,23 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let hasPermanentUser = false;
+  try {
+    const authResult = await supabase.auth.getUser();
+    hasPermanentUser = !authResult.error && isPermanentAuthUser(authResult.data.user);
+  } catch {
+    // An expired or temporarily unreadable session is a guest for routing.
+  }
 
   const protectedPath = isProtectedAppPath(request.nextUrl.pathname);
 
-  if (request.nextUrl.pathname === "/login" && user) {
+  if (request.nextUrl.pathname === "/login" && hasPermanentUser) {
     const mode = request.nextUrl.searchParams.get("mode") === "signup" ? "signup" : "signin";
     const destination = authCompletionDestination(mode, request.nextUrl.searchParams.get("next"));
     return redirectWithRefreshedCookies(new URL(destination, request.url), response);
   }
 
-  if (protectedPath && !user) {
+  if (protectedPath && !hasPermanentUser) {
     const url = request.nextUrl.clone();
     const requestedPath = `${url.pathname}${url.search}`;
     url.pathname = "/login";

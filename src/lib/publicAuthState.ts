@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "./asyncTimeout";
 import { FREE_SIGNUP_HREF } from "./authReturnPath";
+import { isPermanentAuthUser } from "./authIdentity";
 
 export type PublicAuthState = "checking" | "guest" | "member";
 
@@ -54,12 +55,18 @@ export function observePublicAuthState(
     // public CTA current while this page remains mounted.
     if (event === "INITIAL_SESSION") return;
     authEventVersion += 1;
-    if (active) onState(session?.user ? "member" : "guest");
+    if (active) onState(isPermanentAuthUser(session?.user) ? "member" : "guest");
   });
 
   void initialUserRequest.then((outcome) => {
     if (!active || authEventVersion !== initialRequestVersion) return;
-    onState(outcome.ok && outcome.value.data.user ? "member" : "guest");
+    onState(
+      outcome.ok
+        && !outcome.value.error
+        && isPermanentAuthUser(outcome.value.data.user)
+        ? "member"
+        : "guest",
+    );
   });
 
   return () => {

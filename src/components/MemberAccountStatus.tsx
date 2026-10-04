@@ -13,7 +13,9 @@ import {
 } from "@/lib/memberAccount";
 
 interface MemberAccountStatusProps {
-  currentPlanId: string;
+  currentPlanId: string | null;
+  entitlementsStatus: "loading" | "loaded" | "error";
+  onRetryEntitlements: () => void;
   plans: Pick<Plan, "id" | "name">[];
   subscription: MemberSubscription | null;
   subscriptionError: boolean;
@@ -29,8 +31,19 @@ function formatThaiDate(value: string): string {
     : "ตรวจสอบไม่ได้";
 }
 
-function subscriptionStatus(subscription: MemberSubscription | null, now?: number): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
-  if (!subscription) return { label: "บัญชีฟรี", tone: "neutral" };
+function subscriptionStatus(
+  subscription: MemberSubscription | null,
+  currentPlanId: string | null,
+  entitlementsStatus: MemberAccountStatusProps["entitlementsStatus"],
+  now?: number,
+): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
+  if (!subscription) {
+    if (entitlementsStatus === "loading") return { label: "กำลังตรวจสอบ", tone: "neutral" };
+    if (entitlementsStatus === "error") return { label: "ตรวจสอบไม่ได้", tone: "warning" };
+    return currentPlanId && currentPlanId !== "free"
+      ? { label: "ใช้งานอยู่", tone: "success" }
+      : { label: "บัญชีฟรี", tone: "neutral" };
+  }
   if (subscription.status === "past_due") return { label: "รอต่ออายุ", tone: "warning" };
   if (isMembershipExpired(subscription, now)) return { label: "หมดอายุ", tone: "danger" };
   return { label: "ใช้งานอยู่", tone: "success" };
@@ -45,14 +58,20 @@ function applicationStatus(application: UpgradeRequest): { label: string; tone: 
     : { label: "รอส่งเลขอ้างอิงและสลิปทาง LINE", tone: "warning" };
 }
 
-export function MemberAccountStatus({ currentPlanId, plans, subscription, subscriptionError, applications, applicationsError, now }: MemberAccountStatusProps) {
+export function MemberAccountStatus({ currentPlanId, entitlementsStatus, onRetryEntitlements, plans, subscription, subscriptionError, applications, applicationsError, now }: MemberAccountStatusProps) {
   const planNameById = new Map(plans.map((plan) => [plan.id, planDisplayName(plan.id, plan.name)]));
-  const currentPlanName = planNameById.get(currentPlanId)
-    ?? (subscription?.planId === currentPlanId ? planDisplayName(currentPlanId, subscription.planName) : null)
-    ?? (currentPlanId === "free" ? "Free" : planDisplayName(currentPlanId));
+  const currentPlanName = entitlementsStatus !== "loaded" && currentPlanId === "free"
+    ? entitlementsStatus === "loading" ? "กำลังตรวจสอบสิทธิ์…" : "ยังตรวจสอบไม่ได้"
+    : currentPlanId
+    ? planNameById.get(currentPlanId)
+      ?? (subscription?.planId === currentPlanId ? planDisplayName(currentPlanId, subscription.planName) : null)
+      ?? (currentPlanId === "free" ? "Free" : planDisplayName(currentPlanId))
+    : entitlementsStatus === "loading"
+      ? "กำลังตรวจสอบสิทธิ์…"
+      : "ยังตรวจสอบไม่ได้";
   const request = preferredMembershipApplication(applications);
   const requestStatus = request ? applicationStatus(request) : null;
-  const status = subscriptionStatus(subscription, now);
+  const status = subscriptionStatus(subscription, currentPlanId, entitlementsStatus, now);
   const daysRemaining = membershipDaysRemaining(subscription?.currentPeriodEnd ?? null, now);
   const canRenew = canRequestMembershipRenewal(subscription, now);
   const expirationCopy = subscription?.currentPeriodEnd
@@ -70,6 +89,17 @@ export function MemberAccountStatus({ currentPlanId, plans, subscription, subscr
         </div>
         {!subscriptionError && <Badge tone={status.tone}>{status.label}</Badge>}
       </div>
+
+      {entitlementsStatus === "error" && (
+        <div role="alert" className="kru-account-membership__entitlement-error">
+          <p>{subscription && currentPlanId !== null
+            ? "ยังตรวจสอบสิทธิ์จากระบบไม่ได้ ขณะนี้แสดงแพ็กจากรอบสมาชิกที่ยืนยันล่าสุด"
+            : currentPlanId !== null
+              ? "ยังตรวจสอบสิทธิ์ล่าสุดไม่ได้ ขณะนี้ยังใช้ข้อมูลที่ตรวจสอบสำเร็จก่อนหน้า"
+            : "ยังตรวจสอบสิทธิ์แพ็กไม่ได้ กรุณาลองอีกครั้ง"}</p>
+          <button type="button" className="kru-btn kru-btn--soft" onClick={onRetryEntitlements}>ลองตรวจสอบสิทธิ์อีกครั้ง</button>
+        </div>
+      )}
 
       {subscriptionError ? (
         <p role="alert" className="kru-account-membership__error">ยังตรวจสอบรอบสมาชิกไม่ได้ในขณะนี้ กรุณาลองเปิดหน้านี้ใหม่ภายหลัง</p>
@@ -105,16 +135,16 @@ export function MemberAccountStatus({ currentPlanId, plans, subscription, subscr
       )}
 
       <div className="kru-account-membership__actions">
-        {canRenew ? (
+        {entitlementsStatus !== "loaded" ? null : canRenew ? (
           <a className="kru-btn kru-btn--primary" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
             <RefreshCw size={17} aria-hidden="true" /> ขอรหัสอ้างอิงต่ออายุทาง LINE
           </a>
         ) : currentPlanId === "free" ? (
           <Link className="kru-btn kru-btn--primary" href="/membership">ดูแพ็กสมาชิก</Link>
-        ) : (
+        ) : currentPlanId ? (
           <Link className="kru-btn kru-btn--soft" href="/membership">ดูรายละเอียดสมาชิก</Link>
-        )}
-        {canRenew && <p>ขอรหัสอ้างอิงต่ออายุจากทีมงานก่อน แล้วจึงชำระและส่งหลักฐานทาง LINE ทีมงานจะตรวจยอดก่อนยืนยันวันต่ออายุในระบบ</p>}
+        ) : null}
+        {entitlementsStatus === "loaded" && canRenew && <p>ขอรหัสอ้างอิงต่ออายุจากทีมงานก่อน แล้วจึงชำระและส่งหลักฐานทาง LINE ทีมงานจะตรวจยอดก่อนยืนยันวันต่ออายุในระบบ</p>}
       </div>
 
       <style jsx>{`
@@ -133,12 +163,17 @@ export function MemberAccountStatus({ currentPlanId, plans, subscription, subscr
         .kru-account-membership__actions { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
         .kru-account-membership__actions p { max-width: 460px; color: var(--text-muted); font-size: var(--fs-13); line-height: 1.55; }
         .kru-account-membership__error { padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+        .kru-account-membership__entitlement-error { padding: var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+        .kru-account-membership__entitlement-error p { margin: 0; line-height: 1.55; }
+        .kru-account-membership__entitlement-error button { flex: 0 0 auto; }
         @media (max-width: 560px) {
           .kru-account-membership__facts { grid-template-columns: minmax(0, 1fr); }
           .kru-account-membership__request { align-items: stretch; flex-direction: column; }
           .kru-account-membership__request a { min-height: 44px; display: inline-flex; align-items: center; }
           .kru-account-membership__actions, .kru-account-membership__actions :global(.kru-btn) { width: 100%; }
           .kru-account-membership__actions :global(.kru-btn) { justify-content: center; }
+          .kru-account-membership__entitlement-error { align-items: stretch; flex-direction: column; }
+          .kru-account-membership__entitlement-error button { width: 100%; justify-content: center; }
         }
       `}</style>
     </section>

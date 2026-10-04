@@ -270,7 +270,9 @@ or protected catalogue metadata conflicts. The Site and cover were verified,
 the dry-run named only this migration, and it was applied on 2026-10-01; a
 post-apply ledger check confirmed local and remote version `20261001180000`.
 
-Migration `20261001190000_048_founder_payment_confirmation.sql` is **pending**.
+Migration `20261001190000_048_founder_payment_confirmation.sql` is **applied
+and recorded** on the live project. Migrations `049`, `050`, and `051` below
+remain pending and must be checked against the live ledger before rollout.
 It makes 299 THB a first-year Founder offer for only the first 100 payments
 confirmed by an admin, sets Founder and Teacher renewal to 599 THB/year, and
 adds idempotent application, activation and renewal RPCs. Pending applications
@@ -395,6 +397,34 @@ checks pass. Clients continue to use 048's marker for the broader membership
 page. Admin and member readers use legacy selects until 050's separate marker
 is present, so a staggered rollout does not disable application creation or
 read-only member statuses.
+
+Migration `20261004110000_051_deterministic_profile_avatars.sql` is **pending**
+and must run after `050`. It keeps the avatar bucket private and WebP-only with
+the existing 5 MB object limit, but replaces unbounded random writes with the
+single exact key `avatars/<auth.uid()>/avatar.webp`. Existing random-key
+avatars remain readable and owner-deletable until the next successful edit;
+they cannot be newly uploaded or reattached. Separate self-targeting
+`update_my_display_name(text)` and `update_my_avatar(text)` RPCs prevent a name
+save from restoring a stale avatar. The old two-argument RPC remains only as a
+rollout compatibility wrapper: it saves the name and ignores its avatar
+argument. Table-wide profile UPDATE is revoked from browser roles; only the
+existing trigger-guarded admin `role` and `plan` columns remain directly
+updatable. Migration postconditions verify the bucket, path constraint,
+exact-key policies, RPC grants, column grants, and privilege trigger.
+
+Roll out `051` before the matching frontend and deploy that frontend promptly:
+the old frontend can still save names during this interval, but its random-key
+avatar upload fails closed; the new frontend must not be deployed first because
+the pre-051 policy rejects deterministic keys. The browser accepts only JPEG,
+PNG, or WebP files up to 5 MB, crops and re-encodes them to WebP, then upserts
+the fixed key before attaching it through the avatar-only RPC. A lost RPC
+response is reconciled by reading the caller's profile. Removal clears the
+profile reference but deliberately retains the fixed object, because Storage
+deletion cannot be atomic with a concurrent replacement; this is bounded to
+one object per user. Legacy deletion is best-effort after the database commit.
+Storage validates declared MIME, size, ownership, and exact key, but does not
+inspect file magic bytes; stronger content verification would require a
+trusted server-side processing boundary.
 
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025

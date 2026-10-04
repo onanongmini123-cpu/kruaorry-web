@@ -23,4 +23,9 @@ describe("login and signup branding", () => {
     expect(loginSource).toContain("router.replace(SIGNUP_DESTINATION)");
     expect(loginSource).toContain("router.replace(signInDestination)");
   });
+
+  it("redirects only a verified permanent user away from login", () => {
+    expect(loginSource).toContain("!authError && isPermanentAuthUser(user)");
+    expect(loginSource).not.toContain("if (user) router.replace(authenticatedDestination)");
+  });
 });

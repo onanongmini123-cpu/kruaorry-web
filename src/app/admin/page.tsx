@@ -52,6 +52,7 @@ import {
 import { FOUNDER_CAPACITY_LIMIT, normalizeFounderCapacity } from "@/lib/founderCapacity";
 import { planDisplayName } from "@/lib/planDisplay";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
 import {
@@ -815,9 +816,12 @@ export default function AdminConsolePage() {
 
   useEffect(() => {
     (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const authResult = await supabase.auth.getUser().catch(() => null);
+      const user = authResult
+        && !authResult.error
+        && isPermanentAuthUser(authResult.data.user)
+        ? authResult.data.user
+        : null;
       if (!user) {
         router.push("/login");
         return;

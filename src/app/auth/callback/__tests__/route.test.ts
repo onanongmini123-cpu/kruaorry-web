@@ -45,6 +45,47 @@ describe("GET /auth/callback", () => {
     expect(response.headers.get("location")).not.toContain("SECRET");
   });
 
+  it("does not complete confirmation with a Supabase anonymous identity", async () => {
+    mockedCreateClient.mockResolvedValue({
+      auth: {
+        exchangeCodeForSession: async () => ({
+          data: { user: { id: "anonymous-1", is_anonymous: true } },
+          error: null,
+        }),
+      },
+    } as never);
+
+    const response = await GET(new Request(
+      "https://example.com/auth/callback?code=SECRET&next=https%3A%2F%2Fevil.example",
+    ));
+
+    expect(response.headers.get("location")).toBe(
+      "https://example.com/login?next=%2Fapp&error=confirmation",
+    );
+    expect(response.headers.get("location")).not.toContain("SECRET");
+    expect(response.headers.get("location")).not.toContain("evil.example");
+  });
+
+  it("also rejects an anonymous identity from token-hash confirmation", async () => {
+    mockedCreateClient.mockResolvedValue({
+      auth: {
+        verifyOtp: async () => ({
+          data: { user: { id: "anonymous-1", is_anonymous: true } },
+          error: null,
+        }),
+      },
+    } as never);
+
+    const response = await GET(new Request(
+      "https://example.com/auth/callback?token_hash=SECRET&type=email",
+    ));
+
+    expect(response.headers.get("location")).toBe(
+      "https://example.com/login?next=%2Fapp&error=confirmation",
+    );
+    expect(response.headers.get("location")).not.toContain("SECRET");
+  });
+
   it("rejects external redirects, ambiguous credentials and unrelated OTP types", async () => {
     mockedCreateClient.mockResolvedValue({ auth: { exchangeCodeForSession: async () => ({ data: { user: { id: "user-1" } }, error: null }) } } as never);
     const external = await GET(new Request("https://example.com/auth/callback?code=SECRET&next=https://evil.example"));

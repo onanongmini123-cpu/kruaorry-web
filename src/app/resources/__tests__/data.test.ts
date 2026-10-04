@@ -79,6 +79,29 @@ describe("public resource viewer", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("treats stale user data returned with an auth error as a guest", async () => {
+    const from = vi.fn();
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: { user: { id: "stale-member" } },
+          error: { message: "session expired" },
+        })),
+      },
+      from,
+      rpc,
+    } as never);
+
+    await expect(loadPublicResourceViewer()).resolves.toMatchObject({
+      authenticated: false,
+      role: null,
+      entitlements: { planId: "free", features: {} },
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("derives role and capabilities from the caller's own session", async () => {
     const profile = profileQuery("member");
     const pending = pendingUpgradeQuery(["founder", "founder"]);

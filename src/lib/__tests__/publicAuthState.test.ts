@@ -19,6 +19,12 @@ const MEMBER_USER: User = {
   created_at: "2026-10-04T00:00:00.000Z",
 };
 
+const ANONYMOUS_USER: User = {
+  ...MEMBER_USER,
+  id: "anonymous",
+  is_anonymous: true,
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -96,6 +102,19 @@ describe("public-home auth state", () => {
     await vi.waitFor(() => expect(apply).toHaveBeenCalledWith("member"));
   });
 
+  it("keeps a Supabase anonymous identity in the guest state", async () => {
+    const harness = authHarness();
+    const apply = vi.fn();
+    observePublicAuthState(harness.auth, apply);
+
+    harness.userRequest.resolve({ data: { user: ANONYMOUS_USER }, error: null });
+    await harness.userRequest.promise;
+
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledWith("guest"));
+    harness.emit("SIGNED_IN", ANONYMOUS_USER);
+    expect(apply).toHaveBeenLastCalledWith("guest");
+  });
+
   it("falls back to the guest state when the authoritative user check fails", async () => {
     const harness = authHarness();
     const apply = vi.fn();
@@ -108,6 +127,20 @@ describe("public-home auth state", () => {
       expect(apply).toHaveBeenCalledOnce();
       expect(apply).toHaveBeenCalledWith("guest");
     });
+  });
+
+  it("does not trust stale user data returned with a session error", async () => {
+    const harness = authHarness();
+    const apply = vi.fn();
+    observePublicAuthState(harness.auth, apply);
+
+    harness.userRequest.resolve({
+      data: { user: MEMBER_USER },
+      error: new AuthSessionMissingError(),
+    } as unknown as Awaited<ReturnType<Auth["getUser"]>>);
+    await harness.userRequest.promise;
+
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledWith("guest"));
   });
 
   it("falls back to guest when the authoritative user request rejects", async () => {

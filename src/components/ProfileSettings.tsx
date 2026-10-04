@@ -8,14 +8,12 @@ import { Button, Input } from "@/components/ui";
 import { AvatarCropper } from "@/components/AvatarCropper";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import type { Profile } from "@/lib/data";
-import { updateMyProfile } from "@/lib/data";
+import { updateMyDisplayName } from "@/lib/data";
 import {
-  avatarStoragePath,
-  clearAvatarSignedUrlCache,
   cropAndOptimizeAvatar,
+  persistMyAvatarBlob,
   primeAvatarPreview,
-  PROFILE_AVATAR_BUCKET,
-  updateMyAvatar,
+  removeMyAvatar,
   validateAvatarFile,
   type AvatarCrop,
 } from "@/lib/profileAvatar";
@@ -40,17 +38,6 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = savingName || avatarBusy;
-
-  const removeStoredAvatar = async (path: string): Promise<string | null> => {
-    try {
-      const { error: removeError } = await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([path]);
-      return removeError?.message ?? null;
-    } catch (caught) {
-      return caught instanceof Error ? caught.message : "ลบไฟล์รูปโปรไฟล์ไม่สำเร็จ";
-    } finally {
-      clearAvatarSignedUrlCache(supabase, path);
-    }
-  };
 
   const chooseFile = (file: File | null) => {
     setMessage(null);
@@ -77,7 +64,7 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
     operationRef.current = true;
     setSavingName(true);
     try {
-      const updateError = await updateMyProfile(supabase, normalizedName, avatarPath);
+      const updateError = await updateMyDisplayName(supabase, normalizedName);
       if (updateError) throw new Error(updateError);
       onUpdated({ ...profile, fullName: normalizedName, avatarPath });
       setMessage("บันทึกชื่อที่แสดงเรียบร้อยแล้ว");
@@ -95,44 +82,20 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
     setError(null);
     setMessage(null);
     setAvatarBusy(true);
-    let uploadedPath: string | null = null;
-    let avatarUpdated = false;
     try {
       const blob = await cropAndOptimizeAvatar(cropFile, crop);
-      uploadedPath = avatarStoragePath();
-      const { error: uploadError } = await supabase.storage
-        .from(PROFILE_AVATAR_BUCKET)
-        .upload(uploadedPath, blob, {
-          contentType: "image/webp",
-          upsert: false,
-          cacheControl: "31536000",
-        });
-      if (uploadError) throw new Error("อัปโหลดรูปโปรไฟล์ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      const result = await persistMyAvatarBlob(supabase, blob, avatarPath);
+      if (result.error || !result.avatarPath) throw new Error(result.error ?? "บันทึกรูปโปรไฟล์ไม่สำเร็จ");
 
-      const updateError = await updateMyAvatar(supabase, uploadedPath);
-      if (updateError) throw new Error(updateError);
-      avatarUpdated = true;
-
-      const previousPath = avatarPath;
-      primeAvatarPreview(supabase, uploadedPath, blob);
-      setAvatarPath(uploadedPath);
+      primeAvatarPreview(supabase, result.avatarPath, blob);
+      setAvatarPath(result.avatarPath);
       setCropFile(null);
       if (inputRef.current) inputRef.current.value = "";
-      onUpdated({ ...profile, avatarPath: uploadedPath });
+      onUpdated({ ...profile, avatarPath: result.avatarPath });
       setMessage("เปลี่ยนรูปโปรไฟล์เรียบร้อยแล้ว");
-      if (previousPath && previousPath !== uploadedPath) {
-        const cleanupError = await removeStoredAvatar(previousPath);
-        if (cleanupError) {
-          setError("บันทึกรูปใหม่แล้ว แต่ลบไฟล์รูปเดิมไม่สำเร็จ โปรดแจ้งผู้ดูแลระบบ");
-        }
-      }
+      if (result.cleanupWarning) setError(result.cleanupWarning);
     } catch (caught) {
-      let errorMessage = caught instanceof Error ? caught.message : "บันทึกรูปโปรไฟล์ไม่สำเร็จ";
-      if (uploadedPath && !avatarUpdated) {
-        const cleanupError = await removeStoredAvatar(uploadedPath);
-        if (cleanupError) errorMessage += " และล้างไฟล์ที่อัปโหลดไม่สำเร็จ";
-      }
-      setError(errorMessage);
+      setError(caught instanceof Error ? caught.message : "บันทึกรูปโปรไฟล์ไม่สำเร็จ");
     } finally {
       operationRef.current = false;
       setAvatarBusy(false);
@@ -146,17 +109,13 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
     setError(null);
     setMessage(null);
     try {
-      const updateError = await updateMyAvatar(supabase, null);
-      if (updateError) throw new Error(updateError);
-      const previousPath = avatarPath;
+      const result = await removeMyAvatar(supabase, avatarPath);
+      if (result.error) throw new Error(result.error);
       setAvatarPath(null);
       setCropFile(null);
       onUpdated({ ...profile, avatarPath: null });
       setMessage("นำรูปโปรไฟล์ออกแล้ว");
-      const cleanupError = await removeStoredAvatar(previousPath);
-      if (cleanupError) {
-        setError("นำรูปออกจากบัญชีแล้ว แต่ลบไฟล์เดิมไม่สำเร็จ โปรดแจ้งผู้ดูแลระบบ");
-      }
+      if (result.cleanupWarning) setError(result.cleanupWarning);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "นำรูปโปรไฟล์ออกไม่สำเร็จ");
     } finally {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLatestRefreshRunner } from "../latestRefresh";
+import { createLatestRefreshController, createLatestRefreshRunner } from "../latestRefresh";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -41,5 +41,63 @@ describe("latest refresh runner", () => {
     pending.resolve("late");
     await refresh;
     expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("does not leak the previous member response into a new login", async () => {
+    const previousMember = deferred<string>();
+    const applied: string[] = [];
+    const previousRunner = createLatestRefreshRunner(
+      () => previousMember.promise,
+      (value) => applied.push(value),
+    );
+    const previousRefresh = previousRunner.request();
+
+    previousRunner.dispose();
+    const nextRunner = createLatestRefreshRunner(
+      async () => "next-member-teacher",
+      (value) => applied.push(value),
+    );
+    await nextRunner.request();
+    previousMember.resolve("previous-member-free");
+    await previousRefresh;
+
+    expect(applied).toEqual(["next-member-teacher"]);
+  });
+
+  it("synchronously invalidates the current member on logout and keeps a newer login attached", async () => {
+    const previousMember = deferred<string>();
+    const applied: string[] = [];
+    const controller = createLatestRefreshController();
+    const previousRunner = createLatestRefreshRunner(
+      () => previousMember.promise,
+      (value) => applied.push(value),
+    );
+    controller.attach(previousRunner);
+    const previousRefresh = controller.request();
+
+    controller.dispose();
+    const nextRunner = createLatestRefreshRunner(
+      async () => "next-member-teacher",
+      (value) => applied.push(value),
+    );
+    controller.attach(nextRunner);
+    controller.detach(previousRunner);
+    await controller.request();
+
+    previousMember.resolve("previous-member-free");
+    await previousRefresh;
+    expect(applied).toEqual(["next-member-teacher"]);
+  });
+
+  it("queues a retry requested just before the effect attaches its runner", async () => {
+    const controller = createLatestRefreshController();
+    const apply = vi.fn();
+    await controller.request();
+
+    controller.attach(createLatestRefreshRunner(async () => "teacher", apply));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(apply).toHaveBeenCalledWith("teacher");
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const cropperSource = readFileSync(new URL("./AvatarCropper.tsx", import.meta.url), "utf8");
 const settingsSource = readFileSync(new URL("./ProfileSettings.tsx", import.meta.url), "utf8");
+const avatarSource = readFileSync(new URL("../lib/profileAvatar.ts", import.meta.url), "utf8");
 
 describe("profile avatar interaction contract", () => {
   it("offers a square drag crop, zoom and axis pan with a circular preview", () => {
@@ -32,14 +33,35 @@ describe("profile avatar interaction contract", () => {
     expect(settingsSource).toContain('accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"');
     expect(settingsSource).toContain("validateAvatarFile(file)");
     expect(settingsSource).toContain("cropAndOptimizeAvatar(cropFile, crop)");
-    expect(settingsSource).toContain('contentType: "image/webp"');
-    expect(settingsSource).toContain("upsert: false");
-    expect(settingsSource).toContain("updateMyAvatar(supabase, uploadedPath)");
-    expect(settingsSource).toContain("primeAvatarPreview(supabase, uploadedPath, blob)");
-    expect(settingsSource).toContain("onUpdated({ ...profile, avatarPath: uploadedPath })");
+    expect(settingsSource).toContain("persistMyAvatarBlob(supabase, blob, avatarPath)");
+    expect(settingsSource).toContain("primeAvatarPreview(supabase, result.avatarPath, blob)");
+    expect(settingsSource).toContain("onUpdated({ ...profile, avatarPath: result.avatarPath })");
+    expect(avatarSource).toContain('contentType: "image/webp"');
+    expect(avatarSource).toContain("upsert: true");
+    expect(avatarSource).toContain('cacheControl: "60"');
 
-    const persisted = settingsSource.indexOf("updateMyAvatar(supabase, uploadedPath)");
-    const refreshed = settingsSource.indexOf("onUpdated({ ...profile, avatarPath: uploadedPath })");
+    const persisted = settingsSource.indexOf("persistMyAvatarBlob(supabase, blob, avatarPath)");
+    const refreshed = settingsSource.indexOf("onUpdated({ ...profile, avatarPath: result.avatarPath })");
     expect(refreshed).toBeGreaterThan(persisted);
+  });
+
+  it("serializes name, save, and removal operations and makes cancel side-effect free", () => {
+    expect(settingsSource).toContain("if (operationRef.current) return");
+    expect(settingsSource).toContain("if (!cropFile || busy || operationRef.current) return");
+    expect(settingsSource).toContain("if (!avatarPath || busy || operationRef.current) return");
+    expect(settingsSource.match(/operationRef\.current = true/g)).toHaveLength(3);
+    expect(settingsSource.match(/operationRef\.current = false/g)).toHaveLength(3);
+
+    const cancelStart = settingsSource.indexOf("onCancel={() => {");
+    const cancelEnd = settingsSource.indexOf("}}", cancelStart);
+    const cancel = settingsSource.slice(cancelStart, cancelEnd);
+    expect(cancel).toContain("setCropFile(null)");
+    expect(cancel).not.toContain("persistMyAvatarBlob");
+    expect(cancel).not.toContain("updateMyAvatar");
+  });
+
+  it("saves display names through a separate RPC without carrying avatar state", () => {
+    expect(settingsSource).toContain("updateMyDisplayName(supabase, normalizedName)");
+    expect(settingsSource).not.toContain("updateMyDisplayName(supabase, normalizedName, avatarPath)");
   });
 });

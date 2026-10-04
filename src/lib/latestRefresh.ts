@@ -3,6 +3,49 @@ export interface LatestRefreshRunner {
   dispose: () => void;
 }
 
+export interface LatestRefreshController {
+  attach: (runner: LatestRefreshRunner) => void;
+  detach: (runner: LatestRefreshRunner) => void;
+  request: () => Promise<void>;
+  dispose: () => void;
+}
+
+/**
+ * Holds the current runner outside React render state. Event handlers can
+ * synchronously invalidate or queue work on it, while `detach` only clears
+ * the runner that an effect actually installed. That identity check prevents
+ * a late cleanup from disconnecting a newer signed-in member's runner.
+ */
+export function createLatestRefreshController(): LatestRefreshController {
+  let current: LatestRefreshRunner | null = null;
+  let requestedWhileDetached = false;
+
+  return {
+    attach: (runner) => {
+      if (current !== runner) current?.dispose();
+      current = runner;
+      if (requestedWhileDetached) {
+        requestedWhileDetached = false;
+        void runner.request();
+      }
+    },
+    detach: (runner) => {
+      runner.dispose();
+      if (current === runner) current = null;
+    },
+    request: () => {
+      if (current) return current.request();
+      requestedWhileDetached = true;
+      return Promise.resolve();
+    },
+    dispose: () => {
+      current?.dispose();
+      current = null;
+      requestedWhileDetached = false;
+    },
+  };
+}
+
 /**
  * Serializes refreshes while remembering a newer request. If focus arrives
  * while polling is in flight, the older response is discarded and one fresh

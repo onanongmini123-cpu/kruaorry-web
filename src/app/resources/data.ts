@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { withTimeout } from "@/lib/asyncTimeout";
+import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import { PUBLIC_RESOURCE_SELECT, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
 import { collectResourcePages } from "./pagination";
@@ -87,11 +88,11 @@ export async function loadPublicResourceViewer(): Promise<PublicResourceViewer> 
   try {
     const client = await createClient();
     const auth = await withTimeout(client.auth.getUser(), "public resource viewer auth");
-    const user = auth.ok ? auth.value.data.user : null;
+    const user = auth.ok && !auth.value.error ? auth.value.data.user : null;
     // Supabase anonymous sign-ins have a user id, but are still guests for
     // review/report and member entitlement purposes. Never query a profile or
     // capabilities for that temporary identity.
-    if (!user || user.is_anonymous === true) return GUEST_VIEWER;
+    if (!isPermanentAuthUser(user)) return GUEST_VIEWER;
 
     const [profileResult, entitlementResult, pendingResult] = await Promise.all([
       withTimeout(
