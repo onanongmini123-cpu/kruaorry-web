@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 
 const membership = readFileSync(new URL("../../app/membership/page.tsx", import.meta.url), "utf8");
 const payment = readFileSync(new URL("../../app/payment/page.tsx", import.meta.url), "utf8");
-const landing = readFileSync(new URL("../../app/page.tsx", import.meta.url), "utf8");
+const landing = readFileSync(new URL("../../app/landing/LandingExperience.tsx", import.meta.url), "utf8");
+const pricing = readFileSync(new URL("../../app/landing/PricingSection.tsx", import.meta.url), "utf8");
 const memberApp = readFileSync(new URL("../../app/app/page.tsx", import.meta.url), "utf8");
 const admin = readFileSync(new URL("../../app/admin/page.tsx", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../../app/terms/page.tsx", import.meta.url), "utf8");
@@ -112,8 +113,11 @@ describe("canonical manual membership flow", () => {
     for (const page of [landing, memberApp]) {
       expect(page).toContain("fetchMembershipSchemaReadiness");
       expect(page).toContain('membershipSchemaReadiness === "unavailable"');
-      expect(page).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
     }
+    // The public pricing section carries the maintenance notice itself.
+    expect(landing).toContain('membershipUnavailable={membershipSchemaReadiness === "unavailable"}');
+    expect(pricing).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
+    expect(memberApp).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
   });
 
   it("labels owner test cleanup without presenting it as a rejected customer application", () => {
@@ -138,10 +142,14 @@ describe("canonical manual membership flow", () => {
   });
 
   it("separates free signup from intentional paid-upgrade CTAs", () => {
-    expect(landing).toContain('href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}');
+    // Every Pro button on the public page goes through the one upgrade helper.
+    expect(pricing).toContain('proUpgradeHref({ planId: "teacher" })');
+    expect(pricing).toContain('proUpgradeHref({ planId: "founder" })');
+    expect(pricing).not.toContain("LINE_OA_URL");
+    expect(pricing).not.toContain('href="/membership');
     expect(landing).toContain("initialPublicAuthState(isSupabaseConfigured)");
     expect(landing).toContain("observePublicAuthState(createClient().auth, setPublicAuthState)");
-    expect(landing.match(/freeAccountAction\.href/g)).toHaveLength(2);
+    expect(landing.match(/freeAccountAction\.href/g)).toHaveLength(3); // hero, free showcase, pricing
     expect(landing).not.toContain('href="/membership"');
     expect(memberApp).toContain('proUpgradeHref({ planId: plan.id === "founder" && founderCapacity?.isFull ? "teacher" : (plan.id as UpgradePlanId) })');
     expect(landing).not.toContain("LINE_OA_URL");

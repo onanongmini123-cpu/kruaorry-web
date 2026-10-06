@@ -13,9 +13,9 @@ describe("Founder public notice", () => {
   });
 
   it("is the only Founder availability text on landing, member and membership pages", () => {
-    for (const page of ["../../app/page.tsx", "../../app/app/page.tsx", "../../app/membership/page.tsx"]) {
+    for (const page of ["../../app/landing/PricingSection.tsx", "../../app/app/page.tsx", "../../app/membership/page.tsx"]) {
       const source = read(page);
-      expect(source, page).toContain("founderPublicNotice(");
+      expect(source, page).toMatch(/founderPublicNotice\(|FOUNDER_LIMIT_NOTICE/);
       expect(source, page).not.toMatch(/ยืนยันชำระแล้ว\s*\{/);
       expect(source, page).not.toMatch(/เหลืออีก\s*\$\{/);
       expect(source, page).not.toMatch(/เหลือ\s*\$\{/);
