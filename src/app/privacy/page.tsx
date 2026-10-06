@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Mascot } from "@/components/Mascot";
 import { LINE_OA_URL } from "@/lib/config";
+
+export const metadata: Metadata = {
+  title: "นโยบายความเป็นส่วนตัว",
+  alternates: { canonical: "/privacy" },
+};
 
 export default function PrivacyPage() {
   return (

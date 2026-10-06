@@ -47,7 +47,7 @@ describe("public resource showcase", () => {
       entitlements: EMPTY_ENTITLEMENTS,
     })).toMatchObject({
       href: `/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`,
-      label: "ดูแพ็กเพื่อปลดล็อก",
+      label: "ใช้ด้วย Teacher Pro",
     });
   });
 
@@ -142,7 +142,7 @@ describe("public resource showcase", () => {
       role: null,
       entitlements: EMPTY_ENTITLEMENTS,
     });
-    expect(guest).toMatchObject({ label: "ดูแพ็กเพื่อปลดล็อก", locked: true, canUse: false });
+    expect(guest).toMatchObject({ label: "ใช้ด้วย Teacher Pro", locked: true, canUse: false });
     expect(guest.href).toBe(`/membership?plan=founder&returnTo=${encodeURIComponent(`/resources/${id}`)}`);
     expect(guest.href).not.toContain("mode=signup");
     expect(guest.href).not.toMatch(/file_path|token|worksheet[.]pdf/);
@@ -152,7 +152,7 @@ describe("public resource showcase", () => {
       role: null,
       entitlements: EMPTY_ENTITLEMENTS,
     });
-    expect(guestFree).toMatchObject({ label: "สมัครบัญชีฟรีเพื่อใช้งาน", locked: true, canUse: false });
+    expect(guestFree).toMatchObject({ label: "สมัครฟรีเพื่อใช้งาน", locked: true, canUse: false });
     expect(guestFree.href).toBe(FREE_SIGNUP_HREF);
 
     const freeMember = publicResourceAction(premium, {
@@ -162,7 +162,7 @@ describe("public resource showcase", () => {
     });
     expect(freeMember).toEqual({
       href: `/membership?plan=founder&returnTo=${encodeURIComponent(`/resources/${id}`)}`,
-      label: "อัปเกรดเพื่อปลดล็อก",
+      label: "ใช้ด้วย Teacher Pro",
       canUse: false,
       locked: true,
       opensNewTab: false,
@@ -186,7 +186,7 @@ describe("public resource showcase", () => {
       role: "member",
       entitlements: EMPTY_ENTITLEMENTS,
       pendingPlanIds: ["unrelated-plan"],
-    }).label).toBe("อัปเกรดเพื่อปลดล็อก");
+    }).label).toBe("ใช้ด้วย Teacher Pro");
 
     expect(publicResourceAction(free, {
       authenticated: true,

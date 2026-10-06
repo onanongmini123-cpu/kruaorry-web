@@ -35,7 +35,11 @@ describe("safeAuthNext", () => {
     "/\\evil.example/path",
     "/admin",
     "/auth/callback",
-    "/resources/not-a-uuid",
+    "/resources/Not_A_Slug",
+    "/resources/ab",
+    "/resources/..%2Fadmin",
+    "/resources/sentence-train/extra",
+    "/resources/sentence-train?next=/admin",
     `/resources/${id}?redirect=https%3A%2F%2Fevil.example`,
     "/download/not-a-uuid",
     `/download/${id}?autoclose=0`,
@@ -95,5 +99,11 @@ describe("safeUpgradeReturnPath", () => {
     `/resources/${id}?next=%2F%2Fevil.example`,
   ])("falls back for an unsafe upgrade return path: %s", (raw) => {
     expect(safeUpgradeReturnPath(raw)).toBe("/app");
+  });
+
+  it("keeps a signed-in visitor on a slug address after login or upgrade", () => {
+    expect(safeAuthNext("/resources/sentence-train")).toBe("/resources/sentence-train");
+    expect(authCompletionDestination("signin", "/resources/grammar-boss-battle")).toBe("/resources/grammar-boss-battle");
+    expect(safeUpgradeReturnPath("/resources/sentence-train")).toBe("/resources/sentence-train");
   });
 });

@@ -443,6 +443,23 @@ membership page and the admin console. Rollback is the single `grant` statement
 in the file header. Run `npm run test:privilege-hardening-sql` for the local
 engine check.
 
+Migration `20261006100000_053_resource_slugs.sql` is **pending** (not applied
+by this repository) and is Phase B of a two-stage slug rollout. Phase A is in
+the application and needs no database change: it reads the `slug` column when
+it exists, falls back to the old query when it does not, serves both
+`/resources/{uuid}` and `/resources/{slug}`, and only redirects a UUID address
+to a slug once one is set. Deploy the application first, then apply this
+migration; the site switches its canonical URLs to slugs within about five
+minutes (catalogue cache) and rolls back by itself if slugs are cleared. The
+file adds a nullable, format-checked, unique `resources.slug`, fills it for the
+17 seeded resources by exact title (ambiguous or renamed rows are skipped and
+keep their UUID address), and appends `slug` as the last column of
+`resource_catalog`. Review the English slugs in the file before applying, and
+compare `pg_get_viewdef('public.resource_catalog')` with migration 029 first.
+Run `npm run test:resource-slug-sql` for the local engine check. To give a new
+resource a slug later: `update public.resources set slug = 'my-slug' where id = '…';`
+(the format check and unique index reject bad or duplicate values).
+
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock

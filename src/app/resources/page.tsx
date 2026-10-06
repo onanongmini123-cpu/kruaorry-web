@@ -19,12 +19,6 @@ import { publicResourceAction, resourceHref } from "./catalog";
 import { loadPublicResources, loadPublicResourceViewer } from "./data";
 import "./library.css";
 
-export const metadata: Metadata = {
-  title: "คลังสื่อการสอน",
-  description: "ค้นหาเกม สื่อ และเครื่องมือสำหรับห้องเรียน กรองตามระดับชั้น วิชา ประเภท และสิทธิ์การใช้งาน มีทั้งแบบใช้ฟรี สมาชิกฟรี และ Teacher Pro",
-  alternates: { canonical: "/resources" },
-};
-
 type SearchParams = Promise<{
   q?: string | string[];
   category?: string | string[];
@@ -35,6 +29,19 @@ type SearchParams = Promise<{
 
 function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value ?? "").trim().slice(0, 100);
+}
+
+export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
+  const params = await searchParams;
+  const filtered = ["q", "category", "grade", "access", "type"].some((name) => first(params[name as keyof typeof params]));
+  return {
+    title: "คลังสื่อการสอน",
+    description: "ค้นหาเกม สื่อ และเครื่องมือสำหรับห้องเรียน กรองตามระดับชั้น วิชา ประเภท และสิทธิ์การใช้งาน มีทั้งแบบใช้ฟรี สมาชิกฟรี และ Teacher Pro",
+    // Every filter combination is the same library: one canonical URL, and
+    // result pages for a particular search are not worth indexing.
+    alternates: { canonical: "/resources" },
+    robots: filtered ? { index: false, follow: true } : undefined,
+  };
 }
 
 export default async function ResourcesPage({ searchParams }: { searchParams: SearchParams }) {

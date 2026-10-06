@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Anuphan, IBM_Plex_Sans_Thai, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { SITE_ORIGIN } from "@/lib/site";
 
 const anuphan = Anuphan({
   variable: "--font-anuphan",
@@ -25,8 +26,9 @@ const description =
   "คลังสื่อการสอน เทมเพลต Google และเครื่องมือในห้องเรียนสำหรับครูไทย ใช้งานง่าย ดาวน์โหลดแล้วสอนได้เลย";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://kruaorry-web.vercel.app"),
-  title,
+  metadataBase: new URL(SITE_ORIGIN),
+  // Pages give a plain title; this adds the brand once.
+  title: { default: title, template: "%s | KruAorry" },
   description,
   openGraph: {
     title,

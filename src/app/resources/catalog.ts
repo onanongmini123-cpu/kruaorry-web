@@ -6,9 +6,13 @@ import { proUpgradeHref } from "@/lib/upgradeFlow";
 export { resourceHref } from "@/lib/resourceUrl";
 import { planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
+import { parseDetailContent, type ResourceDetailContent } from "@/lib/resourceDetail";
+import { isValidSlug } from "@/lib/resourceSlug";
 
 export type PublicResource = {
   id: string;
+  /** Stable readable URL key; null until the slug column is live and filled. */
+  slug: string | null;
   title: string;
   meta: string;
   description: string;
@@ -25,6 +29,8 @@ export type PublicResource = {
   featuredRank: number | null;
   reviewAverage: number | null;
   reviewCount: number;
+  /** Optional structured teaching notes; every section hides when absent. */
+  detail: ResourceDetailContent | null;
 };
 
 export interface PublicResourceViewer {
@@ -67,6 +73,7 @@ export function toPublicResource(value: unknown): PublicResource | null {
   const requiredPlanNames = accessMode === "plans" ? planDisplayNames(requiredPlanIds, storedPlanNames) : [];
   return {
     id: row.id,
+    slug: isValidSlug(row.slug) ? row.slug : null,
     title: row.title.trim(),
     meta: typeof row.meta === "string" ? row.meta.trim() : "",
     description: typeof row.description === "string" ? row.description.trim() : "",
@@ -85,6 +92,7 @@ export function toPublicResource(value: unknown): PublicResource | null {
       ? null
       : Number(row.review_average),
     reviewCount: Number(row.review_count ?? 0),
+    detail: parseDetailContent(row.detail_content),
   };
 }
 
@@ -98,6 +106,13 @@ function cleanStringArray(value: unknown, limit: number): string[] {
 }
 
 export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, access_mode, required_plan_ids, required_plan_names, is_new, featured_rank, review_average, review_count";
+
+/**
+ * Same columns plus the slug. Selecting a column that does not exist yet
+ * fails the whole query, so the loader tries this first and falls back to
+ * PUBLIC_RESOURCE_SELECT until the slug migration is applied.
+ */
+export const PUBLIC_RESOURCE_SELECT_WITH_SLUG = `${PUBLIC_RESOURCE_SELECT}, slug`;
 
 export function signupHref(): string {
   // Account creation always lands at the member-app root. Opening a resource
@@ -120,6 +135,10 @@ export function membershipUpgradeHref(
   return proUpgradeHref({ planId: preferredPlan, returnTo: requestedReturnTo });
 }
 
+/** Main button wording per tier (what the resource asks of the viewer). */
+export const SIGNUP_TO_USE_LABEL = "สมัครฟรีเพื่อใช้งาน";
+export const USE_WITH_PRO_LABEL = "ใช้ด้วย Teacher Pro";
+
 const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
   web_app: "เปิดใช้งาน",
   google_template: "ทำสำเนาไปยัง Drive ของฉัน",
@@ -140,6 +159,18 @@ export function requiredPlansLabel(resource: PublicResource): string {
   return resource.requiredPlanNames.length > 0
     ? resource.requiredPlanNames.join(" หรือ ")
     : ACCESS_TIER_LABEL.pro;
+}
+
+function looksLikeGame(resource: Pick<PublicResource, "tags" | "meta">): boolean {
+  return resource.tags.includes("เกม") || /เกม/.test(resource.meta);
+}
+
+/** "เริ่มเล่นฟรี" for a free game, "เปิดใช้" for tools; files and Google items keep their own verb. */
+function openLabel(resource: PublicResource): string {
+  if (resource.deliveryMode !== "web_app") return ACTION_LABEL[resource.deliveryMode];
+  const free = resource.accessMode === "public";
+  if (looksLikeGame(resource)) return free ? "เริ่มเล่นฟรี" : "เริ่มเล่น";
+  return free ? "เปิดใช้ฟรี" : "เปิดใช้งาน";
 }
 
 export function publicResourceAction(resource: PublicResource, viewer: PublicResourceViewer): PublicResourceAction {
@@ -169,7 +200,7 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
   if (!canUse && resource.accessMode === "authenticated" && !viewer.authenticated) {
     return {
       href: signupHref(),
-      label: "สมัครบัญชีฟรีเพื่อใช้งาน",
+      label: SIGNUP_TO_USE_LABEL,
       canUse: false,
       locked: true,
       opensNewTab: false,
@@ -186,7 +217,7 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
         ? "ติดตามคำขออัปเกรด"
         : !hasSaleablePlan
           ? viewer.authenticated ? "ตรวจสอบสิทธิ์สมาชิกเดิม" : "เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม"
-          : viewer.authenticated ? "อัปเกรดเพื่อปลดล็อก" : "ดูแพ็กเพื่อปลดล็อก",
+          : USE_WITH_PRO_LABEL,
       canUse: false,
       locked: true,
       opensNewTab: false,
@@ -197,7 +228,7 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
     href: resource.deliveryMode === "file_download"
       ? `/download/${resource.id}`
       : `/api/resources/${resource.id}/open`,
-    label: ACTION_LABEL[resource.deliveryMode],
+    label: openLabel(resource),
     canUse: true,
     locked: false,
     opensNewTab: true,
