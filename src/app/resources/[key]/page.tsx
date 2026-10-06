@@ -11,6 +11,7 @@ import { accessDescription, accessLabel, accessTier } from "@/lib/resourceAccess
 import { formatResourceGrades } from "@/lib/resourceGrades";
 import { DELIVERY_TYPE_LABEL, parseResourceMeta } from "@/lib/resourceMeta";
 import { breadcrumbJsonLd, jsonLdScript, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "@/lib/resourceSeo";
+import { DEFAULT_SHARE_IMAGE } from "@/lib/site";
 import { loadPublicResourceViewer, loadRelatedResources, resolvePublicResource } from "../data";
 import { publicResourceAction, resourceHref } from "../catalog";
 import { resourceAccessCopy } from "../detailCopy";
@@ -27,7 +28,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { resource, canonicalPath } = lookup;
   const title = resourceSeoTitle(resource);
   const description = resourceSeoDescription(resource);
-  const images = resource.coverImageUrl ? [{ url: resource.coverImageUrl, alt: `ภาพปก ${resource.title}` }] : undefined;
+  const images = resource.coverImageUrl ? [{ url: resource.coverImageUrl, alt: `ภาพปก ${resource.title}` }] : [DEFAULT_SHARE_IMAGE];
   return {
     title,
     description,
@@ -35,7 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // A resource that is not open yet is not worth a search result.
     robots: resource.accessMode === "locked" ? { index: false, follow: true } : undefined,
     openGraph: { type: "website", locale: "th_TH", title, description, url: canonicalPath, images },
-    twitter: { card: images ? "summary_large_image" : "summary", title, description, images: images?.map((image) => image.url) },
+    twitter: { card: resource.coverImageUrl ? "summary_large_image" : "summary", title, description, images: images.map((image) => image.url) },
   };
 }
 

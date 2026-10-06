@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Anuphan, IBM_Plex_Sans_Thai, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
-import { SITE_ORIGIN } from "@/lib/site";
+import { DEFAULT_SHARE_IMAGE, SITE_ORIGIN } from "@/lib/site";
 
 const anuphan = Anuphan({
   variable: "--font-anuphan",
@@ -36,11 +36,13 @@ export const metadata: Metadata = {
     type: "website",
     locale: "th_TH",
     siteName: "KruAorry",
+    images: [DEFAULT_SHARE_IMAGE],
   },
   twitter: {
     card: "summary",
     title,
     description,
+    images: [DEFAULT_SHARE_IMAGE.url],
   },
 };
 
