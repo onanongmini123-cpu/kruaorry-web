@@ -29,3 +29,16 @@ export function normalizeFounderCapacity(value: unknown): FounderCapacity | null
     isFull,
   };
 }
+
+/** Neutral public copy. The exact seat count stays in the back office. */
+export const FOUNDER_LIMIT_NOTICE = `จำกัด ${FOUNDER_CAPACITY_LIMIT} บัญชีแรก`;
+export const FOUNDER_FULL_NOTICE = "สิทธิ์ราคาเปิดตัวครบแล้ว";
+
+/**
+ * What visitors and members see about Founder availability: never the used
+ * or remaining count, never a progress bar. A full offer is still stated
+ * plainly because the price is no longer available.
+ */
+export function founderPublicNotice(capacity: Pick<FounderCapacity, "isFull">): string {
+  return capacity.isFull ? FOUNDER_FULL_NOTICE : FOUNDER_LIMIT_NOTICE;
+}

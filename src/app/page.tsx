@@ -19,7 +19,7 @@ import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, t
 import { createClient } from "@/lib/supabase/client";
 import { filterDiscoveredResources, resourceDiscoveryHref } from "@/lib/resourceDiscovery";
 import { publicCoverUrl } from "@/lib/resourceVisibility";
-import type { FounderCapacity } from "@/lib/founderCapacity";
+import { founderPublicNotice, type FounderCapacity } from "@/lib/founderCapacity";
 import {
   fetchMembershipSchemaReadiness,
   type MembershipSchemaReadiness,
@@ -403,10 +403,7 @@ export default function LandingPage() {
                       {membershipSchemaReadiness === "unavailable" ? (
                         <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
                       ) : founderCapacity ? (
-                        <>
-                          <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
-                          <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
-                        </>
+                        <strong>{founderPublicNotice(founderCapacity)}</strong>
                       ) : (
                         <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                       )}

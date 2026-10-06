@@ -35,7 +35,7 @@ import {
   type UpgradeRequest,
 } from "@/lib/data";
 import { canAccessResource } from "@/lib/entitlement";
-import type { FounderCapacity } from "@/lib/founderCapacity";
+import { founderPublicNotice, type FounderCapacity } from "@/lib/founderCapacity";
 import {
   fetchMembershipSchemaReadiness,
   type MembershipSchemaReadiness,
@@ -777,13 +777,7 @@ export default function TeacherAppPage() {
                             {membershipSchemaReadiness === "unavailable" ? (
                               <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
                             ) : founderCapacity ? (
-                              <>
-                                <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
-                                <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
-                                <span aria-hidden="true" className="kru-founder-capacity__track">
-                                  <span style={{ width: `${Math.min(100, (founderCapacity.used / founderCapacity.capacity) * 100)}%` }} />
-                                </span>
-                              </>
+                              <strong>{founderPublicNotice(founderCapacity)}</strong>
                             ) : (
                               <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                             )}
@@ -898,8 +892,6 @@ export default function TeacherAppPage() {
         .kru-member-section-heading button { border: 0; background: transparent; color: var(--purple-700); display: inline-flex; align-items: center; gap: 5px; min-height: var(--tap-min); font-weight: var(--fw-semibold); cursor: pointer; }
         .kru-founder-capacity { margin-top: var(--sp-4); padding: var(--sp-4); border-radius: var(--r-md); background: var(--purple-50); display: grid; gap: 4px; color: var(--text-body); font-size: var(--fs-13); }
         .kru-founder-capacity strong { color: var(--text-strong); }
-        .kru-founder-capacity__track { height: 7px; margin-top: 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--purple-100); }
-        .kru-founder-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-500), var(--pink-500)); }
         .kru-plan-benefits { margin-top: var(--sp-5); display: grid; gap: var(--sp-3); }
         .kru-plan-benefits ul { margin: 0; padding: 0; display: grid; gap: 8px; }
         .kru-plan-benefits li { display: flex; align-items: flex-start; gap: 8px; color: var(--text-body); font-size: var(--fs-14); list-style: none; }

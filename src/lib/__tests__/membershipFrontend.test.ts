@@ -15,7 +15,10 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง");
     expect(membership).toContain("ต่ออายุปีถัดไป 599 บาท/ปี");
     expect(membership).toContain("การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์");
-    expect(membership).toContain("ยืนยันชำระแล้ว {capacity.used}/{capacity.capacity}");
+    // Public copy never shows how many Founder places are taken or left.
+    expect(membership).toContain("founderPublicNotice(capacity)");
+    expect(membership).not.toContain("capacity.used");
+    expect(membership).not.toContain("capacity.remaining");
   });
 
   it("waits for a created pending application before exposing LINE and preserves a stable reference", () => {

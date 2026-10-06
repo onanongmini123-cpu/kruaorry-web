@@ -20,7 +20,7 @@ import {
   type Plan,
   type UpgradeRequest,
 } from "@/lib/data";
-import type { FounderCapacity } from "@/lib/founderCapacity";
+import { founderPublicNotice, type FounderCapacity } from "@/lib/founderCapacity";
 import {
   fetchMembershipSchemaReadiness,
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
@@ -666,17 +666,11 @@ function MembershipContent() {
             </aside>
           ) : applicationPlanId === "founder" ? (
             <aside className="kru-membership-capacity" aria-live="polite" aria-busy={!capacityLoaded}>
-              <span>จำนวนสิทธิ์จากฐานข้อมูล</span>
+              <span>สิทธิ์ราคาเปิดตัว Founder</span>
               {schemaReadiness === "unavailable" ? (
                 <strong>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</strong>
               ) : capacity ? (
-                <>
-                  <strong>ยืนยันชำระแล้ว {capacity.used}/{capacity.capacity}</strong>
-                  <p>{capacity.isFull ? "สิทธิ์ราคาเปิดตัวครบแล้ว" : `เหลือ ${capacity.remaining} สิทธิ์`}</p>
-                  <span className="kru-membership-capacity__track" aria-hidden="true">
-                    <span style={{ width: `${Math.min(100, (capacity.used / capacity.capacity) * 100)}%` }} />
-                  </span>
-                </>
+                <strong>{founderPublicNotice(capacity)}</strong>
               ) : (
                 <strong>{schemaReadiness === "checking" || !capacityLoaded ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ตรวจสอบจำนวนสิทธิ์ไม่ได้ในขณะนี้"}</strong>
               )}
@@ -1044,8 +1038,6 @@ function MembershipContent() {
         .kru-membership-capacity > span:first-child { color: var(--text-muted); font-size: var(--fs-13); }
         .kru-membership-capacity strong { color: var(--text-strong); font-family: var(--font-display); font-size: clamp(1.35rem, 4vw, var(--fs-24)); }
         .kru-membership-capacity p { color: var(--purple-700); font-weight: var(--fw-semibold); }
-        .kru-membership-capacity__track { height: 9px; margin-top: var(--sp-3); overflow: hidden; border-radius: var(--r-pill); background: var(--purple-100); }
-        .kru-membership-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-600), var(--pink-500)); }
         .kru-membership-layout { margin-top: var(--sp-8); display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(300px, .88fr); gap: var(--gap-grid); align-items: start; }
         .kru-membership-application, .kru-membership-payment { min-width: 0; padding: clamp(20px, 4vw, 32px); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }
         .kru-membership-application h2, .kru-membership-payment h2 { margin-top: var(--sp-2); font-size: var(--fs-24); }
