@@ -428,6 +428,21 @@ Storage validates declared MIME, size, ownership, and exact key, but does not
 inspect file magic bytes; stronger content verification would require a
 trusted server-side processing boundary.
 
+Migration `20261006090000_052_revoke_unneeded_write_privileges.sql` is
+**pending** (not applied by this repository) and must run after `051`. It
+revokes INSERT/UPDATE/DELETE/TRUNCATE from `anon` and `authenticated` on the
+four catalogue views and on `subscriptions`, `subscription_events`, `plans`,
+`features`, `plan_features` and `admin_audit_log`. The browser only reads these
+objects; all writes go through SECURITY DEFINER functions, which are not
+affected. SELECT, RLS policies and data are unchanged, and tables that members
+or admins write directly (profiles, favourites, resources, applications) are
+not touched. Its closing assertion block aborts the migration if a needed read
+privilege would be lost or a write privilege remained. Apply to a Preview
+database first and click through sign-in, favourites, profile edit, the
+membership page and the admin console. Rollback is the single `grant` statement
+in the file header. Run `npm run test:privilege-hardening-sql` for the local
+engine check.
+
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock
