@@ -3,6 +3,7 @@ import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } 
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
 import { FREE_SIGNUP_HREF, safeUpgradeReturnPath } from "@/lib/authReturnPath";
 import { planDisplayNames } from "@/lib/planDisplay";
+import { accessLabel } from "@/lib/resourceAccess";
 
 export type PublicResource = {
   id: string;
@@ -128,12 +129,7 @@ const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
 };
 
 export function requiredPlansLabel(resource: PublicResource): string {
-  if (resource.accessMode === "public") return "ทุกคน";
-  if (resource.accessMode === "authenticated") return "บัญชีสมาชิกฟรี";
-  if (resource.accessMode === "locked") return "ยังไม่เปิดให้ใช้งาน";
-  return resource.requiredPlanNames.length > 0
-    ? resource.requiredPlanNames.join(" หรือ ")
-    : "แพ็กสมาชิกที่มีสิทธิ์คลังพรีเมียม";
+  return accessLabel(resource.accessMode);
 }
 
 export function publicResourceAction(resource: PublicResource, viewer: PublicResourceViewer): PublicResourceAction {

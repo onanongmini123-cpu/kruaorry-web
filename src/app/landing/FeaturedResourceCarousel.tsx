@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Lock, Sparkles, Star } from "lucide-react";
 import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import type { ResourceAffordance } from "@/components/ui";
+import { accessLabel } from "@/lib/resourceAccess";
 
 export type FeaturedCarouselResource = {
   id: string;
@@ -45,18 +46,7 @@ export function selectFeaturedResources<T extends RankedResource>(resources: rea
 }
 
 export function featuredAccessLabel(resource: Pick<FeaturedCarouselResource, "accessMode" | "requiredPlanNames">): string {
-  switch (resource.accessMode) {
-    case "public":
-      return "ใช้ได้ฟรี";
-    case "authenticated":
-      return "สำหรับสมาชิก";
-    case "plans":
-      return resource.requiredPlanNames.length > 0
-        ? `สำหรับ ${resource.requiredPlanNames.join(" หรือ ")}`
-        : "สำหรับแพ็กสมาชิก";
-    case "locked":
-      return "ยังไม่เปิดใช้งาน";
-  }
+  return accessLabel(resource.accessMode);
 }
 
 interface FeaturedResourceCarouselProps {

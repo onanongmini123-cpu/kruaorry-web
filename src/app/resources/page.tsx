@@ -9,10 +9,11 @@ import { publicFreeAccountAction } from "@/lib/publicAuthState";
 import { publicResourceAction, requiredPlansLabel } from "./catalog";
 import { loadPublicResources, loadPublicResourceViewer } from "./data";
 import { PublicResourceCover } from "./PublicResourceCover";
+import { accessLabel } from "@/lib/resourceAccess";
 
 export const metadata: Metadata = {
   title: "คลังสื่อการสอน | KruAorry",
-  description: "ดูตัวอย่างสื่อการสอนที่เผยแพร่จริง เลือกสื่อฟรีหรือสื่อสำหรับสมาชิก แล้วสมัครเพื่อเริ่มใช้ในห้องเรียน",
+  description: "ดูตัวอย่างสื่อการสอนที่เผยแพร่จริง เลือกสื่อที่ใช้ฟรีหรือสื่อสำหรับ Teacher Pro แล้วสมัครเพื่อเริ่มใช้ในห้องเรียน",
 };
 
 type SearchParams = Promise<{
@@ -142,7 +143,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minHeight: 28 }}>
                           {item.isNew && <Badge tone="brand">ใหม่</Badge>}
                           <span style={{ width: "fit-content", borderRadius: "var(--r-pill)", padding: "4px 10px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontSize: "var(--fs-13)", fontWeight: "var(--fw-semibold)" }}>
-                            {item.accessMode === "public" ? "เปิดใช้ฟรีทุกคน" : item.accessMode === "authenticated" ? "ใช้ฟรีเมื่อเข้าสู่ระบบ" : item.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : `สำหรับ ${planLabel}`}
+                            {accessLabel(item.accessMode)}
                           </span>
                         </div>
                         <h2 style={{ minHeight: "2.8em", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, fontSize: "var(--fs-20)", lineHeight: "var(--lh-snug)" }}><Link href={`/resources/${item.id}`} style={{ color: "inherit" }}>{item.title}</Link></h2>

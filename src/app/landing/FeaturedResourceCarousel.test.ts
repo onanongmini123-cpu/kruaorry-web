@@ -70,17 +70,17 @@ describe("FeaturedResourceCarousel accessibility", () => {
     expect(html).toContain('aria-label="ดูสื่อก่อนหน้า"');
     expect(html).toContain('aria-label="ดูสื่อถัดไป"');
     expect(html).toContain('href="/resources/free"');
-    expect(html).toContain("ใช้ได้ฟรี");
-    expect(html).toContain("สำหรับ Teacher");
+    expect(html).toContain("ใช้ฟรี");
+    expect(html).toContain("Teacher Pro");
     expect(html).toContain("ใหม่");
     expect(html).toContain("4.8 (12)");
   });
 
   it("derives access copy only from the supplied access mode and plan names", () => {
-    expect(featuredAccessLabel({ accessMode: "public", requiredPlanNames: [] })).toBe("ใช้ได้ฟรี");
-    expect(featuredAccessLabel({ accessMode: "authenticated", requiredPlanNames: [] })).toBe("สำหรับสมาชิก");
+    expect(featuredAccessLabel({ accessMode: "public", requiredPlanNames: [] })).toBe("ใช้ฟรี");
+    expect(featuredAccessLabel({ accessMode: "authenticated", requiredPlanNames: [] })).toBe("สมาชิกฟรี");
     expect(featuredAccessLabel({ accessMode: "plans", requiredPlanNames: ["Founder", "Teacher"] }))
-      .toBe("สำหรับ Founder หรือ Teacher");
-    expect(featuredAccessLabel({ accessMode: "locked", requiredPlanNames: ["Ignored"] })).toBe("ยังไม่เปิดใช้งาน");
+      .toBe("Teacher Pro");
+    expect(featuredAccessLabel({ accessMode: "locked", requiredPlanNames: ["Ignored"] })).toBe("ยังไม่เปิดให้ใช้งาน");
   });
 });

@@ -60,6 +60,7 @@ import { membershipUpgradeHref } from "@/app/resources/catalog";
 import { createLatestRefreshController, createLatestRefreshRunner } from "@/lib/latestRefresh";
 import { planDisplayName } from "@/lib/planDisplay";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
+import { accessTier } from "@/lib/resourceAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -451,6 +452,7 @@ export default function TeacherAppPage() {
           coverImageUrl={resource.coverImageUrl}
           tint={resourceTint(resource.affordance)}
           free={resource.free}
+          accessTier={accessTier(resource.accessMode)}
           isNew={resource.isNew}
           locked={!canAccess(resource)}
           upgradePending={hasPendingUpgradeFor(resource)}
@@ -672,7 +674,7 @@ export default function TeacherAppPage() {
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
                         {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
                           ? "ยังตรวจสอบสิทธิ์แพ็กไม่ได้"
-                          : canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ" : "สื่อนี้สำหรับสมาชิก"}
+                          : canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ" : "สื่อนี้สำหรับสมาชิก Teacher Pro"}
                       </div>
                       {!canAccess(detail) && detail.requiredPlanNames.length > 0 && (
                         <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
@@ -686,7 +688,7 @@ export default function TeacherAppPage() {
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} disabled={!canAccess(detail) && detail.accessMode === "locked"} onClick={() => openResource(detail)}>
                         {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
                           ? entitlementState.status === "loading" ? "กำลังตรวจสอบ…" : "ลองตรวจสอบสิทธิ์อีกครั้ง"
-                          : canAccess(detail) ? "เปิดใช้งาน" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "ติดตามคำขออัปเกรด" : "อัปเกรดเพื่อปลดล็อก"}
+                          : canAccess(detail) ? "เปิดใช้" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "ติดตามคำขออัปเกรด" : "อัปเกรดเพื่อปลดล็อก"}
                       </Button>
                       <Button
                         block

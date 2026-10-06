@@ -266,7 +266,7 @@ export default function LandingPage() {
             ) : (
               <div className="kru-discovery-results__grid">
                 {discoveryMatches.map((resource) => {
-                  const accessLabel = featuredAccessLabel(resource);
+                  const accessText = featuredAccessLabel(resource);
                   return (
                     <article key={resource.id} className="kru-card kru-discovery-result-card">
                       <Link href={`/resources/${resource.id}`} className="kru-discovery-result-card__cover" aria-label={`ดูรายละเอียด ${resource.title}`}>
@@ -282,7 +282,7 @@ export default function LandingPage() {
                       <div className="kru-discovery-result-card__body">
                         <span className={resource.accessMode === "public" ? "kru-discovery-result-card__badge kru-discovery-result-card__badge--free" : "kru-discovery-result-card__badge"}>
                           {resource.accessMode !== "public" && <Lock size={14} aria-hidden="true" />}
-                          {accessLabel}
+                          {accessText}
                         </span>
                         <h3><Link href={`/resources/${resource.id}`}>{resource.title}</Link></h3>
                         <ExpandableResourceDescription

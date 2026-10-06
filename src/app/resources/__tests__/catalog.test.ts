@@ -82,7 +82,7 @@ describe("public resource showcase", () => {
       reviewAverage: 4.5,
       reviewCount: 2,
     });
-    expect(requiredPlansLabel(item!)).toBe("Founder 100 หรือ Teacher Pro");
+    expect(requiredPlansLabel(item!)).toBe("Teacher Pro");
   });
 
   it("keeps hidden legacy and saleable Teacher plans distinct when name arrays are misaligned", () => {

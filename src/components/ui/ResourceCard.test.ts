@@ -72,7 +72,7 @@ describe("ResourceCard media", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain(">ใหม่<");
     expect(html).toContain("ป.2");
-    expect(html).toContain("สำหรับ Founder 100 / Teacher");
+    expect(html).toContain("Teacher Pro");
     expect(html).toContain("อัปเกรดเพื่อปลดล็อก");
     expect(html).toMatch(/-webkit-line-clamp:\s*3/);
   });

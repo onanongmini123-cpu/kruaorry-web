@@ -8,6 +8,7 @@ import { loadPublicResource, loadPublicResourceViewer } from "../data";
 import { publicResourceAction, requiredPlansLabel } from "../catalog";
 import { PublicResourceCover } from "../PublicResourceCover";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
+import { accessLabel } from "@/lib/resourceAccess";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -27,9 +28,9 @@ export default async function ResourceDetailPage({ params }: Props) {
   const upgradePending = item.accessMode === "plans"
     && item.requiredPlanIds.some((planId) => (viewer.pendingPlanIds ?? []).includes(planId));
   const coverCaption = item.accessMode === "public"
-    ? "ภาพปกและรายละเอียดของสื่อนี้ · เปิดใช้งานได้ทันทีโดยไม่ต้องเข้าสู่ระบบ"
+    ? "ภาพปกและรายละเอียดของสื่อนี้ · เปิดใช้ได้ทันที ไม่ต้องสมัคร"
     : item.accessMode === "authenticated"
-      ? "ภาพปกและรายละเอียดสำหรับพิจารณา · เปิดใช้ได้ด้วยบัญชีสมาชิกฟรี"
+      ? "ภาพปกและรายละเอียดสำหรับพิจารณา · สมัครบัญชีฟรีเพื่อใช้งาน"
       : item.accessMode === "locked"
         ? "ภาพปกและรายละเอียดสำหรับพิจารณา · สื่อนี้ยังไม่เปิดให้ใช้งาน"
         : `ภาพปกและรายละเอียดสำหรับพิจารณา · เปิดใช้ได้ตามสิทธิ์ ${planLabel}`;
@@ -73,7 +74,7 @@ export default async function ResourceDetailPage({ params }: Props) {
             <div style={{ padding: "var(--sp-4)", color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>{coverCaption}</div>
           </div>
           <div>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--r-pill)", padding: "5px 12px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontWeight: "var(--fw-semibold)", fontSize: "var(--fs-14)" }}>{item.accessMode !== "public" && <Lock size={15} aria-hidden="true" />}{item.accessMode === "public" ? "เปิดใช้ได้ทุกคน" : item.accessMode === "authenticated" ? "ใช้ฟรีเมื่อเข้าสู่ระบบ" : item.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : `สำหรับ ${planLabel}`}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--r-pill)", padding: "5px 12px", background: item.isFree ? "var(--status-success-bg)" : "var(--status-member-bg)", color: item.isFree ? "var(--status-success-fg)" : "var(--status-member-fg)", fontWeight: "var(--fw-semibold)", fontSize: "var(--fs-14)" }}>{item.accessMode !== "public" && <Lock size={15} aria-hidden="true" />}{accessLabel(item.accessMode)}</span>
             <h1 style={{ fontSize: "clamp(2rem, 5vw, var(--fs-36))", lineHeight: "var(--lh-snug)", marginTop: "var(--sp-4)" }}>{item.title}</h1>
             {item.meta && <p style={{ color: "var(--text-muted)", marginTop: "var(--sp-3)" }}>{item.meta}</p>}
             {item.category && <p style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-14)", color: "var(--text-body)" }}>หมวดหมู่: {item.category}</p>}

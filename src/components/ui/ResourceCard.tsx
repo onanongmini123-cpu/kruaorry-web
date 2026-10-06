@@ -6,6 +6,7 @@ import { Badge } from "./Badge";
 import { Tag } from "./Badge";
 import { ExpandableResourceDescription } from "./ExpandableResourceDescription";
 import { resourceGradeLabel } from "@/lib/resourceGrades";
+import { ACCESS_TIER_LABEL, type AccessTier } from "@/lib/resourceAccess";
 
 export type ResourceAffordance = "web_app" | "google_template" | "google_form" | "file_download";
 
@@ -37,6 +38,7 @@ interface ResourceCardProps {
   upgradePending?: boolean;
   unavailable?: boolean;
   free?: boolean;
+  accessTier?: AccessTier;
   isNew?: boolean;
   saved?: boolean;
   savePending?: boolean;
@@ -45,15 +47,15 @@ interface ResourceCardProps {
   onClick?: () => void;
 }
 
-export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, upgradePending, unavailable, free, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
+export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, upgradePending, unavailable, free, accessTier, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
   const t = TINTS[tint];
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const showCover = Boolean(coverImageUrl) && failedCoverUrl !== coverImageUrl;
-  const accessLabel = unavailable
-    ? "ยังไม่เปิดให้ใช้งาน"
-    : locked && requiredPlanNames.length > 0
-    ? `สำหรับ ${requiredPlanNames.join(" / ")}`
-    : "สำหรับสมาชิก";
+  const accessText = unavailable
+    ? ACCESS_TIER_LABEL.unavailable
+    : locked
+    ? ACCESS_TIER_LABEL.pro
+    : ACCESS_TIER_LABEL.member;
 
   return (
     <article className="kru-card kru-resource-card" style={{ overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -119,7 +121,7 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
       <div style={{ padding: "var(--sp-5)", display: "flex", flexDirection: "column", gap: "var(--sp-3)", flex: 1 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {isNew && <Badge tone="brand">ใหม่</Badge>}
-          {free ? <Badge tone="success">ฟรี</Badge> : <Badge tone="member" icon={Lock}>{accessLabel}</Badge>}
+          {free ? <Badge tone="success">{ACCESS_TIER_LABEL[accessTier ?? "free"]}</Badge> : <Badge tone="member" icon={Lock}>{accessText}</Badge>}
         </div>
         <button
           type="button"
