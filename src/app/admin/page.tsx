@@ -54,7 +54,7 @@ import { planDisplayName } from "@/lib/planDisplay";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
-import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
+import { RESOURCE_GRADE_OPTIONS, resourceGradeProblem, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
@@ -99,6 +99,7 @@ interface AdminResource {
   status: ResourceStatus;
   delivery_mode: DeliveryMode;
   access_mode: ResourceAccessMode;
+  grade_levels?: string[] | null;
 }
 
 interface AdminPlanRow extends AdminPlan {
@@ -697,7 +698,7 @@ export default function AdminConsolePage() {
     // batch below touches 048 columns/RPCs, and it cannot run until the shared
     // readiness marker has been verified.
     const baseDataPromise = Promise.all([
-      supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode").order("created_at", { ascending: false }),
+      supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode, grade_levels").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
@@ -1232,6 +1233,7 @@ export default function AdminConsolePage() {
         coverImageUrl: wouldHaveCover ? "pending-truthy-placeholder" : null,
         filePath: wouldHaveFile ? "pending-truthy-placeholder" : null,
         ctaUrl: form.cta_url.trim() || null,
+        gradeLevels: form.grade_levels,
       });
       if (validationError) {
         setFormError(validationError);
@@ -1358,14 +1360,14 @@ export default function AdminConsolePage() {
       if (status === "published") {
         const target = resources.find((r) => r.id === id);
         const [{ data: metadata, error: queryError }, { target: resolved, error: targetError }] = await Promise.all([
-          supabase.from("resources").select("delivery_mode, cover_image_url").eq("id", id).single(),
+          supabase.from("resources").select("delivery_mode, cover_image_url, grade_levels").eq("id", id).single(),
           loadResourceTarget(supabase, id),
         ]);
         // Fail closed: a query error or a missing row must never be treated
         // as "no problems found" — both block the publish.
         const publishGuard = evaluatePublishGuard({
           data: metadata && resolved
-            ? { status: "published", deliveryMode: metadata.delivery_mode, coverImageUrl: metadata.cover_image_url, filePath: resolved.file_path, ctaUrl: resolved.cta_url }
+            ? { status: "published", deliveryMode: metadata.delivery_mode, coverImageUrl: metadata.cover_image_url, filePath: resolved.file_path, ctaUrl: resolved.cta_url, gradeLevels: metadata.grade_levels ?? [] }
             : null,
           error: queryError || targetError ? { message: queryError?.message ?? targetError ?? "" } : null,
         });
@@ -2274,6 +2276,11 @@ export default function AdminConsolePage() {
                         <div style={{ flex: 1, minWidth: 180 }}>
                           <div style={{ fontWeight: "var(--fw-semibold)" }}>{item.title}</div>
                           <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{item.meta}</div>
+                          {item.status === "published" && resourceGradeProblem(item.grade_levels) && (
+                            <div role="status" style={{ fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
+                              ⚠ {resourceGradeProblem(item.grade_levels)} (ผู้ใช้จะไม่เห็นระดับชั้นของสื่อนี้)
+                            </div>
+                          )}
                         </div>
                         <div className="kru-admin-resource-badges">
                           <Badge tone={STATUS_TONE[item.status]}>{STATUS_LABEL[item.status]}</Badge>

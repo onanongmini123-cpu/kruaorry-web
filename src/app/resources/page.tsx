@@ -4,7 +4,7 @@ import { BookOpen, Lock, Search } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Badge, ExpandableResourceDescription } from "@/components/ui";
 import { filterDiscoveredResources, normalizeDiscoveryFilters, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
-import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
+import { RESOURCE_GRADE_OPTIONS, formatResourceGrades } from "@/lib/resourceGrades";
 import { publicFreeAccountAction } from "@/lib/publicAuthState";
 import { publicResourceAction, requiredPlansLabel } from "./catalog";
 import { loadPublicResources, loadPublicResourceViewer } from "./data";
@@ -155,7 +155,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                         />
                         <div style={{ minHeight: 28, display: "flex", alignItems: "flex-start", gap: 6, flexWrap: "wrap" }}>
                           {item.category && <span className="kru-tag">{item.category}</span>}
-                          {item.gradeLevels.slice(0, 2).map((grade) => <span className="kru-tag" key={grade}>{resourceGradeLabel(grade)}</span>)}
+                          {item.gradeLevels.length > 0 && <span className="kru-tag">{formatResourceGrades(item.gradeLevels)}</span>}
                         </div>
                         <div style={{ display: "grid", gap: "var(--sp-3)", marginTop: "auto", paddingTop: "var(--sp-2)" }}>
                           <a

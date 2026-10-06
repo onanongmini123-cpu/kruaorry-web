@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, BookOpen, Lock } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { resourceGradeLabel } from "@/lib/resourceGrades";
+import { formatResourceGrades } from "@/lib/resourceGrades";
 import { loadPublicResource, loadPublicResourceViewer } from "../data";
 import { publicResourceAction, requiredPlansLabel } from "../catalog";
 import { PublicResourceCover } from "../PublicResourceCover";
@@ -78,7 +78,7 @@ export default async function ResourceDetailPage({ params }: Props) {
             <h1 style={{ fontSize: "clamp(2rem, 5vw, var(--fs-36))", lineHeight: "var(--lh-snug)", marginTop: "var(--sp-4)" }}>{item.title}</h1>
             {item.meta && <p style={{ color: "var(--text-muted)", marginTop: "var(--sp-3)" }}>{item.meta}</p>}
             {item.category && <p style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-14)", color: "var(--text-body)" }}>หมวดหมู่: {item.category}</p>}
-            {item.gradeLevels.length > 0 && <p style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-14)", color: "var(--text-body)" }}>ระดับชั้น: {item.gradeLevels.map(resourceGradeLabel).join(", ")}</p>}
+            {item.gradeLevels.length > 0 && <p style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-14)", color: "var(--text-body)" }}>ระดับชั้น: {formatResourceGrades(item.gradeLevels)}</p>}
             {item.description && <p style={{ color: "var(--text-body)", fontSize: "var(--fs-18)", lineHeight: "var(--lh-loose)", marginTop: "var(--sp-6)", whiteSpace: "pre-wrap" }}>{item.description}</p>}
             {item.tags.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "var(--sp-5)" }}>{item.tags.map((tag) => <span key={tag} style={{ padding: "4px 10px", borderRadius: "var(--r-pill)", background: "var(--surface-sunken)", color: "var(--text-body)", fontSize: "var(--fs-13)" }}>{tag}</span>)}</div>}
             <div className="kru-card" style={{ padding: "var(--sp-6)", marginTop: "var(--sp-7)" }}>

@@ -44,7 +44,7 @@ import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
 import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
-import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
+import { RESOURCE_GRADE_OPTIONS, formatResourceGrades } from "@/lib/resourceGrades";
 import { persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import {
@@ -649,9 +649,9 @@ export default function TeacherAppPage() {
                   <div>
                     <h1 style={{ fontSize: "var(--fs-36)" }}>{detail.title}</h1>
                     <div style={{ margin: "var(--sp-5) 0 var(--sp-6)", color: "var(--text-muted)" }}>{detail.meta}</div>
-                    {detail.gradeLevels.length > 0 && (
+                    {formatResourceGrades(detail.gradeLevels) && (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "calc(-1 * var(--sp-3)) 0 var(--sp-5)" }}>
-                        {detail.gradeLevels.map((item) => <Badge key={item} tone="info">{resourceGradeLabel(item)}</Badge>)}
+                        <Badge tone="info">{formatResourceGrades(detail.gradeLevels)}</Badge>
                       </div>
                     )}
                     <PublicResourceCover

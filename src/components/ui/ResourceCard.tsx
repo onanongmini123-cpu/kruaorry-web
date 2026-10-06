@@ -5,7 +5,7 @@ import { Heart, Lock, type LucideIcon } from "lucide-react";
 import { Badge } from "./Badge";
 import { Tag } from "./Badge";
 import { ExpandableResourceDescription } from "./ExpandableResourceDescription";
-import { resourceGradeLabel } from "@/lib/resourceGrades";
+import { formatResourceGrades } from "@/lib/resourceGrades";
 import { ACCESS_TIER_LABEL, type AccessTier } from "@/lib/resourceAccess";
 
 export type ResourceAffordance = "web_app" | "google_template" | "google_form" | "file_download";
@@ -65,6 +65,7 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
   const showCover = Boolean(coverImageUrl) && failedCoverUrl !== coverImageUrl;
   // The badge describes the resource, never the viewer: `locked`,
   // `upgradePending` and `unavailable` only change the CTA and cover overlay.
+  const gradeText = formatResourceGrades(gradeLevels);
   const planNames = accessTier === "pro" ? requiredPlanNames.filter(Boolean) : [];
 
   return (
@@ -148,10 +149,8 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
         <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta}</div>
         {(gradeLevels.length > 0 || tags.length > 0) && (
           <div className="kru-resource-card__tags">
-            {gradeLevels.slice(0, 2).map((grade) => (
-              <Tag key={`grade-${grade}`}>{resourceGradeLabel(grade)}</Tag>
-            ))}
-            {tags.slice(0, Math.max(0, 3 - Math.min(gradeLevels.length, 2))).map((tag) => (
+            {gradeText && <Tag key="grade">{gradeText}</Tag>}
+            {tags.slice(0, gradeText ? 2 : 3).map((tag) => (
               <Tag key={tag}>{tag}</Tag>
             ))}
           </div>
