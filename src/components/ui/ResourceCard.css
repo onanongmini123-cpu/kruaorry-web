@@ -1,9 +1,29 @@
 .kru-resource-card {
+  position: relative;
   height: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* The title link covers the whole card, so any tap on it opens the detail;
+   the save button (z-index 2) stays on top and keeps its own action. */
+.kru-resource-card__title a::after,
+.kru-resource-card__title button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.kru-resource-card:has(.kru-resource-card__title :focus-visible) {
+  box-shadow: var(--ring-focus);
+}
+
+/* The covering link receives the pointer, so show hover on the button for it. */
+.kru-resource-card:hover .kru-resource-card__cta .kru-btn {
+  background: var(--brand-soft-hover);
 }
 
 .kru-resource-card__media {

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function TermsPage() {
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
-      <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
+      <Link href="/" style={{ minHeight: "var(--tap-min)", display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
         <Mascot size={32} />
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
       </Link>

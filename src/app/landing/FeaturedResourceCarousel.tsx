@@ -456,16 +456,15 @@ function CarouselStyles() {
       }
 
       .kru-featured-carousel__dots {
-        min-height: 32px;
+        min-height: var(--tap-min, 44px);
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 8px;
       }
 
       .kru-featured-carousel__dots button {
-        width: 32px;
-        height: 32px;
+        width: var(--tap-min, 44px);
+        height: var(--tap-min, 44px);
         padding: 0;
         border: 0;
         border-radius: var(--r-pill);

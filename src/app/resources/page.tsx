@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BookOpen, Search } from "lucide-react";
-import { Mascot } from "@/components/Mascot";
+import { PublicTopBar } from "@/components/PublicTopBar";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { FilterSheet, ResourceCard } from "@/components/ui";
 import {
@@ -64,13 +64,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--surface-page)" }}>
-      <header style={{ background: "var(--surface-card)", borderBottom: "1px solid var(--border-subtle)" }}>
-        <div style={{ maxWidth: "var(--container-max)", margin: "auto", padding: "var(--sp-4) var(--sp-5)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontWeight: "var(--fw-bold)", fontFamily: "var(--font-display)", color: "var(--text-strong)" }}><Mascot size={34} /> KruAorry</Link>
-          <div style={{ flex: 1 }} />
-          <Link href={accountAction.href} style={{ color: "var(--text-link)", fontWeight: "var(--fw-semibold)" }}>{accountAction.label}</Link>
-        </div>
-      </header>
+      <PublicTopBar actionHref={accountAction.href} actionLabel={accountAction.label} />
 
       <main>
         {result.status === "ready" && hasFilters && (
@@ -161,13 +155,13 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                   <Link key={item} className="kru-btn kru-btn--secondary kru-btn--sm" href={resourceDiscoveryHref("/resources", { category: item })}>{item}</Link>
                 ))}
               </div>
-              <Link href="/resources" style={{ color: "var(--text-link)", fontWeight: "var(--fw-semibold)" }}>ล้างตัวกรองทั้งหมด</Link>
+              <Link href="/resources" className="kru-lib-clear">ล้างตัวกรองทั้งหมด</Link>
             </div>
           ) : (
             <>
               <div className="kru-lib-summary">
                 <p role="status">พบ {visible.length} รายการ</p>
-                {hasFilters && <Link href="/resources" style={{ fontWeight: "var(--fw-semibold)" }}>ล้างตัวกรอง</Link>}
+                {hasFilters && <Link href="/resources" className="kru-lib-clear">ล้างตัวกรอง</Link>}
               </div>
               <div className="kru-lib-grid">
                 {visible.map((item, index) => (

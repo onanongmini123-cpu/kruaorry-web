@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, BookOpen, Lock } from "lucide-react";
 import { Badge, ResourceCard, Tag } from "@/components/ui";
-import { Mascot } from "@/components/Mascot";
+import { PublicTopBar } from "@/components/PublicTopBar";
 import { TrackedAnchor } from "@/components/analytics/TrackedAnchor";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
@@ -114,13 +114,7 @@ export default async function ResourceDetailPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(breadcrumbJsonLd(item.title, canonicalPath)) }}
       />
-      <header className="kru-detail__header">
-        <div className="kru-detail__header-inner">
-          <Link href="/" className="kru-detail__brand"><Mascot size={34} /> KruAorry</Link>
-          <div style={{ flex: 1 }} />
-          <Link href="/resources" className="kru-detail__headlink">คลังสื่อ</Link>
-        </div>
-      </header>
+      <PublicTopBar actionHref="/resources" actionLabel="คลังสื่อ" />
 
       <main className="kru-detail__main">
         <Link href="/resources" className="kru-detail__back"><ArrowLeft size={17} aria-hidden="true" />กลับไปคลังสื่อ</Link>

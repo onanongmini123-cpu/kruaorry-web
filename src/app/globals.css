@@ -289,6 +289,12 @@ img {
   padding: 0 var(--sp-5);
   font-size: var(--fs-14);
 }
+/* Dense 36px buttons are for mouse use; fingers need the full target. */
+@media (max-width: 767px), (pointer: coarse) {
+  .kru-btn--sm {
+    min-height: var(--tap-min);
+  }
+}
 .kru-btn--block {
   display: flex;
   width: 100%;

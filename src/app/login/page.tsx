@@ -376,7 +376,7 @@ function LoginForm() {
                     setError(null);
                     setNotice(null);
                   }}
-                  style={{ color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  style={{ minHeight: "var(--tap-min)", color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
                   ยังไม่ได้ยืนยันอีเมล?
                 </button>
@@ -384,7 +384,7 @@ function LoginForm() {
                   type="button"
                   onClick={handleForgotPassword}
                   disabled={resetting}
-                  style={{ color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  style={{ minHeight: "var(--tap-min)", color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
                   {resetting ? "กำลังส่ง..." : "ลืมรหัสผ่าน?"}
                 </button>

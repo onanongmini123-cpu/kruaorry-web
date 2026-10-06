@@ -421,10 +421,10 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
       <footer style={{ borderTop: "1px solid var(--border-subtle)", padding: "var(--sp-7) var(--sp-5)", textAlign: "center", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
         <div>KruAorry — สื่อการสอนและเครื่องมือสำหรับครูไทย</div>
         <div style={{ marginTop: 8, display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-          <Link href="/terms" style={{ color: "var(--text-muted)" }}>
+          <Link href="/terms" style={{ minHeight: "var(--tap-min)", display: "inline-flex", alignItems: "center", color: "var(--text-muted)" }}>
             เงื่อนไขการใช้งาน
           </Link>
-          <Link href="/privacy" style={{ color: "var(--text-muted)" }}>
+          <Link href="/privacy" style={{ minHeight: "var(--tap-min)", display: "inline-flex", alignItems: "center", color: "var(--text-muted)" }}>
             นโยบายความเป็นส่วนตัว
           </Link>
         </div>
@@ -573,6 +573,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
         .kru-discovery-hero__secondary a,
         .kru-discovery-results__heading > a {
+          min-height: var(--tap-min, 44px);
           display: inline-flex;
           align-items: center;
           gap: 6px;
@@ -722,9 +723,8 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
         .kru-sample-grid {
           margin-top: var(--sp-7);
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 280px));
+          grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
           gap: var(--gap-grid);
-          justify-content: center;
           align-items: stretch;
         }
 

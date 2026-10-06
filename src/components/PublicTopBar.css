@@ -1,0 +1,33 @@
+.kru-topbar {
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.kru-topbar__inner {
+  max-width: var(--container-max);
+  margin: auto;
+  padding: var(--sp-2) var(--sp-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.kru-topbar__brand,
+.kru-topbar__action {
+  min-height: var(--tap-min, 44px);
+  display: inline-flex;
+  align-items: center;
+}
+
+.kru-topbar__brand {
+  gap: 10px;
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+}
+
+.kru-topbar__action {
+  color: var(--text-link);
+  font-weight: var(--fw-semibold);
+}

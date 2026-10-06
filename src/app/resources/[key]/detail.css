@@ -3,34 +3,6 @@
   background: var(--surface-page);
 }
 
-.kru-detail__header {
-  background: var(--surface-card);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.kru-detail__header-inner {
-  max-width: var(--container-max);
-  margin: auto;
-  padding: var(--sp-4) var(--sp-5);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.kru-detail__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-strong);
-  font-family: var(--font-display);
-  font-weight: var(--fw-bold);
-}
-
-.kru-detail__headlink {
-  color: var(--text-link);
-  font-weight: var(--fw-semibold);
-}
-
 .kru-detail__main {
   max-width: var(--container-max);
   margin: auto;
@@ -161,10 +133,25 @@
 
 .kru-detail__list {
   margin: 0;
-  padding-left: 1.25em;
-  display: grid;
-  gap: var(--sp-2);
+  padding-left: 1.4em;
+  list-style: disc;
   color: var(--text-body);
+}
+
+.kru-detail__list--ordered {
+  list-style: decimal;
+}
+
+.kru-detail__list li {
+  padding-left: 0.25em;
+}
+
+.kru-detail__list li + li {
+  margin-top: var(--sp-2);
+}
+
+.kru-detail__list li::marker {
+  color: var(--brand);
 }
 
 .kru-detail__tags {

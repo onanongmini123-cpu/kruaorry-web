@@ -604,6 +604,7 @@ export default function TeacherAppPage() {
               <div>
                 <h1 style={{ fontSize: "var(--fs-30)" }}>คลังสื่อ</h1>
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-16)", color: "var(--text-muted)" }}>ดูตัวอย่างได้ทุกชิ้นก่อนใช้ ดาวน์โหลดแล้วสอนได้เลย</p>
+                <div className="kru-discovery">
                 <div className="kru-discovery-controls" role="search" aria-label="ค้นหาและกรองคลังสื่อ">
                   <label className="kru-filter-field kru-filter-field--search">
                     <span>คำค้น</span>
@@ -637,7 +638,8 @@ export default function TeacherAppPage() {
                       </select>
                     </label>
                   </FilterSheet>
-                  <button type="button" className="kru-btn kru-btn--ghost" onClick={clearFilters} disabled={!hasActiveFilters}>ล้างตัวกรอง</button>
+                  <button type="button" className="kru-btn kru-btn--ghost kru-discovery-clear" onClick={clearFilters} disabled={!hasActiveFilters}>ล้างตัวกรอง</button>
+                </div>
                 </div>
                 <div role="status" style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", margin: "var(--sp-5) 0" }}>พบ {filtered.length} รายการ</div>
                 {filtered.length === 0 ? (
@@ -786,7 +788,7 @@ export default function TeacherAppPage() {
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
-                        {plan.isPopular && <Badge tone="success">ยอดนิยม</Badge>}
+                        {plan.isPopular && <Badge tone="success">แนะนำ</Badge>}
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
                         <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
                         <div className="kru-plan-benefits">
@@ -895,6 +897,7 @@ export default function TeacherAppPage() {
         .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; min-height: 64px; padding-bottom: env(safe-area-inset-bottom); background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
         .kru-app-mobile-tabs > button { min-width: 0; min-height: 56px; }
         .kru-resource-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); align-items: stretch; gap: var(--gap-grid); }
+        .kru-discovery { container-type: inline-size; container-name: kru-discovery; }
         .kru-discovery-controls { padding: var(--sp-5); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: end; border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-card); }
         .kru-filter-field { min-width: 0; display: grid; gap: 7px; color: var(--text-body); font-size: var(--fs-13); font-weight: var(--fw-semibold); }
         .kru-filter-field select { width: 100%; min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--white); color: var(--text-strong); font: inherit; font-weight: var(--fw-regular); }
@@ -933,8 +936,18 @@ export default function TeacherAppPage() {
         .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
         .kru-contact-fab__link:hover { background: var(--purple-100); color: var(--purple-800); text-decoration: none; }
         .kru-contact-fab__version { margin: 0; color: var(--text-muted); font-size: var(--fs-12); }
+        @media (min-width: 768px) {
+          @container kru-discovery (min-width: 640px) {
+            .kru-discovery-controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .kru-filter-field--search { grid-column: 1 / 4; grid-row: 1; }
+            .kru-discovery-clear { grid-column: 4; grid-row: 1; }
+          }
+          @container kru-discovery (min-width: 900px) {
+            .kru-discovery-controls { grid-template-columns: minmax(200px, 1.5fr) repeat(4, minmax(110px, 1fr)) auto; }
+            .kru-filter-field--search, .kru-discovery-clear { grid-column: auto; grid-row: auto; }
+          }
+        }
         @media (min-width: 900px) {
-          .kru-discovery-controls { grid-template-columns: minmax(200px, 1.5fr) repeat(4, minmax(120px, 1fr)) auto; }
           .kru-member-hero { grid-template-columns: minmax(0, 1fr) 220px; padding: var(--sp-9); }
           .kru-member-hero__mascot { min-height: 230px; margin-top: 0; }
           .kru-member-hero__glow { width: 190px; height: 190px; box-shadow: 0 0 0 20px rgba(255,255,255,.2); }

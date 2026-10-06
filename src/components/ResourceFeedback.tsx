@@ -266,7 +266,7 @@ export function ResourceFeedback({
         textarea, select { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--white); color: var(--text-strong); font: inherit; font-weight: var(--fw-regular); resize: vertical; }
         textarea:focus, select:focus { outline: 0; box-shadow: var(--ring-focus); }
         .kru-feedback__stars { margin-top: 9px; display: flex; gap: 2px; color: #d28a00; }
-        .kru-feedback__stars label { width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; }
+        .kru-feedback__stars label { width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; color: #d28a00; }
         .kru-feedback__stars input { position: absolute; opacity: 0; }
         .kru-feedback__stars label:has(input:focus-visible) { border-radius: var(--r-pill); box-shadow: var(--ring-focus); }
         .kru-feedback__actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; }

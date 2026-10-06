@@ -22,7 +22,7 @@ export function SearchField({ value, onChange, placeholder, className = "", styl
         type="search"
         aria-label={ariaLabel}
         className="kru-input"
-        style={{ minHeight: 48, paddingRight: value ? 40 : undefined }}
+        style={{ minHeight: 48, paddingRight: value ? 48 : undefined }}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -32,7 +32,7 @@ export function SearchField({ value, onChange, placeholder, className = "", styl
           type="button"
           aria-label="ล้างคำค้นหา"
           onClick={() => onChange("")}
-          style={{ position: "absolute", right: 8, border: "none", background: "transparent", color: "var(--text-faint)", cursor: "pointer", padding: 8 }}
+          style={{ position: "absolute", right: 2, width: 44, height: 44, display: "grid", placeItems: "center", border: "none", background: "transparent", color: "var(--text-faint)", cursor: "pointer", padding: 0 }}
         >
           <X size={16} />
         </button>

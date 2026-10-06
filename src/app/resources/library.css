@@ -43,6 +43,15 @@
   color: var(--text-muted);
 }
 
+.kru-lib-clear {
+  min-height: var(--tap-min, 44px);
+  padding: 0 var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-link);
+  font-weight: var(--fw-semibold);
+}
+
 .kru-lib-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
@@ -65,13 +74,22 @@
   gap: var(--sp-3);
 }
 
+/* Tablet: the search takes its own row, then the four filters with the button. */
 @media (min-width: 768px) {
   .kru-lib-filters {
-    grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(130px, 1fr)) auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   }
 
-  .kru-lib-search,
-  .kru-lib-submit,
+  .kru-lib-search {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .kru-lib-submit {
+    grid-column: 5;
+    grid-row: 2;
+  }
+
   .kru-lib-filters .kru-filter-sheet {
     grid-column: auto;
     grid-row: auto;
@@ -82,12 +100,28 @@
   }
 }
 
-@supports not selector(:popover-open) {
+/* Desktop: search, filters and button share one row. */
+@media (min-width: 1100px) {
   .kru-lib-filters {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(200px, 1.6fr) repeat(4, minmax(120px, 1fr)) auto;
   }
 
-  .kru-filter-sheet__apply {
-    display: inline-flex;
+  .kru-lib-search,
+  .kru-lib-submit {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+/* Browsers without popover support show every filter inline on phones too. */
+@media (max-width: 767px) {
+  @supports not selector(:popover-open) {
+    .kru-lib-filters {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .kru-filter-sheet__apply {
+      display: inline-flex;
+    }
   }
 }

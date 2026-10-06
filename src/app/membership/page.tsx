@@ -657,7 +657,7 @@ function MembershipContent() {
                 ? "สื่อนี้ใช้สิทธิ์แพ็กเดิมหรือแพ็กเฉพาะที่ไม่มีจำหน่ายในหน้าสมัครสมาชิกปัจจุบัน"
                 : applicationPlanId === "founder"
                 ? "สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง"
-                : "แพ็กสมาชิกรายปีสำหรับเข้าถึงคลังสื่อพรีเมียม"}
+                : "แพ็กสมาชิกรายปีสำหรับครู เปิดใช้สื่อและไฟล์ Teacher Pro ได้ครบ"}
             </p>
             <div className="kru-membership-renewal"><ShieldCheck size={20} aria-hidden="true" /><strong>{noSelectablePlanForResource ? "เข้าสู่ระบบด้วยบัญชีเดิมเพื่อตรวจสอบสิทธิ์" : applicationPlanId === "founder" ? "ต่ออายุปีถัดไป 599 บาท/ปี" : "ต่ออายุ 599 บาท/ปี"}</strong></div>
             <p className="kru-membership-rule">{noSelectablePlanForResource ? "ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้" : "การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์ ต้องรอทีมงานตรวจและยืนยันยอดเงินเข้าจริง"}</p>
@@ -1080,6 +1080,7 @@ function MembershipContent() {
         .kru-membership-facts svg { flex: 0 0 auto; color: var(--status-success-fg); }
         .kru-membership-facts p { margin-top: 4px; color: var(--text-muted); font-size: var(--fs-14); }
         footer { padding: var(--sp-7) var(--sp-5) calc(var(--sp-7) + env(safe-area-inset-bottom)); display: flex; justify-content: center; gap: var(--sp-5); flex-wrap: wrap; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: var(--fs-13); text-align: center; }
+        footer :global(a) { min-height: var(--tap-min); padding: 0 var(--sp-2); display: inline-flex; align-items: center; }
         @media (max-width: 820px) {
           .kru-membership-hero, .kru-membership-layout { grid-template-columns: minmax(0, 1fr); }
           .kru-membership-facts { grid-template-columns: minmax(0, 1fr); }
