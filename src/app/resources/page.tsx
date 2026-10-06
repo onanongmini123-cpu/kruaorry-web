@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BookOpen, Search } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
+import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { FilterSheet, ResourceCard } from "@/components/ui";
 import {
   ACCESS_FILTER_OPTIONS,
@@ -72,6 +73,18 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
       </header>
 
       <main>
+        {result.status === "ready" && hasFilters && (
+          <TrackOnMount
+            event="search"
+            properties={{
+              source: "library",
+              term: filters.query,
+              query_length: filters.query.length,
+              filters_count: narrowing,
+              results_count: visible.length,
+            }}
+          />
+        )}
         <section style={{ background: "var(--wash-hero)" }}>
           <div style={{ maxWidth: "var(--container-max)", margin: "auto", padding: "var(--sp-10) var(--sp-5)" }}>
             <p style={{ fontSize: "var(--fs-14)", color: "var(--text-link)", fontWeight: "var(--fw-bold)" }}>คลังสื่อสำหรับครูไทย</p>

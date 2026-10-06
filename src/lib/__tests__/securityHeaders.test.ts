@@ -29,4 +29,8 @@ describe("site-wide security headers", () => {
   it("does not advertise the framework", () => {
     expect(nextConfig.poweredByHeader).toBe(false);
   });
+
+  it("stamps the build version for support from the package and the commit", () => {
+    expect(nextConfig.env?.NEXT_PUBLIC_APP_VERSION).toMatch(/^\d+\.\d+\.\d+\+(?:[0-9a-f]{7}|local)$/);
+  });
 });

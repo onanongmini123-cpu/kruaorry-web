@@ -54,6 +54,8 @@ import { planDisplayName } from "@/lib/planDisplay";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
+import { trackEvent } from "@/lib/analytics";
+import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeProblem, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
 import {
@@ -201,6 +203,8 @@ interface AdminIssueReport {
   updated_at: string;
   resources: { title: string } | null;
   profiles: { full_name: string | null; email: string } | null;
+  /** Present once migration 054 is applied: app build, browser, OS, screen size. */
+  context?: { app_version?: string; browser?: string; os?: string; viewport?: string } | null;
 }
 
 interface AdminQueueResult<T> {
@@ -265,6 +269,8 @@ const AUDIT_FIELD_LABEL: Record<AdminAuditLogRow["field"], string> = { role: "�
 const MODERATION_PAGE_SIZE = 50;
 const ADMIN_REVIEW_SELECT = "id, resource_id, user_id, rating, body, moderation_status, created_at, updated_at, resources(title), profiles!resource_reviews_user_id_fkey(full_name, email)";
 const ADMIN_REPORT_SELECT = "id, resource_id, reporter_id, category, details, status, created_at, updated_at, resources(title), profiles(full_name, email)";
+// Asked for first; falls back to the plain select until migration 054 exists.
+const ADMIN_REPORT_SELECT_WITH_CONTEXT = `${ADMIN_REPORT_SELECT}, context`;
 const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
 const ADMIN_UPGRADE_LINE_SLIP_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, line_slip_received_at, line_slip_received_by, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
 
@@ -538,15 +544,19 @@ export default function AdminConsolePage() {
 
     const counts = countResults.map((result) => result.count ?? 0);
     const slices = priorityPageSlices(counts, page, MODERATION_PAGE_SIZE);
-    const pageResults = await Promise.all(slices.map((slice) => (
+    const readReportPages = (select: string) => Promise.all(slices.map((slice) => (
       supabase.from("resource_issue_reports")
-        .select(ADMIN_REPORT_SELECT)
+        .select(select)
         .eq("status", statuses[slice.groupIndex])
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(slice.from, slice.to)
         .abortSignal(signal)
     )));
+    let pageResults = await readReportPages(ADMIN_REPORT_SELECT_WITH_CONTEXT);
+    if (pageResults.some((result) => result.error && /context/i.test(result.error.message ?? ""))) {
+      pageResults = await readReportPages(ADMIN_REPORT_SELECT);
+    }
     const pageError = pageResults.find((result) => result.error)?.error ?? null;
     return {
       data: pageError ? null : pageResults.flatMap((result) => (result.data ?? []) as unknown as AdminIssueReport[]),
@@ -1575,6 +1585,11 @@ export default function AdminConsolePage() {
         await refreshAdminQueues();
         return;
       }
+      // The database confirmed the payment and activated or renewed the plan.
+      trackEvent("pro_activated", {
+        plan_id: paymentTarget.kind === "application" ? paymentTarget.request.plan_id : paymentTarget.subscription.plan_id,
+        stage: paymentTarget.kind === "application" ? "activation" : "renewal",
+      });
       setPaymentSuccessMessage(adminPaymentSuccessMessage({
         kind: paymentTarget.kind,
         amountThb: paymentTarget.amountThb,
@@ -1962,6 +1977,7 @@ export default function AdminConsolePage() {
         </aside>
 
         <main className="kru-admin-main">
+          <p className="kru-admin-private-meta" style={{ textAlign: "right" }}>เวอร์ชันแอป {APP_VERSION}</p>
           <div className="kru-admin-refresh-row">
             <Button
               type="button"
@@ -2400,6 +2416,11 @@ export default function AdminConsolePage() {
                         </div>
                         <p><strong>{ISSUE_CATEGORY_LABEL[report.category] ?? report.category}</strong></p>
                         {report.details && <p className="kru-admin-review-body">{report.details}</p>}
+                        {report.context && (
+                          <p className="kru-admin-private-meta">
+                            {[report.context.app_version && `เวอร์ชัน ${report.context.app_version}`, report.context.browser, report.context.os, report.context.viewport].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
                         <label className="kru-field" style={{ maxWidth: 260 }}>
                           <span className="kru-field__label">สถานะการจัดการ</span>
                           <select className="kru-select" value={report.status} disabled={pendingAction !== null || queueRefreshError !== null} onChange={(event) => handleIssueStatus(report, event.target.value as IssueReportStatus)}>

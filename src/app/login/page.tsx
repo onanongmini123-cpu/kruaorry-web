@@ -12,6 +12,7 @@ import {
   type AuthEntryMode,
 } from "@/lib/authReturnPath";
 import { LINE_OA_URL } from "@/lib/config";
+import { trackEvent } from "@/lib/analytics";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import {
@@ -57,6 +58,10 @@ function LoginForm() {
   const hasConfirmationError = searchParams.get("error") === "confirmation";
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<AuthEntryMode>(requestedMode);
+  useEffect(() => {
+    // The visitor is looking at the sign-up form (arrived or switched to it).
+    if (mode === "signup") trackEvent("signup_start", { source: "login_page" });
+  }, [mode]);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -155,6 +160,7 @@ function LoginForm() {
           applySignupFailureTransition(signUpError);
           return;
         }
+        trackEvent("signup_complete", { mode: data.session ? "session" : "email_confirmation" });
         if (!data.session) {
           setNotice(SIGNUP_PENDING_MESSAGE);
           setMode("signin");

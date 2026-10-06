@@ -5,6 +5,10 @@ import { AlertTriangle, Flag, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { createClient } from "@/lib/supabase/client";
+import { LINE_OA_URL } from "@/lib/config";
+import { collectIssueContext } from "@/lib/issueContext";
+import { issueOptions } from "@/lib/resourceIssues";
+import { fetchResourceIssueContextReadiness } from "@/lib/membershipSchemaReadiness";
 import {
   deleteMyResourceReview,
   fetchMyResourceReview,
@@ -14,14 +18,6 @@ import {
   type ResourceIssueCategory,
   type ResourceReview,
 } from "@/lib/data";
-
-const REPORT_OPTIONS: Array<{ value: ResourceIssueCategory; label: string }> = [
-  { value: "cannot_open", label: "เปิดสื่อไม่ได้" },
-  { value: "broken_link", label: "ลิงก์เสีย" },
-  { value: "cannot_download", label: "ดาวน์โหลดไม่ได้" },
-  { value: "wrong_content", label: "เนื้อหาไม่ตรง" },
-  { value: "other", label: "อื่น ๆ" },
-];
 
 type Props = {
   resourceId: string;
@@ -49,6 +45,9 @@ export function ResourceFeedback({
   const [error, setError] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportCategory, setReportCategory] = useState<ResourceIssueCategory>("cannot_open");
+  // Extra categories and automatic context need migration 054; until the
+  // marker is seen the form offers exactly what an older database accepts.
+  const [extendedReports, setExtendedReports] = useState(false);
   const [reportDetails, setReportDetails] = useState("");
   const [reporting, setReporting] = useState(false);
   const canSubmitFeedback = authenticated && canInteract;
@@ -136,7 +135,13 @@ export function ResourceFeedback({
       return;
     }
     setReporting(true);
-    const reportError = await submitResourceIssue(supabase, resourceId, reportCategory, trimmed);
+    const reportError = await submitResourceIssue(
+      supabase,
+      resourceId,
+      reportCategory,
+      trimmed,
+      extendedReports ? collectIssueContext() : undefined,
+    );
     setReporting(false);
     if (reportError) return setError(reportError);
     setReportDetails("");
@@ -145,16 +150,36 @@ export function ResourceFeedback({
   };
 
   return (
-    <section className="kru-feedback" aria-labelledby={`reviews-${resourceId}`}>
+    <section id="feedback" className="kru-feedback" aria-labelledby={`reviews-${resourceId}`}>
       <div className="kru-feedback__heading">
         <div>
           <h2 id={`reviews-${resourceId}`}>รีวิวจากสมาชิก</h2>
           <p>{calculatedAverage === null ? "ยังไม่มีคะแนน" : `${calculatedAverage.toFixed(1)} จาก 5 · ${calculatedCount} รีวิว`}</p>
         </div>
         {canSubmitFeedback && (
-          <Button type="button" variant="ghost" icon={Flag} onClick={() => setReportOpen((open) => !open)} aria-expanded={reportOpen}>
-            รายงานปัญหา
+          <Button
+            type="button"
+            variant="ghost"
+            icon={Flag}
+            onClick={() => {
+              setReportOpen((open) => !open);
+              if (!extendedReports) {
+                void fetchResourceIssueContextReadiness(supabase).then((readiness) => {
+                  if (readiness !== "ready") return;
+                  setExtendedReports(true);
+                  setReportCategory((current) => (current === "cannot_open" ? "cannot_play" : current));
+                });
+              }
+            }}
+            aria-expanded={reportOpen}
+          >
+            พบปัญหา?
           </Button>
+        )}
+        {!canSubmitFeedback && (
+          <a className="kru-btn kru-btn--ghost" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+            พบปัญหา? แจ้งทาง LINE
+          </a>
         )}
       </div>
 
@@ -163,7 +188,7 @@ export function ResourceFeedback({
           <div className="kru-feedback__report-title"><AlertTriangle size={18} aria-hidden="true" /> แจ้งปัญหาเกี่ยวกับสื่อนี้</div>
           <label>ประเภทปัญหา
             <select value={reportCategory} onChange={(event) => setReportCategory(event.target.value as ResourceIssueCategory)}>
-              {REPORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {issueOptions(extendedReports).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <label>รายละเอียด

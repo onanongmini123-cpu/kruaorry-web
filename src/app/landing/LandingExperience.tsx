@@ -26,7 +26,11 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
-import { PricingSection } from "@/app/landing/PricingSection";
+import { PricingSection, type PricingCta } from "@/app/landing/PricingSection";
+import { TrackOnMount } from "@/components/analytics/TrackOnMount";
+import { TrackOnVisible } from "@/components/analytics/TrackOnVisible";
+import { trackEvent } from "@/lib/analytics";
+import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { ACCESS_TIER_DESCRIPTION, ACCESS_TIER_LABEL, accessTier } from "@/lib/resourceAccess";
 import { resourceHref } from "@/lib/resourceUrl";
 import {
@@ -94,8 +98,25 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
   const handleDiscoverySubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setDiscoveryQuery(discoveryInput.trim().slice(0, 100));
+    const query = discoveryInput.trim().slice(0, 100);
+    setDiscoveryQuery(query);
     setHasSearched(true);
+    trackEvent("search", {
+      source: "home",
+      term: query,
+      query_length: query.length,
+      results_count: filterDiscoveredResources(discoverableResources, { query }).length,
+    });
+  };
+
+  const handleSignupClick = (source: string) => {
+    // Only a visitor who is not signed in is starting to sign up.
+    if (freeAccountAction?.href === FREE_SIGNUP_HREF) trackEvent("signup_start", { source });
+  };
+
+  const handlePricingClick = (cta: PricingCta) => {
+    if (cta === "free_signup") handleSignupClick("pricing");
+    else trackEvent("upgrade_click", { source: "pricing", plan_id: cta === "founder_offer" ? "founder" : "teacher" });
   };
 
   useEffect(() => {
@@ -167,6 +188,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <TrackOnMount event="home_view" />
       <header
         style={{
           position: "sticky",
@@ -202,6 +224,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
               key={action.href}
               href={action.href}
               className={`kru-btn kru-btn--${action.emphasis} kru-btn--sm`}
+              onClick={() => { if (action.href === FREE_SIGNUP_HREF) trackEvent("signup_start", { source: "home_header" }); }}
             >
               {action.label}
             </Link>
@@ -244,7 +267,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
                   ลองใช้ฟรี
                 </Link>
                 {freeAccountAction ? (
-                  <Link href={freeAccountAction.href}>{freeAccountAction.label} <ArrowRight size={16} aria-hidden="true" /></Link>
+                  <Link href={freeAccountAction.href} onClick={() => handleSignupClick("home_hero")}>{freeAccountAction.label} <ArrowRight size={16} aria-hidden="true" /></Link>
                 ) : (
                   <span className="kru-public-auth-placeholder kru-public-auth-placeholder--inline" aria-hidden="true" />
                 )}
@@ -334,7 +357,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
                 ดูสื่อฟรีทั้งหมด <ArrowRight size={18} aria-hidden="true" />
               </Link>
               {freeAccountAction ? (
-                <Link href={freeAccountAction.href} className="kru-btn kru-btn--secondary">
+                <Link href={freeAccountAction.href} className="kru-btn kru-btn--secondary" onClick={() => handleSignupClick("home_free_showcase")}>
                   {freeAccountAction.label}
                 </Link>
               ) : (
@@ -380,6 +403,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           )}
         </section>
 
+        <TrackOnVisible event="pricing_view" properties={{ source: "home" }}>
         <PricingSection
           plans={plans}
           loaded={plansLoaded}
@@ -389,7 +413,9 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             ? { href: freeAccountAction.href, label: publicAuthState === "member" ? freeAccountAction.label : "สมัครฟรี" }
             : undefined}
           onRetry={() => { setPlansLoaded(false); setLoadAttempt((attempt) => attempt + 1); }}
+          onCtaClick={handlePricingClick}
         />
+        </TrackOnVisible>
       </main>
 
       <footer style={{ borderTop: "1px solid var(--border-subtle)", padding: "var(--sp-7) var(--sp-5)", textAlign: "center", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>

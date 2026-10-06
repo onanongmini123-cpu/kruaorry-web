@@ -382,5 +382,10 @@ export const ISSUE_CATEGORY_LABEL: Record<string, string> = {
   broken_link: "ลิงก์เสีย",
   cannot_download: "ดาวน์โหลดไม่ได้",
   wrong_content: "เนื้อหาผิด",
+  wrong_answer: "เฉลยผิด",
+  cannot_play: "เล่นไม่ได้",
+  no_sound: "เสียงไม่ออก",
+  camera_issue: "กล้องไม่ทำงาน",
+  mobile_layout: "มือถือแสดงผลผิด",
   other: "อื่น ๆ",
 };

@@ -460,6 +460,18 @@ Run `npm run test:resource-slug-sql` for the local engine check. To give a new
 resource a slug later: `update public.resources set slug = 'my-slug' where id = '…';`
 (the format check and unique index reject bad or duplicate values).
 
+Migration `20261006110000_054_resource_issue_context.sql` is **pending** (not
+applied by this repository). It widens the problem-report categories from five
+to ten (adds wrong answer, cannot play, no sound, camera not working, mobile
+layout) and lets `submit_resource_issue` take an optional context (app build,
+browser family and version, OS family, screen size; four short keys, nothing
+else is kept). The three-argument call keeps working, the old function
+signature is replaced in the same transaction so there is no ambiguous overload,
+and a readiness marker (`system.resource_issue_context_v1_ready`) lets the
+application offer the new options only after this file is applied. Deploy the
+application first, then apply. Verified in the local engine by
+`npm run test:platform-completion-sql`.
+
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock

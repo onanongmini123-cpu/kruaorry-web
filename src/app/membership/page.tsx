@@ -8,6 +8,7 @@ import { Mascot } from "@/components/Mascot";
 import { Badge, Button } from "@/components/ui";
 import { PlanBenefits } from "@/app/landing/PlanBenefits";
 import { LINE_OA_URL } from "@/lib/config";
+import { trackEvent } from "@/lib/analytics";
 import {
   convertFounderApplicationToTeacher,
   createMembershipApplication,
@@ -533,6 +534,7 @@ function MembershipContent() {
     if (planChangeConfirmation && !window.confirm(planChangeConfirmation)) return;
     setSubmitting(true);
     setError(null);
+    trackEvent("checkout_start", { plan_id: applicationPlanId, source: "membership" });
     const result = await createMembershipApplication(supabase, applicationPlanId);
     setSubmitting(false);
     if (!result.application) {
@@ -602,6 +604,9 @@ function MembershipContent() {
 
   const handleLineCtaClick = (referenceCode: string) => {
     setError(null);
+    // Payment is sent by LINE, so opening it with the reference is the step
+    // this site can see; whether the slip was sent is only known to staff.
+    trackEvent("payment_submit", { plan_id: latestApplication?.planId ?? applicationPlanId, stage: "line_opened" });
     setLineCtaFeedback(`กำลังเปิด LINE — ส่งเลขอ้างอิง ${referenceCode} พร้อมสลิปในแชตนี้`);
 
     try {

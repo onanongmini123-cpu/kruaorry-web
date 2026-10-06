@@ -60,6 +60,7 @@ import { createLatestRefreshController, createLatestRefreshRunner } from "@/lib/
 import { planDisplayName } from "@/lib/planDisplay";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { accessTier } from "@/lib/resourceAccess";
+import { trackEvent } from "@/lib/analytics";
 import { proUpgradeHref, type UpgradePlanId } from "@/lib/upgradeFlow";
 
 export const dynamic = "force-dynamic";
@@ -289,6 +290,7 @@ export default function TeacherAppPage() {
       setSaved,
       () => setResourceSaved(supabase, id, nowSaved),
     );
+    if (!error && nowSaved) trackEvent("favorite_add", { resource_id: id, source: "member_app" });
     if (error) {
       setSaveError(nowSaved
         ? "บันทึกรายการไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือจำนวนรายการที่แพ็กของคุณบันทึกได้"
@@ -324,8 +326,19 @@ export default function TeacherAppPage() {
       // Premium discovery stays visible to Free members, but the action is an
       // explicit upgrade journey. The remembered destination is a validated
       // same-origin app detail, never a private target URL.
+      trackEvent("upgrade_click", { resource_id: r.id, access_tier: accessTier(r.accessMode), source: "member_app_resource" });
       router.push(membershipUpgradeHref(r, `/app?resource=${r.id}`));
       return;
+    }
+    // Access is confirmed on this device; the server still re-checks on open.
+    trackEvent("resource_start", {
+      resource_id: r.id,
+      access_tier: accessTier(r.accessMode),
+      delivery_mode: r.affordance,
+      source: "member_app",
+    });
+    if (r.affordance === "web_app") {
+      trackEvent("outbound_game_open", { resource_id: r.id, source: "member_app" });
     }
     if (r.affordance === "file_download") {
       // The URL is same-origin and known synchronously, so window.open()
@@ -807,6 +820,7 @@ export default function TeacherAppPage() {
                             <Link
                               className="kru-btn kru-btn--primary kru-btn--block"
                               href={proUpgradeHref({ planId: plan.id === "founder" && founderCapacity?.isFull ? "teacher" : (plan.id as UpgradePlanId) })}
+                              onClick={() => trackEvent("upgrade_click", { plan_id: plan.id, source: "member_app_plans" })}
                             >
                               สมัครหรือดูสถานะ
                             </Link>
@@ -918,6 +932,7 @@ export default function TeacherAppPage() {
         .kru-contact-fab__menu p { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-13); }
         .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
         .kru-contact-fab__link:hover { background: var(--purple-100); color: var(--purple-800); text-decoration: none; }
+        .kru-contact-fab__version { margin: 0; color: var(--text-muted); font-size: var(--fs-12); }
         @media (min-width: 900px) {
           .kru-discovery-controls { grid-template-columns: minmax(200px, 1.5fr) repeat(4, minmax(120px, 1fr)) auto; }
           .kru-member-hero { grid-template-columns: minmax(0, 1fr) 220px; padding: var(--sp-9); }

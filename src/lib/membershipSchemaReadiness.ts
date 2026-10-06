@@ -4,6 +4,7 @@ import { withTimeout } from "@/lib/asyncTimeout";
 export const MEMBERSHIP_SCHEMA_READINESS_MARKER = "system.membership_payment_confirmation_v1_ready";
 export const FOUNDER_FIRST_YEAR_READINESS_MARKER = "system.founder_first_year_once_v1_ready";
 export const MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER = "system.membership_line_slip_workflow_v1_ready";
+export const RESOURCE_ISSUE_CONTEXT_READINESS_MARKER = "system.resource_issue_context_v1_ready";
 
 export const MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE =
   "ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว ยังไม่รับใบสมัคร แจ้งชำระ ยืนยันชำระ หรือต่ออายุในขณะนี้ รายการเดิมยังคงอยู่ กรุณากลับมาใหม่ภายหลัง";
@@ -81,5 +82,19 @@ export async function fetchMembershipLineSlipWorkflowReadiness(
     supabase,
     MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER,
     "membership LINE slip workflow readiness",
+  );
+}
+
+/**
+ * Probes migration 054 (extra problem-report categories and context) so the
+ * report form only offers what the database will accept.
+ */
+export async function fetchResourceIssueContextReadiness(
+  supabase: SupabaseClient,
+): Promise<SettledMembershipSchemaReadiness> {
+  return fetchCapabilityReadiness(
+    supabase,
+    RESOURCE_ISSUE_CONTEXT_READINESS_MARKER,
+    "resource issue context readiness",
   );
 }

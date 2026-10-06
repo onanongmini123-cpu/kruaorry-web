@@ -25,6 +25,8 @@ const migrations = [
   "20261001165640_046_authenticated_electric_circuit_lab_resource.sql",
   "20261001180000_047_authenticated_ecosystem_guardians_resource.sql",
   "20261004110000_051_deterministic_profile_avatars.sql",
+  "20261006100000_053_resource_slugs.sql",
+  "20261006110000_054_resource_issue_context.sql",
 ];
 
 const USERS = {
@@ -1551,6 +1553,87 @@ try {
   for (const forbidden of ["cta_url", "file_path", "file_name", "file_mime_type"]) {
     assert(!names.includes(forbidden), `${forbidden} leaked into resource_catalog`);
   }
+
+  // Migration 053: slugs are filled for the seeded resources, unique, exposed
+  // only through the safe catalogue view, and impossible to forge or reuse.
+  const slugRows = (await db.query(
+    "select title, slug from public.resources where slug is not null order by slug",
+  )).rows;
+  assert.ok(slugRows.length >= 15, "seeded resources received slugs");
+  assert.equal(new Set(slugRows.map((row) => row.slug)).size, slugRows.length, "slugs are unique");
+  assert.equal(
+    slugRows.find((row) => row.title === "Sentence Train")?.slug,
+    "sentence-train",
+  );
+  assert.equal(
+    slugRows.find((row) => row.title === "Grammar Boss Battle — ศึกบอสไวยากรณ์")?.slug,
+    "grammar-boss-battle",
+  );
+  const catalogSlugs = await asRole("anon", null, async () => (
+    await db.query("select slug from public.resource_catalog where slug = 'sentence-train'")
+  ).rows);
+  assert.equal(catalogSlugs.length, 1, "anonymous visitors can read slugs through the catalogue");
+  await rejectsWith(
+    () => db.query("update public.resources set slug = 'sentence-train' where id = $1", [RESOURCES.anotherPublic]),
+    /duplicate key|resources_slug_key/i,
+    "a slug can not be reused",
+  );
+  await rejectsWith(
+    () => db.query("update public.resources set slug = 'Not Valid' where id = $1", [RESOURCES.anotherPublic]),
+    /resources_slug_format/i,
+    "a malformed slug is refused",
+  );
+
+  // Migration 054: new report categories and a bounded, sanitized context.
+  const marker054 = await db.query("select id from public.features where id = 'system.resource_issue_context_v1_ready'");
+  assert.equal(marker054.rows.length, 1, "readiness marker published");
+  const contextReport = await asRole("authenticated", USERS.teacher, async () => (
+    await db.query(
+      "select public.submit_resource_issue($1, 'no_sound', 'เสียงไม่ออกในเกม', $2::jsonb) as id",
+      [RESOURCES.authenticated, JSON.stringify({
+        app_version: "0.1.0+abc1234",
+        browser: "Chrome 126",
+        os: "Android",
+        viewport: "390x844",
+        email: "teacher@example.com",
+        user_agent: "Mozilla/5.0 (very long personal-ish string)",
+      })],
+    )
+  ).rows[0].id);
+  const storedContext = (await db.query(
+    "select category, context from public.resource_issue_reports where id = $1", [contextReport],
+  )).rows[0];
+  assert.equal(storedContext.category, "no_sound");
+  assert.deepEqual(storedContext.context, {
+    app_version: "0.1.0+abc1234", browser: "Chrome 126", os: "Android", viewport: "390x844",
+  }, "only the four known keys are kept");
+  await asRole("authenticated", USERS.teacher, () => db.query(
+    "select public.submit_resource_issue($1, 'camera_issue', 'กล้องไม่ทำงาน', $2::jsonb)",
+    [RESOURCES.authenticated, JSON.stringify({ app_version: "x".repeat(500) })],
+  ));
+  const truncated = (await db.query(
+    "select context from public.resource_issue_reports where category = 'camera_issue'",
+  )).rows[0].context;
+  assert.equal(truncated.app_version.length, 40, "values are cut to a short length");
+  await asRole("authenticated", USERS.teacher, () => db.query(
+    "select public.submit_resource_issue($1, 'mobile_layout', 'หน้าจอมือถือเพี้ยน')", [RESOURCES.authenticated],
+  ));
+  assert.equal((await db.query(
+    "select context from public.resource_issue_reports where category = 'mobile_layout'",
+  )).rows[0].context, null, "the old three-argument call still works and stores no context");
+  await rejectsWith(
+    () => asRole("authenticated", USERS.other, () => db.query(
+      "select public.submit_resource_issue($1, 'made_up_category', 'รายละเอียดปัญหา')", [RESOURCES.authenticated],
+    )),
+    /Invalid issue category/,
+  );
+  await rejectsWith(
+    () => asRole("anon", null, () => db.query(
+      "select public.submit_resource_issue($1, 'no_sound', 'เสียงไม่ออก')", [RESOURCES.authenticated],
+    ), true),
+    /permission denied|Authenticated member required/i,
+    "anonymous visitors still can not report",
+  );
 
   process.stdout.write("Batch 4 platform SQL/RLS regression passed in isolated PGlite.\n");
 } finally {

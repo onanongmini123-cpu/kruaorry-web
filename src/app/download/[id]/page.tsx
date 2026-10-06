@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { triggerBlobDownload, shouldCloseTabAfterDownload, thaiDownloadErrorMessage } from "@/lib/triggerBlobDownload";
 import { AUTO_CLOSE_PARAM } from "@/lib/downloadWindow";
 import { downloadLoginHref } from "@/lib/downloadReturnPath";
+import { trackEvent } from "@/lib/analytics";
 
 // This page only exists so the tab window.open() targets can close itself
 // deterministically once the file is fully downloaded — see
@@ -66,6 +67,7 @@ export default function DownloadPage() {
           return;
         }
         setStatus("done");
+        trackEvent("download", { resource_id: params.id, stage: "completed" });
         if (shouldCloseTabAfterDownload(openedAsPopup, result)) {
           window.close();
         }

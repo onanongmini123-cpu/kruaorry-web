@@ -35,6 +35,11 @@ describe("migration 053 resource slugs", () => {
     expect(statements).toMatch(/not exists \(select 1 from public\.resources o where o\.slug = m\.slug\)/);
   });
 
+  it("does not open the base table's slug column to browser roles (the catalogue view is the only reader)", () => {
+    expect(statements).not.toMatch(/grant\s+select\s*\(\s*slug/i);
+    expect(statements).not.toMatch(/grant[^;]*on\s+public\.resources\b/i);
+  });
+
   it("adds slug as the last catalogue column and keeps the view read-only", () => {
     expect(statements).toMatch(/review_stats\.review_count,\s*r\.slug\s*from public\.resources r/);
     expect(statements).toMatch(/revoke insert, update, delete, truncate on public\.resource_catalog from anon, authenticated/);

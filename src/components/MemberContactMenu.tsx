@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageCircle, MessagesSquare, X } from "lucide-react";
 import { LINE_OA_URL, MESSENGER_URL } from "@/lib/config";
+import { APP_VERSION } from "@/lib/appVersion";
 
 export function MemberContactMenu() {
   const [open, setOpen] = useState(false);
@@ -51,6 +52,8 @@ export function MemberContactMenu() {
             <MessagesSquare size={19} aria-hidden="true" />
             Messenger
           </a>
+          {/* Quote this to the team so they know which build you are using. */}
+          <p className="kru-contact-fab__version">เวอร์ชันแอป {APP_VERSION}</p>
         </div>
       )}
       <button

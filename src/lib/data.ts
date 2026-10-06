@@ -14,6 +14,8 @@ import {
 import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
 import { friendlyErrorMessage } from "@/lib/userMessages";
 import { customerBenefitCopy } from "@/lib/benefitCopy";
+import type { IssueContext } from "@/lib/issueContext";
+import type { ResourceIssueCategory } from "@/lib/resourceIssues";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -715,12 +717,7 @@ export interface MyResourceReview {
   body: string;
 }
 
-export type ResourceIssueCategory =
-  | "cannot_open"
-  | "broken_link"
-  | "cannot_download"
-  | "wrong_content"
-  | "other";
+export type { ResourceIssueCategory } from "@/lib/resourceIssues";
 
 export async function fetchResourceReviews(supabase: SupabaseClient, resourceId: string): Promise<ResourceReview[]> {
   const { data, error } = await supabase
@@ -799,11 +796,14 @@ export async function submitResourceIssue(
   resourceId: string,
   category: ResourceIssueCategory,
   details: string,
+  /** Only sent when the database has migration 054; older ones take three arguments. */
+  context?: IssueContext,
 ): Promise<string | null> {
   const { error } = await supabase.rpc("submit_resource_issue", {
     p_resource_id: resourceId,
     p_category: category,
     p_details: details.trim(),
+    ...(context ? { p_context: context } : {}),
   });
   if (error) {
     logError("submitResourceIssue failed", error);

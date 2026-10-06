@@ -4,6 +4,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, BookOpen, Lock } from "lucide-react";
 import { Badge, ResourceCard, Tag } from "@/components/ui";
 import { Mascot } from "@/components/Mascot";
+import { TrackedAnchor } from "@/components/analytics/TrackedAnchor";
+import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { accessDescription, accessLabel, accessTier } from "@/lib/resourceAccess";
 import { formatResourceGrades } from "@/lib/resourceGrades";
@@ -85,10 +87,25 @@ export default async function ResourceDetailPage({ params }: Props) {
       ? `ครูที่สอน${item.category ? `วิชา${item.category.replace(/^วิชา/, "")}` : ""}${gradeText ? ` ระดับชั้น ${gradeText}` : ""}`
       : null);
   const contents = detail?.contents.length ? detail.contents : parsedMeta.metrics;
+  // What pressing the main button provably means for this viewer.
+  const ctaEvents = action.canUse
+    ? [
+        { name: "resource_start" as const, properties: { resource_id: item.id, slug: item.slug ?? "", access_tier: tier, delivery_mode: item.deliveryMode, source: "detail" } },
+        ...(item.deliveryMode === "web_app" ? [{ name: "outbound_game_open" as const, properties: { resource_id: item.id, source: "detail" } }] : []),
+      ]
+    : item.accessMode === "plans"
+      ? [{ name: "upgrade_click" as const, properties: { resource_id: item.id, plan_id: item.requiredPlanIds.includes("founder") ? "founder" : "teacher", source: "resource_detail" } }]
+      : item.accessMode === "authenticated"
+        ? [{ name: "signup_start" as const, properties: { resource_id: item.id, source: "resource_detail" } }]
+        : [];
   const players = detail?.players ?? parsedMeta.playModes;
 
   return (
     <div className="kru-detail__page">
+      <TrackOnMount
+        event="resource_view"
+        properties={{ resource_id: item.id, slug: item.slug ?? "", access_tier: tier, delivery_mode: item.deliveryMode, authenticated: viewer.authenticated }}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(resourceJsonLd(item, canonicalPath)) }}
@@ -138,7 +155,8 @@ export default async function ResourceDetailPage({ params }: Props) {
               {item.accessMode === "locked" && !action.canUse ? (
                 <button type="button" disabled className="kru-btn kru-btn--primary kru-btn--block">{action.label}</button>
               ) : (
-                <a
+                <TrackedAnchor
+                  events={ctaEvents}
                   className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block"
                   href={action.href}
                   target={action.opensNewTab ? "_blank" : undefined}
@@ -146,7 +164,7 @@ export default async function ResourceDetailPage({ params }: Props) {
                   referrerPolicy={action.opensNewTab ? "no-referrer" : undefined}
                 >
                   {action.label}<ArrowRight size={18} aria-hidden="true" />
-                </a>
+                </TrackedAnchor>
               )}
             </div>
           </div>
