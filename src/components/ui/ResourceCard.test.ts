@@ -11,6 +11,7 @@ const baseProps = {
   affordance: "web_app" as const,
   tags: ["ภาษาไทย"],
   icon: Gamepad2,
+  accessTier: "free" as const,
 };
 
 describe("ResourceCard media", () => {
@@ -60,6 +61,7 @@ describe("ResourceCard media", () => {
       ...baseProps,
       description: "คำอธิบายฉบับเต็มที่เปิดอ่านต่อได้จากหน้ารายละเอียด",
       gradeLevels: ["p2"],
+      accessTier: "pro" as const,
       requiredPlanNames: ["Founder 100", "Teacher"],
       locked: true,
       isNew: true,
@@ -80,6 +82,7 @@ describe("ResourceCard media", () => {
   it("distinguishes an unavailable resource from a plan upgrade", () => {
     const html = renderToStaticMarkup(React.createElement(ResourceCard, {
       ...baseProps,
+      accessTier: "unavailable" as const,
       locked: true,
       unavailable: true,
       onAction: vi.fn(),
@@ -87,12 +90,13 @@ describe("ResourceCard media", () => {
 
     expect(html).toContain("ยังไม่เปิดให้ใช้งาน");
     expect(html).not.toContain("อัปเกรดเพื่อปลดล็อก");
-    expect(html).not.toContain("สำหรับสมาชิก");
+    expect(html).not.toContain("Teacher Pro");
   });
 
   it("shows a status CTA instead of asking again while an upgrade is pending", () => {
     const html = renderToStaticMarkup(React.createElement(ResourceCard, {
       ...baseProps,
+      accessTier: "pro" as const,
       locked: true,
       upgradePending: true,
       onAction: vi.fn(),

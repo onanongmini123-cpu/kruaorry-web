@@ -451,7 +451,6 @@ export default function TeacherAppPage() {
           icon={resourceIcon(resource.affordance)}
           coverImageUrl={resource.coverImageUrl}
           tint={resourceTint(resource.affordance)}
-          free={resource.free}
           accessTier={accessTier(resource.accessMode)}
           isNew={resource.isNew}
           locked={!canAccess(resource)}

@@ -17,6 +17,18 @@ const AFFORDANCE_LABEL: Record<ResourceAffordance, string> = {
   file_download: "ดาวน์โหลดไฟล์",
 };
 
+const ACCESS_TIER_TONE: Record<AccessTier, "success" | "member" | "neutral"> = {
+  free: "success",
+  member: "success",
+  pro: "member",
+  unavailable: "neutral",
+};
+
+const VISUALLY_HIDDEN: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, padding: 0, margin: -1,
+  overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0,
+};
+
 const TINTS: Record<string, { bg: string; fg: string }> = {
   purple: { bg: "var(--purple-100)", fg: "var(--purple-700)" },
   pink: { bg: "var(--pink-100)", fg: "var(--pink-700)" },
@@ -37,8 +49,8 @@ interface ResourceCardProps {
   locked?: boolean;
   upgradePending?: boolean;
   unavailable?: boolean;
-  free?: boolean;
-  accessTier?: AccessTier;
+  /** Viewer-independent tier of the resource (from `accessTier(accessMode)`). Drives the badge only. */
+  accessTier: AccessTier;
   isNew?: boolean;
   saved?: boolean;
   savePending?: boolean;
@@ -47,15 +59,13 @@ interface ResourceCardProps {
   onClick?: () => void;
 }
 
-export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, upgradePending, unavailable, free, accessTier, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
+export function ResourceCard({ title, meta, description, affordance, tags, gradeLevels = [], requiredPlanNames = [], icon: Icon, coverImageUrl, tint = "purple", locked, upgradePending, unavailable, accessTier, isNew, saved, savePending, onAction, onSave, onClick }: ResourceCardProps) {
   const t = TINTS[tint];
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const showCover = Boolean(coverImageUrl) && failedCoverUrl !== coverImageUrl;
-  const accessText = unavailable
-    ? ACCESS_TIER_LABEL.unavailable
-    : locked
-    ? ACCESS_TIER_LABEL.pro
-    : ACCESS_TIER_LABEL.member;
+  // The badge describes the resource, never the viewer: `locked`,
+  // `upgradePending` and `unavailable` only change the CTA and cover overlay.
+  const planNames = accessTier === "pro" ? requiredPlanNames.filter(Boolean) : [];
 
   return (
     <article className="kru-card kru-resource-card" style={{ overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -121,7 +131,10 @@ export function ResourceCard({ title, meta, description, affordance, tags, grade
       <div style={{ padding: "var(--sp-5)", display: "flex", flexDirection: "column", gap: "var(--sp-3)", flex: 1 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {isNew && <Badge tone="brand">ใหม่</Badge>}
-          {free ? <Badge tone="success">{ACCESS_TIER_LABEL[accessTier ?? "free"]}</Badge> : <Badge tone="member" icon={Lock}>{accessText}</Badge>}
+          <Badge tone={ACCESS_TIER_TONE[accessTier]} icon={accessTier === "free" || accessTier === "member" ? undefined : Lock}>
+            {ACCESS_TIER_LABEL[accessTier]}
+            {planNames.length > 0 && <span style={VISUALLY_HIDDEN}> (ใช้ได้กับแพ็ก {planNames.join(" / ")})</span>}
+          </Badge>
         </div>
         <button
           type="button"

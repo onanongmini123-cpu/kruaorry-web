@@ -3,7 +3,7 @@ import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } 
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
 import { FREE_SIGNUP_HREF, safeUpgradeReturnPath } from "@/lib/authReturnPath";
 import { planDisplayNames } from "@/lib/planDisplay";
-import { accessLabel } from "@/lib/resourceAccess";
+import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 
 export type PublicResource = {
   id: string;
@@ -128,8 +128,19 @@ const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
   file_download: "ดาวน์โหลดไฟล์",
 };
 
+/**
+ * Which plans unlock a resource, for explanatory copy ("ต้องใช้ Founder 100
+ * หรือ Teacher Pro"). This keeps the real `requiredPlanNames`; the access
+ * badge (`accessLabel`) is a separate, viewer-independent tier label. The
+ * generic Teacher Pro label is only a fallback when no plan names exist.
+ */
 export function requiredPlansLabel(resource: PublicResource): string {
-  return accessLabel(resource.accessMode);
+  if (resource.accessMode === "public") return ACCESS_TIER_LABEL.free;
+  if (resource.accessMode === "authenticated") return ACCESS_TIER_LABEL.member;
+  if (resource.accessMode === "locked") return ACCESS_TIER_LABEL.unavailable;
+  return resource.requiredPlanNames.length > 0
+    ? resource.requiredPlanNames.join(" หรือ ")
+    : ACCESS_TIER_LABEL.pro;
 }
 
 export function publicResourceAction(resource: PublicResource, viewer: PublicResourceViewer): PublicResourceAction {
