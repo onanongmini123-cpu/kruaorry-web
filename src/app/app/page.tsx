@@ -12,7 +12,7 @@ import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
-import { Button, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
+import { Button, FilterSheet, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import {
   fetchPublishedResources,
@@ -41,7 +41,8 @@ import {
 import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
-import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
+import { ACCESS_FILTER_OPTIONS, activeFilterCount, filterDiscoveredResources, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
+import { RESOURCE_TYPE_OPTIONS, type ResourceTypeFilter } from "@/lib/resourceMeta";
 import { RESOURCE_GRADE_OPTIONS, formatResourceGrades } from "@/lib/resourceGrades";
 import { persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
@@ -103,6 +104,8 @@ export default function TeacherAppPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [grade, setGrade] = useState("");
+  const [accessFilter, setAccessFilter] = useState<ResourceAccessFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<ResourceTypeFilter>("all");
   const [saved, setSaved] = useState<string[]>([]);
   const [savingIds, setSavingIds] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -384,10 +387,11 @@ export default function TeacherAppPage() {
 
   const filtered = filterDiscoveredResources(
     resources.map((resource) => ({ ...resource, isFree: resource.free })),
-    { query, category, grade },
+    { query, category, grade, access: accessFilter, type: typeFilter },
   );
   const favoriteResources = filtered.filter((resource) => saved.includes(resource.id));
-  const hasActiveFilters = Boolean(query.trim() || category || grade);
+  const narrowingFilters = activeFilterCount({ category, grade, access: accessFilter, type: typeFilter });
+  const hasActiveFilters = Boolean(query.trim()) || narrowingFilters > 0;
   const currentPlanId = memberPlanIdForDisplay(entitlements, subscription);
   const currentPlanDisplayName = entitlementState.status !== "loaded" && currentPlanId === "free"
     ? entitlementState.status === "loading" ? "กำลังตรวจสอบสิทธิ์…" : "ยังตรวจสอบไม่ได้"
@@ -405,6 +409,8 @@ export default function TeacherAppPage() {
     setQuery("");
     setCategory("");
     setGrade("");
+    setAccessFilter("all");
+    setTypeFilter("all");
   };
 
   const hasPendingUpgradeFor = (resource: Resource) => (
@@ -586,24 +592,38 @@ export default function TeacherAppPage() {
                 <h1 style={{ fontSize: "var(--fs-30)" }}>คลังสื่อ</h1>
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-16)", color: "var(--text-muted)" }}>ดูตัวอย่างได้ทุกชิ้นก่อนใช้ ดาวน์โหลดแล้วสอนได้เลย</p>
                 <div className="kru-discovery-controls" role="search" aria-label="ค้นหาและกรองคลังสื่อ">
-                  <label className="kru-filter-field">
+                  <label className="kru-filter-field kru-filter-field--search">
                     <span>คำค้น</span>
-                    <SearchField value={query} onChange={setQuery} placeholder="ค้นหาชื่อ เรื่อง หรือคำอธิบาย" />
+                    <SearchField value={query} onChange={setQuery} placeholder="พิมพ์วิชา ระดับชั้น หรือเรื่องที่ต้องการ" />
                   </label>
-                  <label className="kru-filter-field">
-                    <span>หมวดหมู่</span>
-                    <select value={category} onChange={(event) => setCategory(event.target.value)}>
-                      <option value="">ทุกหมวดหมู่</option>
-                      {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="kru-filter-field">
-                    <span>ระดับชั้น</span>
-                    <select value={grade} onChange={(event) => setGrade(event.target.value)}>
-                      <option value="">ทุกระดับชั้น</option>
-                      {RESOURCE_GRADE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
+                  <FilterSheet id="member-library-filters" activeCount={narrowingFilters}>
+                    <label className="kru-filter-field">
+                      <span>ระดับชั้น</span>
+                      <select value={grade} onChange={(event) => setGrade(event.target.value)}>
+                        <option value="">ทุกระดับชั้น</option>
+                        {RESOURCE_GRADE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="kru-filter-field">
+                      <span>วิชา</span>
+                      <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                        <option value="">ทุกวิชา</option>
+                        {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="kru-filter-field">
+                      <span>ประเภท</span>
+                      <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as ResourceTypeFilter)}>
+                        {RESOURCE_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="kru-filter-field">
+                      <span>สิทธิ์การใช้งาน</span>
+                      <select value={accessFilter} onChange={(event) => setAccessFilter(event.target.value as ResourceAccessFilter)}>
+                        {ACCESS_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                  </FilterSheet>
                   <button type="button" className="kru-btn kru-btn--ghost" onClick={clearFilters} disabled={!hasActiveFilters}>ล้างตัวกรอง</button>
                 </div>
                 <div role="status" style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", margin: "var(--sp-5) 0" }}>พบ {filtered.length} รายการ</div>
@@ -899,7 +919,7 @@ export default function TeacherAppPage() {
         .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
         .kru-contact-fab__link:hover { background: var(--purple-100); color: var(--purple-800); text-decoration: none; }
         @media (min-width: 900px) {
-          .kru-discovery-controls { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
+          .kru-discovery-controls { grid-template-columns: minmax(200px, 1.5fr) repeat(4, minmax(120px, 1fr)) auto; }
           .kru-member-hero { grid-template-columns: minmax(0, 1fr) 220px; padding: var(--sp-9); }
           .kru-member-hero__mascot { min-height: 230px; margin-top: 0; }
           .kru-member-hero__glow { width: 190px; height: 190px; box-shadow: 0 0 0 20px rgba(255,255,255,.2); }
