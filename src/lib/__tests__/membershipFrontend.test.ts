@@ -143,7 +143,7 @@ describe("canonical manual membership flow", () => {
     expect(landing).toContain("observePublicAuthState(createClient().auth, setPublicAuthState)");
     expect(landing.match(/freeAccountAction\.href/g)).toHaveLength(2);
     expect(landing).not.toContain('href="/membership"');
-    expect(memberApp).toContain('href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}');
+    expect(memberApp).toContain('proUpgradeHref({ planId: plan.id === "founder" && founderCapacity?.isFull ? "teacher" : (plan.id as UpgradePlanId) })');
     expect(landing).not.toContain("LINE_OA_URL");
     expect(memberApp).not.toContain("submitUpgradeRequest");
     expect(memberApp).not.toContain("onClick={() => void handleRequestUpgrade");
