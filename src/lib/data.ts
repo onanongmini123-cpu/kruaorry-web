@@ -14,6 +14,7 @@ import {
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
 import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
+import { friendlyErrorMessage } from "@/lib/userMessages";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -345,7 +346,7 @@ export async function submitRequest(supabase: SupabaseClient, title: string): Pr
   const { error } = await supabase.rpc("submit_my_request", { p_title: title.trim() });
   if (error) {
     logError("submitRequest failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "ส่งคำขอไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -791,7 +792,7 @@ export async function upsertMyResourceReview(
   });
   if (error) {
     logError("upsertMyResourceReview failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "บันทึกรีวิวไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -800,7 +801,7 @@ export async function deleteMyResourceReview(supabase: SupabaseClient, resourceI
   const { error } = await supabase.rpc("delete_my_resource_review", { p_resource_id: resourceId });
   if (error) {
     logError("deleteMyResourceReview failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "ลบรีวิวไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -818,7 +819,7 @@ export async function submitResourceIssue(
   });
   if (error) {
     logError("submitResourceIssue failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "ส่งรายงานปัญหาไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -837,7 +838,7 @@ export async function updateMyDisplayName(
   const { error } = outcome.value;
   if (error) {
     logError("updateMyDisplayName failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "บันทึกชื่อที่แสดงไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }

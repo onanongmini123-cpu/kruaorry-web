@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, recordMembershipLineSlipReceived, setResourceSaved } from "../data";
+import { confirmMembershipPayment, confirmSubscriptionRenewal, convertFounderApplicationToTeacher, createMembershipApplication, fetchEntitlements, fetchEntitlementsResult, fetchFounderCapacity, fetchMembershipReturnResource, fetchMyFounderHistory, fetchMyResourceReview, fetchPlans, fetchPublishedResources, fetchResourceReviews, fetchSavedResourceIds, fetchUpgradeRequests, getSignedFileUrl, recordMembershipLineSlipReceived, setResourceSaved, submitRequest, submitResourceIssue, updateMyDisplayName, upsertMyResourceReview, deleteMyResourceReview } from "../data";
 import { ASYNC_STAGE_TIMEOUT_MS } from "../asyncTimeout";
 import {
   MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER,
@@ -832,5 +832,35 @@ describe("fetchSavedResourceIds", () => {
     const result = fetchSavedResourceIds(supabase, "user-1");
     await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
     await expect(result).resolves.toEqual([]);
+  });
+});
+
+describe("member-facing write errors are friendly Thai", () => {
+  function rpcError(message: string, code = "P0001") {
+    return { rpc: vi.fn().mockResolvedValue({ data: null, error: { message, code, details: "", hint: "" } }) } as unknown as SupabaseClient;
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("maps known rules to specific Thai and hides everything else behind a per-action sentence", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(submitRequest(rpcError("Request rate limit reached"), "ชื่อคำขอ"))
+      .resolves.toBe("วันนี้ส่งคำขอครบจำนวนที่กำหนดแล้ว กรุณาลองใหม่พรุ่งนี้");
+    await expect(upsertMyResourceReview(rpcError("Published entitled resource required"), "r1", 5, "ดีมาก"))
+      .resolves.toContain("ยังไม่มีสิทธิ์ใช้สื่อนี้");
+    await expect(deleteMyResourceReview(rpcError('new row violates row-level security policy for table "x"', "42501"), "r1"))
+      .resolves.not.toMatch(/row-level|violates|table/i);
+    await expect(submitResourceIssue(rpcError("weird english"), "r1", "wrong_content", "รายละเอียด"))
+      .resolves.toBe("ส่งรายงานปัญหาไม่สำเร็จ กรุณาลองอีกครั้ง");
+  });
+
+  it("never exposes a missing database function to a member", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await updateMyDisplayName(
+      rpcError("Could not find the function public.update_my_display_name(p_full_name) in the schema cache", "PGRST202"),
+      "ครูอรรี่",
+    );
+    expect(result).toBe("ระบบกำลังอัปเดต กรุณาลองใหม่อีกครั้งในอีกสักครู่ หรือติดต่อทีมงานทาง LINE");
+    expect(result).not.toMatch(/function|schema|public\./i);
   });
 });

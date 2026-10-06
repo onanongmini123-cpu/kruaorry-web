@@ -200,11 +200,22 @@ describe("membership journey state", () => {
   });
 
   it("normalizes legacy Teacher wording in server errors without duplicating the new name", () => {
-    expect(membershipDisplayError("Convert this application to Teacher", "fallback"))
-      .toBe("Convert this application to Teacher Pro");
-    expect(membershipDisplayError("Teacher Pro is unavailable", "fallback"))
-      .toBe("Teacher Pro is unavailable");
+    expect(membershipDisplayError("เปลี่ยนใบสมัครเป็นแพ็ก Teacher แล้ว", "fallback"))
+      .toBe("เปลี่ยนใบสมัครเป็นแพ็ก Teacher Pro แล้ว");
+    expect(membershipDisplayError("ขณะนี้ Teacher Pro ยังไม่เปิดรับ", "fallback"))
+      .toBe("ขณะนี้ Teacher Pro ยังไม่เปิดรับ");
     expect(membershipDisplayError(null, "เกิดข้อผิดพลาด"))
       .toBe("เกิดข้อผิดพลาด");
+  });
+
+  it("turns server and network wording into friendly Thai before a member sees it", () => {
+    expect(membershipDisplayError("Plan is not available for membership applications", "fallback"))
+      .toBe("แพ็กเกจนี้ยังไม่เปิดรับสมัครในตอนนี้ กรุณาเลือกแพ็กเกจอื่น");
+    expect(membershipDisplayError("create membership application timed out after 8000ms", "ส่งใบสมัครไม่สำเร็จ"))
+      .toBe("เชื่อมต่อไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง");
+    expect(membershipDisplayError("Could not find the function public.x in the schema cache", "fallback"))
+      .not.toMatch(/schema|function|public\./i);
+    expect(membershipDisplayError("some unexpected English text", "ส่งใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง"))
+      .toBe("ส่งใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง");
   });
 });
