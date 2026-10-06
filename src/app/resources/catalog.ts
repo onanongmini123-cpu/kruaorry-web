@@ -1,7 +1,8 @@
 import { publicCoverUrl } from "@/lib/resourceVisibility";
 import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } from "@/lib/entitlement";
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
-import { FREE_SIGNUP_HREF, safeUpgradeReturnPath } from "@/lib/authReturnPath";
+import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
+import { proUpgradeHref } from "@/lib/upgradeFlow";
 import { planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 
@@ -110,15 +111,12 @@ export function membershipUpgradeHref(
   resource: UpgradeResource,
   requestedReturnTo: string = `/resources/${resource.id}`,
 ): string {
-  const query = new URLSearchParams();
   const preferredPlan = resource.requiredPlanIds.includes("founder")
     ? "founder"
     : resource.requiredPlanIds.includes("teacher")
       ? "teacher"
       : null;
-  if (preferredPlan) query.set("plan", preferredPlan);
-  query.set("returnTo", safeUpgradeReturnPath(requestedReturnTo));
-  return `/membership?${query.toString()}`;
+  return proUpgradeHref({ planId: preferredPlan, returnTo: requestedReturnTo });
 }
 
 const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {

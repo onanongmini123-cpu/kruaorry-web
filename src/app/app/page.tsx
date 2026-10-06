@@ -61,6 +61,7 @@ import { createLatestRefreshController, createLatestRefreshRunner } from "@/lib/
 import { planDisplayName } from "@/lib/planDisplay";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { accessTier } from "@/lib/resourceAccess";
+import { proUpgradeHref, type UpgradePlanId } from "@/lib/upgradeFlow";
 
 export const dynamic = "force-dynamic";
 
@@ -791,7 +792,7 @@ export default function TeacherAppPage() {
                           ) : plan.id === "free" ? null : (
                             <Link
                               className="kru-btn kru-btn--primary kru-btn--block"
-                              href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}
+                              href={proUpgradeHref({ planId: plan.id === "founder" && founderCapacity?.isFull ? "teacher" : (plan.id as UpgradePlanId) })}
                             >
                               สมัครหรือดูสถานะ
                             </Link>
