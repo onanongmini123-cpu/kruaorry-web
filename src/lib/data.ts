@@ -1,5 +1,3 @@
-import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck, FileDown } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
@@ -94,32 +92,10 @@ export interface Profile {
   avatarPath: string | null;
 }
 
-const ICON_BY_MODE: Record<ResourceAffordance, LucideIcon> = {
-  web_app: Gamepad2,
-  google_template: FileSpreadsheet,
-  google_form: ClipboardCheck,
-  file_download: FileDown,
-};
-
-const TINT_BY_MODE: Record<ResourceAffordance, "purple" | "pink" | "blue"> = {
-  web_app: "pink",
-  google_template: "blue",
-  google_form: "purple",
-  file_download: "blue",
-};
-
 const RESOURCE_ACCESS_MODES = new Set<ResourceAccessMode>(["public", "authenticated", "plans", "locked"]);
 
 function resourceAccessMode(value: unknown): ResourceAccessMode {
   return RESOURCE_ACCESS_MODES.has(value as ResourceAccessMode) ? value as ResourceAccessMode : "locked";
-}
-
-export function resourceIcon(affordance: ResourceAffordance): LucideIcon {
-  return ICON_BY_MODE[affordance] ?? Sparkles;
-}
-
-export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" | "blue" {
-  return TINT_BY_MODE[affordance] ?? "purple";
 }
 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {

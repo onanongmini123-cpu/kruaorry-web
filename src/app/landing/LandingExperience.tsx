@@ -14,7 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { Button, ExpandableResourceDescription } from "@/components/ui";
+import { Button, ResourceCard } from "@/components/ui";
 import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, type Resource } from "@/lib/data";
 import type { LandingData } from "@/lib/landingData";
 import { createClient } from "@/lib/supabase/client";
@@ -25,10 +25,10 @@ import {
   fetchMembershipSchemaReadiness,
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
-import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
-import { FeaturedResourceCarousel, featuredAccessLabel } from "@/app/landing/FeaturedResourceCarousel";
+import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
 import { PricingSection } from "@/app/landing/PricingSection";
-import { ACCESS_TIER_DESCRIPTION, ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
+import { ACCESS_TIER_DESCRIPTION, ACCESS_TIER_LABEL, accessTier } from "@/lib/resourceAccess";
+import { resourceHref } from "@/lib/resourceUrl";
 import {
   initialPublicAuthState,
   observePublicAuthState,
@@ -290,35 +290,22 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
               </div>
             ) : (
               <div className="kru-discovery-results__grid">
-                {discoveryMatches.map((resource) => {
-                  const accessText = featuredAccessLabel(resource);
-                  return (
-                    <article key={resource.id} className="kru-card kru-discovery-result-card">
-                      <Link href={`/resources/${resource.id}`} className="kru-discovery-result-card__cover" aria-label={`ดูรายละเอียด ${resource.title}`}>
-                        <PublicResourceCover
-                          title={resource.title}
-                          url={resource.coverImageUrl}
-                          deliveryMode={resource.affordance}
-                          fallback="neutral"
-                          style={{ aspectRatio: "1 / 1" }}
-                        />
-                        {resource.isNew && <span className="kru-resource-new-badge">ใหม่</span>}
-                      </Link>
-                      <div className="kru-discovery-result-card__body">
-                        <span className={resource.accessMode === "public" ? "kru-discovery-result-card__badge kru-discovery-result-card__badge--free" : "kru-discovery-result-card__badge"}>
-                          {resource.accessMode !== "public" && <Lock size={14} aria-hidden="true" />}
-                          {accessText}
-                        </span>
-                        <h3><Link href={`/resources/${resource.id}`}>{resource.title}</Link></h3>
-                        <ExpandableResourceDescription
-                          title={resource.title}
-                          description={resource.description || resource.meta}
-                          fallback="ดูรายละเอียดและสิทธิ์การใช้งานของสื่อนี้"
-                        />
-                      </div>
-                    </article>
-                  );
-                })}
+                {discoveryMatches.map((resource) => (
+                  <ResourceCard
+                    key={resource.id}
+                    title={resource.title}
+                    description={resource.description}
+                    meta={resource.meta}
+                    category={resource.category}
+                    deliveryMode={resource.affordance}
+                    gradeLevels={resource.gradeLevels}
+                    requiredPlanNames={resource.requiredPlanNames}
+                    accessTier={accessTier(resource.accessMode)}
+                    coverImageUrl={resource.coverImageUrl}
+                    isNew={resource.isNew}
+                    href={resourceHref(resource)}
+                  />
+                ))}
               </div>
             )}
           </section>
@@ -367,25 +354,19 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           ) : freeSamples.length > 0 ? (
             <div className="kru-sample-grid">
               {freeSamples.map((sample) => (
-                <Link key={sample.id} href={`/resources/${sample.id}`} className="kru-card kru-sample-card">
-                  <div className="kru-sample-card__cover">
-                    <PublicResourceCover
-                      title={sample.title}
-                      url={sample.coverImageUrl}
-                      deliveryMode={sample.affordance}
-                      fallback="neutral"
-                      style={{ aspectRatio: "1 / 1" }}
-                    />
-                    <span className="kru-sample-card__free-badge">ใช้ฟรี</span>
-                    {sample.isNew && <span className="kru-resource-new-badge">ใหม่</span>}
-                  </div>
-                  <div className="kru-sample-card__body">
-                    <span>เปิดดูรายละเอียดได้ทันที</span>
-                    <h3>{sample.title}</h3>
-                    <p>{sample.meta || sample.description || "สื่อพร้อมใช้สำหรับห้องเรียน"}</p>
-                    <strong>ดูรายละเอียด <ArrowRight size={15} aria-hidden="true" /></strong>
-                  </div>
-                </Link>
+                <ResourceCard
+                  key={sample.id}
+                  title={sample.title}
+                  description={sample.description}
+                  meta={sample.meta}
+                  category={sample.category}
+                  deliveryMode={sample.affordance}
+                  gradeLevels={sample.gradeLevels}
+                  accessTier={accessTier(sample.accessMode)}
+                  coverImageUrl={sample.coverImageUrl}
+                  isNew={sample.isNew}
+                  href={resourceHref(sample)}
+                />
               ))}
             </div>
           ) : (
@@ -620,89 +601,6 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           align-items: stretch;
         }
 
-        .kru-discovery-result-card {
-          min-width: 0;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          box-shadow: var(--shadow-xs);
-          transition: transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
-        }
-
-        .kru-discovery-result-card:hover {
-          transform: translateY(-3px);
-          box-shadow: var(--shadow-md);
-        }
-
-        .kru-discovery-result-card__cover {
-          position: relative;
-          display: block;
-          aspect-ratio: 1 / 1;
-          overflow: hidden;
-          background: var(--wash-hero);
-        }
-
-        .kru-discovery-result-card__body {
-          flex: 1;
-          padding: var(--sp-5);
-          display: flex;
-          flex-direction: column;
-          gap: var(--sp-3);
-        }
-
-        .kru-discovery-result-card__body h3 {
-          min-height: 2.8em;
-          display: -webkit-box;
-          overflow: hidden;
-          font-size: var(--fs-18);
-          line-height: var(--lh-snug);
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-
-        .kru-discovery-result-card__body h3 a {
-          color: inherit;
-          text-decoration: none;
-        }
-
-        .kru-discovery-result-card__body h3 a:hover {
-          color: var(--purple-700);
-        }
-
-        .kru-discovery-result-card__badge {
-          width: fit-content;
-          padding: 4px 10px;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          border-radius: var(--r-pill);
-          background: var(--status-member-bg);
-          color: var(--status-member-fg);
-          font-size: var(--fs-13);
-          font-weight: var(--fw-semibold);
-        }
-
-        .kru-discovery-result-card__badge--free {
-          background: var(--status-success-bg);
-          color: var(--status-success-fg);
-        }
-
-        .kru-resource-new-badge {
-          position: absolute;
-          top: 10px;
-          left: 10px;
-          z-index: 2;
-          padding: 5px 10px;
-          border: 1px solid rgba(255,255,255,.86);
-          border-radius: var(--r-pill);
-          background: var(--pink-600);
-          box-shadow: var(--shadow-xs);
-          color: white;
-          font-size: var(--fs-12);
-          font-weight: var(--fw-bold);
-          line-height: 1;
-        }
-
         .kru-free-showcase {
           max-width: var(--container-max);
           margin: 0 auto;
@@ -802,92 +700,6 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           gap: var(--gap-grid);
           justify-content: center;
           align-items: stretch;
-        }
-
-        .kru-sample-card {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          color: inherit;
-          text-decoration: none;
-          box-shadow: var(--shadow-xs);
-          transition: transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
-        }
-
-        .kru-sample-card:hover {
-          color: inherit;
-          text-decoration: none;
-          transform: translateY(-3px);
-          box-shadow: var(--shadow-md);
-        }
-
-        .kru-sample-card__cover {
-          position: relative;
-          aspect-ratio: 1 / 1;
-          overflow: hidden;
-          background: var(--wash-hero);
-        }
-
-        .kru-sample-card__free-badge {
-          position: absolute;
-          right: 10px;
-          bottom: 10px;
-          z-index: 2;
-          padding: 5px 10px;
-          border: 1px solid rgba(255,255,255,.88);
-          border-radius: var(--r-pill);
-          background: rgba(234, 248, 242, .96);
-          box-shadow: var(--shadow-xs);
-          color: var(--status-success-fg);
-          font-size: var(--fs-12);
-          font-weight: var(--fw-bold);
-        }
-
-        .kru-sample-card__body {
-          flex: 1;
-          padding: var(--sp-5);
-          display: flex;
-          flex-direction: column;
-        }
-
-        .kru-sample-card__body > span {
-          color: var(--status-success-fg);
-          font-size: var(--fs-12);
-          font-weight: var(--fw-semibold);
-        }
-
-        .kru-sample-card__body h3 {
-          min-height: 2.8em;
-          margin-top: var(--sp-3);
-          display: -webkit-box;
-          overflow: hidden;
-          font-size: var(--fs-18);
-          line-height: var(--lh-snug);
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-
-        .kru-sample-card__body p {
-          min-height: 4.5em;
-          margin-top: var(--sp-3);
-          display: -webkit-box;
-          overflow: hidden;
-          color: var(--text-muted);
-          font-size: var(--fs-14);
-          line-height: 1.5;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 3;
-        }
-
-        .kru-sample-card__body > strong {
-          margin-top: auto;
-          padding-top: var(--sp-4);
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          color: var(--purple-700);
-          font-size: var(--fs-14);
         }
 
         .kru-access-legend {
@@ -1041,9 +853,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .kru-public-auth-placeholder,
-          .kru-discovery-result-card,
-          .kru-sample-card {
+          .kru-public-auth-placeholder {
             transition: none;
             animation: none;
           }

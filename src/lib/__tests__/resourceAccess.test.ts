@@ -1,6 +1,5 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Gamepad2 } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import { ResourceCard } from "@/components/ui/ResourceCard";
 import { publicResourceAction, requiredPlansLabel, toPublicResource } from "@/app/resources/catalog";
@@ -43,15 +42,11 @@ function badgeFor(item: ReturnType<typeof resource>, viewer: { authenticated: bo
   });
   const html = renderToStaticMarkup(React.createElement(ResourceCard, {
     title: item.title,
-    meta: item.meta,
-    affordance: item.deliveryMode,
-    tags: [],
-    icon: Gamepad2,
+    deliveryMode: item.deliveryMode,
     accessTier: accessTier(item.accessMode),
     requiredPlanNames: item.requiredPlanNames,
     locked: action.locked,
-    upgradePending: viewer.pending,
-    unavailable: item.accessMode === "locked",
+    href: `/resources/${item.id}`,
   }));
   return { action, html, label: accessLabel(item.accessMode) };
 }

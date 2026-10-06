@@ -3,6 +3,7 @@ import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } 
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
 import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { proUpgradeHref } from "@/lib/upgradeFlow";
+export { resourceHref } from "@/lib/resourceUrl";
 import { planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 

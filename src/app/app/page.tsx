@@ -25,8 +25,6 @@ import {
   submitRequest,
   fetchSavedResourceIds,
   setResourceSaved,
-  resourceIcon,
-  resourceTint,
   type Resource,
   type Plan,
   type PlanBenefit,
@@ -439,29 +437,25 @@ export default function TeacherAppPage() {
 
   const renderResourceGrid = (items: Resource[]) => (
     <div className="kru-resource-grid">
-      {items.map((resource) => (
+      {items.map((resource, index) => (
         <ResourceCard
           key={resource.id}
           title={resource.title}
-          meta={resource.meta}
           description={resource.description}
-          affordance={resource.affordance}
-          tags={resource.tags}
+          meta={resource.meta}
+          category={resource.category}
+          deliveryMode={resource.affordance}
           gradeLevels={resource.gradeLevels}
           requiredPlanNames={resource.requiredPlanNames}
-          icon={resourceIcon(resource.affordance)}
-          coverImageUrl={resource.coverImageUrl}
-          tint={resourceTint(resource.affordance)}
           accessTier={accessTier(resource.accessMode)}
+          coverImageUrl={resource.coverImageUrl}
           isNew={resource.isNew}
           locked={!canAccess(resource)}
-          upgradePending={hasPendingUpgradeFor(resource)}
-          unavailable={resource.accessMode === "locked" && profile?.role !== "admin" && profile?.role !== "owner"}
           saved={saved.includes(resource.id)}
           savePending={savingIds.includes(resource.id)}
           onSave={() => toggleSaved(resource.id)}
-          onClick={() => openDetail(resource)}
-          onAction={() => resource.accessMode === "locked" && profile?.role !== "admin" && profile?.role !== "owner" ? openDetail(resource) : openResource(resource)}
+          onSelect={() => openDetail(resource)}
+          priority={index < 4}
         />
       ))}
     </div>

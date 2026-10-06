@@ -1,0 +1,147 @@
+.kru-resource-card {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.kru-resource-card__media {
+  position: relative;
+}
+
+.kru-resource-card__cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.kru-resource-card__lock {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.kru-resource-card__lock > span {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--status-member-bg);
+  color: var(--status-member-fg);
+}
+
+.kru-resource-card__save {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.kru-resource-card__save[aria-pressed="true"] {
+  color: var(--brand);
+}
+
+.kru-resource-card__save:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.kru-resource-card__body {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.kru-resource-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+}
+
+.kru-resource-card__title {
+  margin: 0;
+  min-height: 2.8em;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: var(--fs-16);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+}
+
+.kru-resource-card__title a,
+.kru-resource-card__title button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.kru-resource-card__title a:hover,
+.kru-resource-card__title button:hover {
+  color: var(--text-link);
+}
+
+.kru-resource-card__blurb {
+  margin: 0;
+  min-height: 3em;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text-muted);
+  font-size: var(--fs-14);
+  line-height: 1.5;
+}
+
+.kru-resource-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+}
+
+.kru-resource-card__highlights {
+  margin: 0;
+  color: var(--text-body);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+}
+
+.kru-resource-card__cta {
+  margin-top: auto;
+  padding-top: var(--sp-2);
+}
+
+.kru-resource-card__cta .kru-btn {
+  min-height: var(--tap-min, 44px);
+}
