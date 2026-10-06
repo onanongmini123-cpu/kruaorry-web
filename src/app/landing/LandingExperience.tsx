@@ -7,7 +7,6 @@ import {
   Crown,
   Gamepad2,
   Gift,
-  Lock,
   Presentation,
   Search,
   Sparkles,
@@ -147,7 +146,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
         if (active) setPlansLoaded(true);
       });
     return () => { active = false; };
-  }, [loadAttempt]);
+  }, [loadAttempt, initial.loaded]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -184,7 +183,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
         if (active) setSamplesLoaded(true);
       });
     return () => { active = false; };
-  }, []);
+  }, [initial.loaded]);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>

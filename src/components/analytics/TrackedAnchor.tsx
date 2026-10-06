@@ -11,7 +11,6 @@ interface TrackedAnchorProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
 /** A plain link that reports what it was for when clicked; the link itself is unchanged. */
 export function TrackedAnchor({ events, onClick, ...anchor }: TrackedAnchorProps) {
   return (
-    // eslint-disable-next-line jsx-a11y/anchor-has-content
     <a
       {...anchor}
       onClick={(event) => {
