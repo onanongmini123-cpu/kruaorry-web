@@ -15,6 +15,7 @@ import {
 } from "@/lib/membershipSchemaReadiness";
 import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
 import { friendlyErrorMessage } from "@/lib/userMessages";
+import { customerBenefitCopy } from "@/lib/benefitCopy";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -247,16 +248,27 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     note: p.note,
     benefits: benefitRows
       .filter((benefit) => benefit.plan_id === p.id)
-      .map((benefit) => ({
+      .map((benefit) => {
+        const copy = customerBenefitCopy({
+          featureId: benefit.feature_id,
+          name: benefit.feature_name,
+          description: benefit.feature_description,
+        });
+        return {
+          featureId: benefit.feature_id,
+          name: copy.name,
+          description: copy.description,
+          valueType: benefit.value_type as PlanBenefit["valueType"],
+          limitValue: benefit.limit_value === null ? null : Number(benefit.limit_value),
+        };
+      }),
+    features: benefitRows
+      .filter((benefit) => benefit.plan_id === p.id)
+      .map((benefit) => customerBenefitCopy({
         featureId: benefit.feature_id,
         name: benefit.feature_name,
         description: benefit.feature_description,
-        valueType: benefit.value_type as PlanBenefit["valueType"],
-        limitValue: benefit.limit_value === null ? null : Number(benefit.limit_value),
-      })),
-    features: benefitRows
-      .filter((benefit) => benefit.plan_id === p.id)
-      .map((benefit) => benefit.feature_name),
+      }).name),
     billingInterval: p.billing_interval === "year"
       ? "year"
       : p.billing_interval === "one_time"
