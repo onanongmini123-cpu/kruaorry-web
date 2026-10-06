@@ -127,4 +127,32 @@ describe("application proxy", () => {
       "https://example.com/login?next=%2Fapp",
     );
   });
+
+  it("runs on server-rendered /resources pages so refreshed sessions are saved", () => {
+    expect(config.matcher).toContain("/resources");
+    expect(config.matcher).toContain("/resources/:path*");
+  });
+
+  it("marks a response that carries refreshed auth cookies as non-cacheable", async () => {
+    mockedCreateServerClient.mockImplementation(((_url: string, _key: string, options: {
+      cookies: { setAll: (cookies: { name: string; value: string; options: object }[], headers: Record<string, string>) => void };
+    }) => ({
+      auth: {
+        getUser: vi.fn(async () => {
+          options.cookies.setAll(
+            [{ name: "sb-session", value: "refreshed", options: {} }],
+            { "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0", Pragma: "no-cache" },
+          );
+          return { data: { user: { id: "member-1" } }, error: null };
+        }),
+      },
+    })) as never);
+
+    const response = await proxy(new NextRequest("https://example.com/resources"));
+
+    expect(response.status).toBe(200);
+    expect(response.cookies.get("sb-session")?.value).toBe("refreshed");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+  });
 });

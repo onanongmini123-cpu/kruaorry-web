@@ -78,4 +78,36 @@ describe("authorized external resource opener", () => {
       expect(response.headers.get("location")).toBeNull();
     }
   });
+
+  it("gives a denied visitor a friendly page with a way forward and no destination", async () => {
+    vi.mocked(createClient).mockResolvedValue(fakeClient(false, null) as never);
+    const response = await GET(new Request(`https://kruaorry.example/api/resources/${id}/open`), params);
+    const body = await response.text();
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type")).toMatch(/text\/html/);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(body).toContain(`href="/resources/${id}"`);
+    expect(body).toContain("ต้องเข้าสู่ระบบหรือมีสิทธิ์ใช้งานก่อน");
+    expect(body).not.toMatch(/Supabase|RLS|JWT|null|rpc/i);
+  });
+
+  it("offers a retry link when the server cannot resolve the resource", async () => {
+    vi.mocked(createClient).mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432"));
+    const response = await GET(new Request(`https://kruaorry.example/api/resources/${id}/open`), params);
+    const body = await response.text();
+    expect(response.status).toBe(503);
+    expect(body).toContain("ลองใหม่");
+    expect(body).toContain(`href="/api/resources/${id}/open"`);
+    expect(body).not.toContain("ECONNREFUSED");
+  });
+
+  it("answers a malformed id with a friendly 404 page", async () => {
+    const response = await GET(
+      new Request("https://kruaorry.example/api/resources/not-a-uuid/open"),
+      { params: Promise.resolve({ id: "not-a-uuid" }) },
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toMatch(/text\/html/);
+    expect(await response.text()).toContain('href="/resources"');
+  });
 });

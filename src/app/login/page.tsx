@@ -66,7 +66,7 @@ function LoginForm() {
   const [passwordConfirmationError, setPasswordConfirmationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
-    hasConfirmationError ? "ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ กรุณากรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง" : null
+    hasConfirmationError ? "ลิงก์ยืนยันอีเมลนี้เปิดไม่สำเร็จ ถ้าคุณกดลิงก์ในอีเมลแล้ว ลองเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่สมัครไว้ได้เลย หากยังเข้าไม่ได้ ให้กรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง" : null
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);

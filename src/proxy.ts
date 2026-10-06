@@ -21,11 +21,17 @@ export async function proxy(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
+          );
+          // A response that carries refreshed auth cookies must never be
+          // cached by a CDN or shared cache, or one visitor's session could
+          // be served to another. The library supplies the no-store headers.
+          Object.entries(headers ?? {}).forEach(([key, value]) =>
+            response.headers.set(key, value)
           );
         },
       },
@@ -60,6 +66,10 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
+// /resources pages are rendered on the server and read the member's session
+// (viewer-specific access labels). Running the proxy there lets an expired
+// access token be refreshed and the new cookies saved to the browser, instead
+// of the refresh being lost when a Server Component cannot write cookies.
 export const config = {
-  matcher: ["/login", "/app/:path*", "/admin/:path*"],
+  matcher: ["/login", "/app/:path*", "/admin/:path*", "/resources", "/resources/:path*"],
 };

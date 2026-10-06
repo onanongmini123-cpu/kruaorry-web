@@ -53,6 +53,7 @@ import { FOUNDER_CAPACITY_LIMIT, normalizeFounderCapacity } from "@/lib/founderC
 import { planDisplayName } from "@/lib/planDisplay";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
+import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
 import {
@@ -883,7 +884,13 @@ export default function AdminConsolePage() {
       window.alert(guard.message);
       return;
     }
-    await supabase.auth.signOut();
+    // Sign out this device only, and stay put if it did not work, so a
+    // shared computer is never left signed in without the admin knowing.
+    const logoutError = await signOutCurrentSession(supabase.auth);
+    if (logoutError) {
+      window.alert(logoutError);
+      return;
+    }
     router.push("/");
     router.refresh();
   };
