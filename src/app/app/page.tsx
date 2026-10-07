@@ -44,7 +44,7 @@ import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from 
 import { ACCESS_FILTER_OPTIONS, activeFilterCount, filterDiscoveredResources, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
 import { RESOURCE_TYPE_OPTIONS, type ResourceTypeFilter } from "@/lib/resourceMeta";
 import { RESOURCE_GRADE_OPTIONS, formatResourceGrades } from "@/lib/resourceGrades";
-import { persistFavoriteOptimistically } from "@/lib/favoriteState";
+import { createFavoriteRefreshGuard, persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import {
   beginMemberEntitlementsRefresh,
@@ -108,6 +108,8 @@ export default function TeacherAppPage() {
   const [accessFilter, setAccessFilter] = useState<ResourceAccessFilter>("all");
   const [typeFilter, setTypeFilter] = useState<ResourceTypeFilter>("all");
   const [saved, setSaved] = useState<string[]>([]);
+  // Lets a saved-list refresh that began before a heart was pressed be ignored.
+  const [favoriteGuard] = useState(createFavoriteRefreshGuard);
   const [savingIds, setSavingIds] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -244,8 +246,9 @@ export default function TeacherAppPage() {
     if (!userId) return;
     let active = true;
     const refreshSaved = () => {
+      const stillCurrent = favoriteGuard.beginRefresh();
       void fetchSavedResourceIds(supabase, userId).then((ids) => {
-        if (active) setSaved(ids);
+        if (active && stillCurrent()) setSaved(ids);
       });
     };
     window.addEventListener("focus", refreshSaved);
@@ -253,7 +256,7 @@ export default function TeacherAppPage() {
       active = false;
       window.removeEventListener("focus", refreshSaved);
     };
-  }, [supabase, userId]);
+  }, [supabase, userId, favoriteGuard]);
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -282,6 +285,7 @@ export default function TeacherAppPage() {
     if (!userId || savingIds.includes(id)) return;
     setSavingIds((current) => [...current, id]);
     setSaveError(null);
+    const settleWrite = favoriteGuard.beginWrite();
     const wasSaved = saved.includes(id);
     const nowSaved = !wasSaved;
     const error = await persistFavoriteOptimistically(
@@ -289,7 +293,7 @@ export default function TeacherAppPage() {
       nowSaved,
       setSaved,
       () => setResourceSaved(supabase, id, nowSaved),
-    );
+    ).finally(settleWrite);
     if (!error && nowSaved) trackEvent("favorite_add", { resource_id: id, source: "member_app" });
     if (error) {
       setSaveError(nowSaved
