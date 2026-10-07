@@ -65,6 +65,9 @@ function toLandingResource(resource: Resource): LandingResource {
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
+const FOUNDER_REFRESH_INTERVAL_MS = 5 * 60_000;
+const FOUNDER_REFRESH_MIN_GAP_MS = 60_000;
+
 export function LandingExperience({ initial }: { initial: LandingData }) {
   const [plans, setPlans] = useState<Plan[]>(initial.plans);
   const [founderCapacity, setFounderCapacity] = useState<FounderCapacity | null>(initial.founderCapacity);
@@ -152,7 +155,9 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
     if (!isSupabaseConfigured) return;
     let active = true;
     const supabase = createClient();
+    let lastRefresh = Date.now();
     const refreshFounderCapacity = () => {
+      lastRefresh = Date.now();
       void fetchMembershipSchemaReadiness(supabase).then(async (readiness) => {
         if (!active) return;
         setMembershipSchemaReadiness(readiness);
@@ -160,12 +165,21 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
         if (active) setFounderCapacity(capacity);
       });
     };
-    const timer = window.setInterval(refreshFounderCapacity, 60_000);
-    window.addEventListener("focus", refreshFounderCapacity);
+    // This is the public front page: the page is rebuilt every few minutes on
+    // the server and the membership page checks the real capacity before any
+    // application, so the open tab only needs a slow refresh, never while it
+    // is hidden, and not on every quick tab switch.
+    const timer = window.setInterval(() => {
+      if (!document.hidden) refreshFounderCapacity();
+    }, FOUNDER_REFRESH_INTERVAL_MS);
+    const onFocus = () => {
+      if (Date.now() - lastRefresh >= FOUNDER_REFRESH_MIN_GAP_MS) refreshFounderCapacity();
+    };
+    window.addEventListener("focus", onFocus);
     return () => {
       active = false;
       window.clearInterval(timer);
-      window.removeEventListener("focus", refreshFounderCapacity);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
