@@ -31,7 +31,7 @@
 
 | ข้อ | ผล |
 | --- | --- |
-| Tests | `npm test` (vitest) **842 ผ่าน / 90 ไฟล์** (main = 579) · SQL engine 9 สคริปต์ผ่าน รวม `test:migration-chain-sql` 30 checks (`test:membership-concurrency` ต้องใช้ Postgres จริง ไม่ได้รันในที่นี้) |
+| Tests | `npm test` (vitest) **842 ผ่าน / 90 ไฟล์** (main = 579) · SQL engine 9 สคริปต์ผ่าน รวม `test:migration-chain-sql` 31 checks (`test:membership-concurrency` ต้องใช้ Postgres จริง ไม่ได้รันในที่นี้) |
 | Lint / Types | `eslint` 0 error 0 warning · `tsc --noEmit` ผ่านหลัง `next typegen` (บน main ก็ต้อง typegen เหมือนกัน — ดูข้อ 7) |
 | Build เทียบ main | `next build` สำเร็จทั้งคู่ ไม่มี warning ใหม่ · ทุก route ของแอปเล็กกว่า main (ยกเว้น `/_global-error` ใหญ่ขึ้น ≈ 0.3 KB gzip; ตารางข้อ 7) · Vercel Preview ของ head commit ดูสถานะที่ PR |
 | Browser QA บน build จริง (Chromium จำลอง + mock Supabase) | สาธารณะ 114 หน้า · สมาชิก 192 หน้า · ปฏิสัมพันธ์ 31/31 · ล็อกอิน/ออก/สมัคร/ลืมรหัส 33/33 · แป้นพิมพ์ 37/37 · axe 36 มุมมอง เหลือ 1 กฎ (contrast ของสีแบรนด์ — ต้องให้เจ้าของตัดสินใจ ข้อ 12) |
@@ -224,7 +224,7 @@ supabase db push                                 # apply ตามลำดั�
 
 ### 5.8 หลักฐานและข้อจำกัด
 
-`npm run test:migration-chain-sql` (30 checks, ~25 วินาที ไม่ต้องใช้ credential/เครือข่าย): เล่น migration 001–051 จริงทั้งหมดบน PGlite (PostgreSQL 17 compile เป็น WebAssembly) พร้อม role `anon`/`authenticated`/`service_role` และ default privileges แบบ Supabase แล้วทดสอบทุกข้อใน 5.2 รวมพฤติกรรมในฐานะ `anon`/`authenticated`/สมาชิก. สคริปต์อื่นที่เกี่ยวข้อง: `test:privilege-hardening-sql`, `test:resource-slug-sql`, `test:platform-completion-sql` (เล่น migration จริงบางชุดรวม 053/054), และ vitest pin tests (เทียบข้อความ view/ฟังก์ชันกับ 029 โดยตรง).
+`npm run test:migration-chain-sql` (31 checks, ~25 วินาที ไม่ต้องใช้ credential/เครือข่าย): เล่น migration 001–051 จริงทั้งหมดบน PGlite (PostgreSQL 17 compile เป็น WebAssembly) พร้อม role `anon`/`authenticated`/`service_role` และ default privileges แบบ Supabase แล้วทดสอบทุกข้อใน 5.2 รวมพฤติกรรมในฐานะ `anon`/`authenticated`/สมาชิก. สคริปต์อื่นที่เกี่ยวข้อง: `test:privilege-hardening-sql`, `test:resource-slug-sql`, `test:platform-completion-sql` (เล่น migration จริงบางชุดรวม 053/054), และ vitest pin tests (เทียบข้อความ view/ฟังก์ชันกับ 029 โดยตรง).
 
 **ไม่ครอบคลุม (ต้องดูบนของจริง):** Supabase Storage/GoTrue/PostgREST จริง (ใช้ stub ของ `auth`/`storage`); PostgreSQL เวอร์ชันของโปรเจกต์ (ทดสอบบน 17; สิทธิ์ `MAINTAIN` มีเฉพาะ 17+ — ดู 052 หัวไฟล์ "NOT COVERED"); ข้อมูล/แก้มือใน production ที่ไม่ได้มาจาก migration (pre-check และ guard มีไว้ตรงนี้); ความหน่วงล็อกภายใต้โหลดจริง (ตั้ง `lock_timeout` ให้ล้มเร็วแทนคิวรอ ถ้าล้มให้รันใหม่ช่วงเงียบ).
 
@@ -235,7 +235,7 @@ supabase db push                                 # apply ตามลำดั�
 | ชุด | ผล |
 | --- | --- |
 | `npm test` (vitest) | **842 ผ่าน / 90 ไฟล์** (main 579) — เพิ่ม: matrix สิทธิ์ 35, access label, discovery + 31 เทสต์ขอบของการค้นหา, grade, slug (รวม corpus ร่วมกับ DB), SEO, analytics, user messages, ปุ่ม busy/โฟกัส, guard รายการโปรด, pin test ของ migration/rollback/verification, ขนาดปุ่ม/โครงสร้าง CSS ที่สำคัญ |
-| SQL engine (PGlite) | `test:membership-sql`, `resource-file`, `public-resource`, `resource-placeholder`, `resource-discovery`, `platform-completion`, `privilege-hardening`, `resource-slug`, **`migration-chain` (30 checks, สายจริง)** — ผ่านทั้งหมด |
+| SQL engine (PGlite) | `test:membership-sql`, `resource-file`, `public-resource`, `resource-placeholder`, `resource-discovery`, `platform-completion`, `privilege-hardening`, `resource-slug`, **`migration-chain` (31 checks, สายจริง)** — ผ่านทั้งหมด |
 | Lint / Types | `npm run lint` 0 error 0 warning · `tsc --noEmit` ผ่านหลัง `next typegen` |
 | Browser QA (Chromium จำลองมือถือ/เดสก์ท็อป, build จริง + mock Supabase REST) | **สาธารณะ 114 หน้า** × 6 ขนาดจอ (375/390/430/768/1024/1366) และ **สมาชิกฟรี/Pro 192 หน้า**: ไม่มี overflow, console/page error, คำต้องห้าม (ยกเว้น 12 รายการที่คาดไว้: หน้า 404 ที่เบราว์เซอร์รายงานสถานะ 404 และนโยบายความเป็นส่วนตัวที่ระบุชื่อ Supabase เป็นผู้ประมวลผลข้อมูล) · **ปฏิสัมพันธ์ 31/31** (แตะการ์ด, bottom sheet, ค้นหา, หัวใจ, ฟอร์มรายงาน) · **ล็อกอิน/ออกจากระบบ/สมัคร/ลืมรหัส 33/33** (ข้อความ error ไทย, ไม่มี session ก่อนยืนยัน, ออกจากระบบเฉพาะเครื่องนี้, `/app` ปิดอีกครั้งหลังออก) · **แป้นพิมพ์ 37/37** · **axe 36 มุมมอง** · **CLS** รายหน้า |
 

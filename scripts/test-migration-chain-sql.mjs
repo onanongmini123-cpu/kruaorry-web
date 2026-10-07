@@ -34,7 +34,6 @@ const TEN_RELATIONS = [
 const SEEDED_SLUG_COUNT = 17;
 const OLD_CATEGORIES = ["cannot_open", "broken_link", "cannot_download", "wrong_content", "other"];
 const NEW_CATEGORIES = ["wrong_answer", "cannot_play", "no_sound", "camera_issue", "mobile_layout"];
-const MARKER = "system.resource_issue_context_v1_ready";
 
 // ---------------------------------------------------------------- harness
 
@@ -841,6 +840,19 @@ await check("052 + 053 + 054: every apply order ends in the same state, and roll
     assertSameState(baseline, await fingerprint(db), "all three rolled back", (line) => /resource_catalog/.test(line));
     const residual = diffFingerprints(baseline, await fingerprint(db)).filter((line) => /resource_catalog/.test(line));
     assert.ok(residual.every((line) => /viewdef|slug|position/.test(line)), residual.join("\n").slice(0, 500));
+  });
+});
+
+await check("rollbacks are harmless on a database that never had the migration (wrong file or wrong environment)", async () => {
+  await withDb(async (db) => {
+    const before = await fingerprint(db);
+    for (const number of ["054", "053", "052"]) await db.exec(rollbackSql(number));
+    // Only resource_catalog may differ: the 053 rollback exposes its always-NULL slug column even when 053 never ran.
+    assertSameState(before, await fingerprint(db), "rollbacks on the untouched baseline", (line) => /resource_catalog/.test(line));
+    assert.deepEqual(notOk(await runVerification(db, "pre-check")), [], "pre-check still passes");
+    // And the forward migrations still apply cleanly afterwards.
+    for (const number of ["052", "053", "054"]) await db.exec(migrationSql(number));
+    for (const name of ["052-verify", "053-verify", "054-verify"]) assert.deepEqual(notOk(await runVerification(db, name)), [], name);
   });
 });
 
