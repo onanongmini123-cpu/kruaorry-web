@@ -89,12 +89,25 @@ export async function fetchMembershipLineSlipWorkflowReadiness(
  * Probes migration 054 (extra problem-report categories and context) so the
  * report form only offers what the database will accept.
  */
+let issueContextSeenReady = false;
+
 export async function fetchResourceIssueContextReadiness(
   supabase: SupabaseClient,
 ): Promise<SettledMembershipSchemaReadiness> {
-  return fetchCapabilityReadiness(
+  // A migration is never un-applied while a page is open, so a positive answer
+  // is kept for the rest of the browser session (one request, not one per
+  // resource). A negative or failed answer is asked again next time.
+  if (issueContextSeenReady) return "ready";
+  const readiness = await fetchCapabilityReadiness(
     supabase,
     RESOURCE_ISSUE_CONTEXT_READINESS_MARKER,
     "resource issue context readiness",
   );
+  if (readiness === "ready") issueContextSeenReady = true;
+  return readiness;
+}
+
+/** Test hook: forget the remembered positive answer. */
+export function resetResourceIssueContextReadinessForTests(): void {
+  issueContextSeenReady = false;
 }

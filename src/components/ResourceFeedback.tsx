@@ -52,6 +52,19 @@ export function ResourceFeedback({
   const [reporting, setReporting] = useState(false);
   const canSubmitFeedback = authenticated && canInteract;
 
+  // Ask once the page is shown, so the category list is already final by the
+  // time someone opens the report form (it must not change under their finger).
+  useEffect(() => {
+    if (!canSubmitFeedback) return;
+    let active = true;
+    void fetchResourceIssueContextReadiness(supabase).then((readiness) => {
+      if (!active || readiness !== "ready") return;
+      setExtendedReports(true);
+      setReportCategory((current) => (current === "cannot_open" ? "cannot_play" : current));
+    });
+    return () => { active = false; };
+  }, [canSubmitFeedback, supabase]);
+
   const fetchSnapshot = useCallback(async () => {
     const rows = await fetchResourceReviews(supabase, resourceId);
     const ownReview = canSubmitFeedback
@@ -161,16 +174,7 @@ export function ResourceFeedback({
             type="button"
             variant="ghost"
             icon={Flag}
-            onClick={() => {
-              setReportOpen((open) => !open);
-              if (!extendedReports) {
-                void fetchResourceIssueContextReadiness(supabase).then((readiness) => {
-                  if (readiness !== "ready") return;
-                  setExtendedReports(true);
-                  setReportCategory((current) => (current === "cannot_open" ? "cannot_play" : current));
-                });
-              }
-            }}
+            onClick={() => setReportOpen((open) => !open)}
             aria-expanded={reportOpen}
           >
             พบปัญหา?
