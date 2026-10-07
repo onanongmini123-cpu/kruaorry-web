@@ -3,6 +3,9 @@
 > **สถานะปัจจุบัน (อัปเดต 2026-10-07): Rolled out to production** — PR #27 merge เข้า `main` แล้วที่ `39e2cb8`; Vercel production ใช้โค้ดชุดนี้ และ verification ของ 052/053/054 ผ่านบน production
 > **คำเตือนสำคัญเรื่อง migration ledger:** schema production มีผลของ 052–054 ครบ แต่ `supabase_migrations.schema_migrations` ยังหยุดที่ 051 ห้ามรัน `db push` หรือ apply 052–054 ซ้ำโดยไม่ตรวจ ให้ reconcile ด้วย `supabase migration repair --status applied` เฉพาะหลังได้รับอนุมัติ
 > **วิธีอ่านเอกสาร:** ส่วน “สถานะ Production หลัง rollout” ด้านล่างคือข้อเท็จจริงล่าสุด ส่วนข้อความ Ready for Review / ยังไม่ deploy / ยังไม่ apply ใน runbook เดิมถือเป็นบันทึกก่อน rollout และห้ามนำไปรันซ้ำโดยไม่ตรวจสถานะจริง
+>
+> **ขอบเขตการตรวจ (ก่อน rollout):** ตรวจโค้ดใน repo + ไฟล์ migration เท่านั้น ไม่ได้เรียกหรือแก้ Supabase production — SQL ทดสอบบนสำเนาในเครื่อง (PGlite เล่น migration 001–051 ซ้ำทั้งสาย), หน้าเว็บทดสอบกับ mock REST ในเครื่อง
+> **อ่านส่วนไหน:** เจ้าของระบบ → ข้อ 0, 1, 3.3, 8, 12, 13 · นักพัฒนา → ข้อ 5, 9, 10, 11 (ข้อ 5/9 เป็นบันทึกก่อน rollout ห้ามรันซ้ำแบบ blind)
 
 ## สถานะ Production หลัง rollout (2026-10-07)
 
@@ -13,13 +16,25 @@
 | Migration 053 | `053-verify.sql` ผ่าน; ตั้ง slug เพิ่มให้ 5 รายการเมื่อ 2026-10-07 แล้ว ปัจจุบัน 22 จาก 22 สื่อมี slug และ `null_slugs = 0` |
 | Migration 054 | `054-verify.sql` ผ่านครบ 7 แถวบน production |
 | Migration ledger | remote ledger ยังแสดงถึง 051 เท่านั้น — เป็น history drift ที่ต้อง repair metadata ก่อน migration รอบถัดไป |
-| Sitemap | หลัง redeploy รอบแรกแสดง 17 slug + 5 UUID; หลังตั้ง slug ที่เหลือ direct route ใหม่ทั้ง 5 ตอบ 200 แล้ว ส่วน sitemap อาจยังคืนฉบับแคชเก่าจนกว่า catalog cache + ISR จะ regenerate (≤ ~10 นาที) |
+| Sitemap | หลัง redeploy รอบแรกแสดง 17 slug + 5 UUID; หลังตั้ง slug ที่เหลือ direct route ใหม่ทั้ง 5 ตอบ 200 แล้ว แต่ sitemap ยังไม่รีเฟรชเองบน Vercel เมื่อใช้ ISR — ต้อง redeploy หลังเพิ่ม/เปลี่ยนสื่อ จนกว่าจะเปลี่ยนเป็น dynamic (งานถัดไป) |
 | Preview database | Vercel Preview ใช้ Supabase production ตัวเดียวกัน จึงไม่ใช่พื้นที่ซ้อม migration หรือ destructive QA |
-| Vercel Firewall | เปิดกฎ Log-only สำหรับ path ที่ขึ้นต้น `/api/resources/`; ยังไม่บล็อกและยังไม่ rate-limit |
-| Supabase Auth | ตรวจแบบ read-only แล้ว: Confirm email เปิด, anonymous sign-in ปิด, minimum password 6, leaked-password protection ปิด (Pro), redirect allow-list 3 รายการ; ยังไม่ได้เปลี่ยนค่า |
+| Vercel Firewall | ตรวจและตั้งค่าตามแผนแล้ว (2026-10-07) — รายละเอียดอยู่ในบันทึกส่วนตัวของเจ้าของระบบ |
+| Supabase Auth | ตรวจแบบ read-only แล้ว (2026-10-07) ยังไม่ได้เปลี่ยนค่าใด — รายละเอียดอยู่ในบันทึกส่วนตัวของเจ้าของระบบ |
 | QA ที่ยังค้าง | R18: iPhone Safari, Android Chrome, LINE in-app browser และธุรกรรมเงินจริงหนึ่งรอบ |
 
-**บทเรียนหลัง rollout:** catalog มีแคชข้อมูล 5 นาทีและ sitemap มีชั้น ISR ซ้อน จึงอาจใช้เวลาประมาณ 10 นาทีและ request แรกหลัง stale อาจยังได้ฉบับเดิม; redeploy จาก commit เดิมช่วยสร้าง sitemap ใหม่. Preview ที่ชี้ฐานข้อมูล production ต้องถือเป็น production ทุกครั้ง. ก่อน migration ใหม่ต้องมี staging แยกและแก้ ledger drift ให้เรียบร้อย.
+**Slug ที่ตั้งด้วยมือหลัง rollout (2026-10-07):**
+
+| resource id | slug |
+| --- | --- |
+| `494fd2c4-25cc-4d2b-bb81-69f07b0aa556` | `kru-microlab` |
+| `ba0cc8bb-3bcd-4f05-8560-ccfb62bb003e` | `kru-random` |
+| `28051c63-5941-4a15-8022-51bd647b9a3d` | `phonics-letter-match` |
+| `36dfdf68-ab8c-4600-b969-d3e971458a49` | `moral-detective` |
+| `4cf231ef-9488-4239-b633-96393c251a72` | `thai-word-factory` |
+
+> ค่าชุดนี้ตั้งด้วยมือบน production และไม่อยู่ในไฟล์ migration — ต้องตั้งซ้ำบน staging หรือฐานข้อมูลที่สร้างใหม่
+
+**บทเรียนหลัง rollout:** sitemap ไม่รีเฟรชเองบน Vercel เมื่อใช้ ISR — ต้อง redeploy หลังเพิ่มหรือเปลี่ยนสื่อ จนกว่าจะเปลี่ยน route เป็น dynamic. Preview ที่ชี้ฐานข้อมูล production ต้องถือเป็น production ทุกครั้ง. ก่อน migration ใหม่ต้องมี staging แยกและแก้ ledger drift ให้เรียบร้อย.
 
 ---
 
@@ -34,7 +49,7 @@
 | Resource Card / Detail / Related / Filters / Search / Empty state | ทำแล้ว; ค้นหาทนคำพิมพ์ผิด/ระดับชั้นหลายรูปแบบ (ข้อ 4) |
 | หน้าแรก (hero, 4 การ์ด, server-rendered) | ทำแล้ว |
 | Mobile 375–1366 + แป้นพิมพ์ + tap target 44px | ทดสอบด้วย Chromium จำลอง + แก้ที่พบ (ข้อ 4, 6); **ยังต้องทดสอบเครื่องจริง** |
-| SEO (slug, canonical, OG, sitemap, robots, noindex, metadata ไม่ซ้ำ) | rollout แล้ว; สื่อ 22/22 มี slug; direct route ใหม่ทั้ง 5 ตอบ 200; รอ sitemap cache regenerate |
+| SEO (slug, canonical, OG, sitemap, robots, noindex, metadata ไม่ซ้ำ) | rollout แล้ว; สื่อ 22/22 มี slug; direct route ใหม่ทั้ง 5 ตอบ 200; sitemap ยังต้อง redeploy หลังเปลี่ยนข้อมูลจนกว่าจะเปลี่ยน route เป็น dynamic |
 | Analytics | `trackEvent` กลาง เฉพาะ event ที่พิสูจน์ได้; ไม่ส่งคำที่ผู้ใช้พิมพ์ |
 | Report Problem + บริบทอัตโนมัติ + APP_VERSION | rollout แล้ว; ผลของ migration 054 ผ่าน verification บน production |
 | Migration 052 / 053 / 054 | schema production ผ่าน verification แล้ว; **ledger ยังหยุดที่ 051** จึงต้อง repair metadata ก่อน migration ถัดไปและห้าม apply ซ้ำแบบ blind |
@@ -66,7 +81,7 @@
 
 **ข้อมูลสาธารณะ** — คลังสื่อสาธารณะอ่านครั้งเดียวด้วย Supabase anon client แบบไม่ผูก cookie + `unstable_cache` 5 นาที (`src/app/resources/data.ts`) ใช้ร่วมกันระหว่างหน้ารายการ หน้ารายละเอียด related, sitemap และหน้าแรก. หน้าแรกเป็น server component (`revalidate = 300`); ถ้าอ่านฝั่งเซิร์ฟเวอร์ไม่ได้ ฝั่งเบราว์เซอร์จะดึงเองเหมือนเดิม. ข้อมูลเฉพาะผู้ดู (สิทธิ์ แพ็ก คำขออัปเกรดที่รอ) อ่านต่อคำขอผ่าน cookie จึง **ไม่เข้าแคชที่ใช้ร่วมกัน**.
 
-**ข้อแลกเปลี่ยนที่ควรรู้ (caching):** หน้าสาธารณะอ่านจากแคช 5 นาที — สื่อที่เพิ่ง *เผยแพร่/แก้ไข/ปิด* ในแอดมินขึ้นหน้าสาธารณะภายใน ≤ 5 นาที (`/resources`, รายละเอียด), ≤ ~10 นาที (`/` และ sitemap ซึ่งมีชั้น ISR ซ้อนบนแคชข้อมูล). หน้า `/app` ของสมาชิกอ่านตรงจึงเห็นทันที. ป้าย/ปุ่มอาจล้าหลังได้ตามช่วงนั้นเมื่อมีการเปลี่ยนสิทธิ์ของสื่อ แต่การตัดสินสิทธิ์ตอนกดเปิด/ดาวน์โหลดตรวจสดที่เซิร์ฟเวอร์ทุกครั้ง ไม่ผ่านแคช จึงไม่เปิดสิทธิ์เกิน (ผลกระทบสูงสุด: สื่อที่เพิ่งล็อกยังโชว์ปุ่มเล่นฟรี ≤ 5 นาที แล้วคลิกได้หน้า error ภาษาไทย). การสั่งล้างแคชทันทีต้องมี endpoint ที่ใช้ secret ใหม่ จึงไม่ใส่ใน PR นี้. proxy ที่ `/resources` เพิ่มการตรวจ session ต่อคำขอของสมาชิกที่ล็อกอิน (ผู้เยี่ยมชมที่ไม่มี cookie ไม่เรียกเครือข่าย) ทำให้คำขอของสมาชิกมีการเรียก auth 2 ครั้ง (proxy + server component).
+**ข้อแลกเปลี่ยนที่ควรรู้ (caching):** หน้าสาธารณะอ่านจากแคช 5 นาที — สื่อที่เพิ่ง *เผยแพร่/แก้ไข/ปิด* ในแอดมินขึ้นหน้าสาธารณะภายใน ≤ 5 นาที (`/resources`, รายละเอียด). หน้า `/app` ของสมาชิกอ่านตรงจึงเห็นทันที. sitemap ไม่รีเฟรชเองบน Vercel เมื่อใช้ ISR จึงต้อง redeploy หลังเพิ่มหรือเปลี่ยนสื่อจนกว่าจะเปลี่ยน route เป็น dynamic. ป้าย/ปุ่มอาจล้าหลังได้ตามช่วงแคชเมื่อมีการเปลี่ยนสิทธิ์ของสื่อ แต่การตัดสินสิทธิ์ตอนกดเปิด/ดาวน์โหลดตรวจสดที่เซิร์ฟเวอร์ทุกครั้ง ไม่ผ่านแคช จึงไม่เปิดสิทธิ์เกิน (ผลกระทบสูงสุด: สื่อที่เพิ่งล็อกยังโชว์ปุ่มเล่นฟรี ≤ 5 นาที แล้วคลิกได้หน้า error ภาษาไทย). การสั่งล้างแคชทันทีต้องมี endpoint ที่ใช้ secret ใหม่ จึงไม่ใส่ใน PR นี้. proxy ที่ `/resources` เพิ่มการตรวจ session ต่อคำขอของสมาชิกที่ล็อกอิน (ผู้เยี่ยมชมที่ไม่มี cookie ไม่เรียกเครือข่าย) ทำให้คำขอของสมาชิกมีการเรียก auth 2 ครั้ง (proxy + server component).
 
 **URL สื่อ** — `/resources/[id]` → `/resources/[key]` รับทั้ง UUID และ slug. UUID → 308 ไป slug เฉพาะเมื่อสื่อนั้นมี slug แล้ว; ตัวพิมพ์ใหญ่ → 308 เป็นตัวเล็ก. อ่านคอลัมน์ `slug` ก่อน ถ้า DB ยังไม่มี (error 42703) ถอยไป query เดิมโดยอัตโนมัติ.
 
@@ -123,9 +138,9 @@
 ### 3.3 ผลตรวจระบบภายนอกและรายการที่ยังต้องตรวจเอง
 
 1. **Supabase Storage:** ยังต้องตรวจ policy จริงของ bucket ไฟล์สื่อ (private, ไม่มี public read) และ TTL ของ signed URL; ดูความเสี่ยง R2/R3 ข้อ 12.
-2. **Supabase Auth (ตรวจ read-only แล้ว 2026-10-07):** Confirm email เปิด, anonymous sign-in ปิด, minimum password 6, leaked-password protection ปิดเพราะเป็นฟีเจอร์ Pro, Site URL = `https://kruaorry.com`, redirect allow-list = Vercel production wildcard + `/auth/callback**` + `/reset-password`. Confirm-signup template ยังใช้ `.ConfirmationURL`; reset-password ใช้ `token_hash`. ยังไม่ได้เปลี่ยนค่าใด ต้องออกแบบ callback/test ก่อนเปลี่ยน template และควรพิจารณาเพิ่ม minimum password เป็นอย่างน้อย 8.
+2. **Supabase Auth:** ตรวจแบบ read-only แล้ว (2026-10-07) ยังไม่ได้เปลี่ยนค่าใด — รายละเอียดอยู่ในบันทึกส่วนตัวของเจ้าของระบบ. ยังเหลือ: ทบทวนนโยบายรหัสผ่านและทดสอบ flow อีเมลบน staging ก่อนเปลี่ยนค่าใด.
 3. **Migration 052–054:** schema production ผ่าน verification แล้ว แต่ ledger ยังหยุดที่ 051; ต้อง repair ledger metadata หลังอนุมัติและก่อน migration ใหม่.
-4. **Vercel:** `kruaorry.com` เป็นโดเมนหลัก; ยืนยันแล้วว่า Preview ใช้ Supabase production ตัวเดียวกัน. Firewall มีกฎ Log-only ที่ `/api/resources/*`; แผนปัจจุบันยังไม่รองรับ rate-limit action จนกว่าจะอัปเกรด Pro/Enterprise.
+4. **Vercel:** `kruaorry.com` เป็นโดเมนหลัก; ยืนยันแล้วว่า Preview ใช้ Supabase production ตัวเดียวกัน. Firewall: ตั้งค่าตามแผนแล้ว รายละเอียดอยู่ในบันทึกส่วนตัว.
 5. Repo เป็น private หรือไม่ (migration และโครงสร้างสิทธิ์อยู่ใน repo).
 6. `X-Frame-Options: SAMEORIGIN` จะกันการฝังหน้าเว็บนี้ใน iframe ของเว็บอื่น — ถ้ามีพาร์ตเนอร์ฝังอยู่ต้องแจ้งก่อน.
 7. ทดสอบบนเครื่องจริง (iOS Safari, Android Chrome, LINE in-app browser) และการชำระเงินจริงตามขั้นตอนของคุณ.
@@ -414,12 +429,12 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 
 | # | เรื่อง | ผลกระทบ | ทางลด / ข้อเสนอ |
 | --- | --- | --- | --- |
-| R1 | route เปิด/ดาวน์โหลดสื่อ (ออก signed URL) ยังไม่มี throttle ต่อผู้ใช้/ไอพี — บัญชีเดียววนเรียกเพื่อดึงสื่อทั้งคลัง/แชร์บัญชีได้ (กลาง; ผลคือต้นทุน/การละเมิด ไม่ใช่ข้อมูลรั่ว) | ต้นทุน egress, การแจกจ่ายสื่อ Pro | เปิดกฎ Vercel Firewall แบบ **Log-only** สำหรับ `/api/resources/*` แล้วเพื่อเก็บ baseline โดยไม่กระทบโรงเรียนที่ใช้ IP ร่วมกัน; rate-limit action ต้องอัปเกรดแผน Pro/Enterprise หรือทำ throttle ฝั่งแอป/DB |
+| R1 | route เปิด/ดาวน์โหลดสื่อ (ออก signed URL) ยังไม่มี throttle ต่อผู้ใช้/ไอพี — บัญชีเดียววนเรียกเพื่อดึงสื่อทั้งคลัง/แชร์บัญชีได้ (กลาง; ผลคือต้นทุน/การละเมิด ไม่ใช่ข้อมูลรั่ว) | ต้นทุน egress, การแจกจ่ายสื่อ Pro | **กฎ WAF บน Vercel** rate limit `/api/resources/*` (ไม่ต้องแก้โค้ด); ระยะยาว: RPC นับการดาวน์โหลดต่อผู้ใช้ที่ตารางเล็ก (ต้อง migration แยก) (มีมาตรการเก็บข้อมูลแล้ว — ดูบันทึกส่วนตัว) |
 | R2 | สื่อ `public` แบบ **ไฟล์** ผู้เยี่ยมชมโหลดไม่ได้จริง — policy ของ Storage `resource_covers_admin_write` ไม่มี `TO` จึงถูกประเมินกับ anon แล้วเรียก `is_admin()` ที่ anon เรียกไม่ได้ (ต่ำ; ล้มแบบปลอดภัย = หน้า error) | ไม่มีสื่อ seed แบบนี้ในวันนี้ (public ทั้งหมดเป็นเว็บ) | migration แยกให้ policy เป็น `to authenticated` + ตัดสินใจเชิงผลิตภัณฑ์ว่าจะอนุญาต public+file หรือไม่ (นโยบาย 022 = ไฟล์ต้องสมัครสมาชิก) |
 | R3 | สมาชิกที่ล็อกอินทุกคนลิสต์ bucket `resource-covers` ได้ รวมปกของสื่อ draft/archived (ต่ำ; มีแค่ภาพและชื่อไฟล์) | ภาพก่อนเผยแพร่เห็นได้ | อัปโหลดปก draft ใต้ prefix ส่วนตัว หรือกรองลิสต์ด้วยสถานะ — หรือยอมรับความเสี่ยง |
 | R4 | รีวิวไม่มี throttle ต่อชั่วโมง (ต่ำ; รีวิวใหม่เป็น pending เห็นเฉพาะแอดมิน) | คิวตรวจรีวิวถูกท่วมได้ | ทำแบบเดียวกับรายงานปัญหา (เช่น 10 รีวิวใหม่/ชม.) ใน migration แยก |
-| R5 | ข้อมูลสาธารณะล้าหลังได้ ≤ 5 นาที (`/` และ sitemap ≤ ~10) | สื่อที่เพิ่งเผยแพร่/ปิด/ล็อกยังไม่สะท้อน | ตามข้อ 2; ตัวเลือก: route ของแอดมินเรียก `revalidateTag("catalog")` หลังเปลี่ยน |
-| R6 | Confirm-signup template ปัจจุบันใช้ `.ConfirmationURL`; reset-password ใช้ `token_hash` ผ่าน app route แล้ว | ต้องตรวจ flow จริงก่อนเปลี่ยน template เพื่อไม่ให้ signup เสีย | ออกแบบ app-owned callback/PKCE ให้ครบ, ทดสอบ staging แล้วค่อยเปลี่ยนทีละค่า; ห้ามเปลี่ยน template บน production โดยไม่มี rollback |
+| R5 | ข้อมูลสาธารณะล้าหลังได้ ≤ 5 นาที และ sitemap ไม่รีเฟรชเองบน Vercel เมื่อใช้ ISR | สื่อที่เพิ่งเผยแพร่/ปิด/ล็อกยังไม่สะท้อน และ sitemap อาจคง URL เดิม | ต้อง redeploy หลังเพิ่ม/เปลี่ยนสื่อ จนกว่าจะเปลี่ยน sitemap เป็น dynamic; ตัวเลือก: route ของแอดมินเรียก `revalidateTag("catalog")` หลังเปลี่ยน |
+| R6 | Flow ยืนยันอีเมลและ callback ยังต้องตรวจแบบ end-to-end บนสภาพแวดล้อมแยกก่อนเปลี่ยนการตั้งค่า | หากปรับโดยไม่ทดสอบ การสมัครหรือกู้คืนบัญชีอาจสะดุด | ตรวจ flow อีเมล/callback บน staging ก่อนปรับ template; รายละเอียดอยู่ในบันทึกส่วนตัว |
 | R7 | สิทธิ์เขียนของ `anon`/`authenticated` บนตารางอื่น (`profiles`, `resources`, `saved_resources`, `upgrade_requests`, `requests`) เหลือ ถูกกันด้วย RLS/trigger เท่านั้น (info) + `REFERENCES`/`TRIGGER`/`MAINTAIN`(PG17+) บน 10 object ของ 052 | ไม่เป็นช่องโหว่วันนี้ (ทดสอบทุกการเขียนแล้วถูกปฏิเสธ) | migration แยกหลังตรวจว่าแอปเขียนตารางไหนตรง (บางตารางแอดมินเขียนจาก browser จริง) |
 | R8 | session แบบ anonymous ของ Supabase ผ่าน guard ไม่เท่ากันในบาง RPC (info) | เข้าถึงไม่ได้วันนี้ (`profiles.email NOT NULL` ทำให้ session แบบนี้สมัครไม่ได้) | เติม guard `is_anonymous` ใน `create_membership_application` และ policy insert ของ `saved_resources` เผื่อวันที่ผ่อน NOT NULL |
 | R9 | ยังไม่มี Content-Security-Policy | ไม่มีชั้นกัน XSS เพิ่ม | เริ่มจาก report-only ที่ทดสอบกับ inline script ของ Next และฟอนต์ก่อน |
@@ -441,7 +456,7 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 
 1. ทำ R18 บน iPhone Safari, Android Chrome, LINE in-app browser และธุรกรรมเงินจริงหนึ่งรอบโดยเจ้าของระบบ.
 2. เลือก staging Supabase แยก: Branching (ต้อง Pro) หรือยืนยันว่า project เก่าที่ inactive สามารถ repurpose ได้; จากนั้น repair ledger 052–054 ตามขั้นตอนที่อนุมัติ.
-3. เฝ้าดู Vercel Firewall Log-only `/api/resources/*`; ถ้าจะ enforce rate limit ต้องอัปเกรด Pro/Enterprise หรือทำ throttle ฝั่งแอป/DB.
+3. ทบทวนมาตรการป้องกันการดึงสื่อจำนวนมาก (รายละเอียดอยู่ในบันทึกส่วนตัว).
 4. เพิ่มช่อง slug ในแอดมิน + RPC หลัง staging พร้อม (ข้อมูลปัจจุบันครบ 22/22 แล้ว).
 5. ปรับ token contrast (R12) เป็น PR โค้ดแยก และ QA สี/axe/viewport.
 6. migration เสริมความปลอดภัยหลัง staging พร้อม: scope policy Storage (R2/R3), throttle รีวิว (R4), เพิกถอนสิทธิ์เขียนที่เหลือของ anon/authenticated + `MAINTAIN` (R7), guard anonymous (R8).
