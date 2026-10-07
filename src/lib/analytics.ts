@@ -57,7 +57,6 @@ export const ALLOWED_PROPERTIES = new Set([
   "cta",
   "results_count",
   "query_length",
-  "term",
   "filters_count",
   "authenticated",
 ]);

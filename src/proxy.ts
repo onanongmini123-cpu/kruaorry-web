@@ -4,9 +4,18 @@ import { isProtectedAppPath } from "@/lib/routeAccess";
 import { authCompletionDestination } from "@/lib/authReturnPath";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 
+const NO_CACHE_HEADERS = ["cache-control", "expires", "pragma"] as const;
+
 function redirectWithRefreshedCookies(destination: URL, response: NextResponse): NextResponse {
   const redirect = NextResponse.redirect(destination);
   response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+  // A redirect can carry freshly issued auth cookies, so it gets the same
+  // no-store headers the auth library asked for, and never relies on a default.
+  for (const name of NO_CACHE_HEADERS) {
+    const value = response.headers.get(name);
+    if (value) redirect.headers.set(name, value);
+  }
+  if (!redirect.headers.has("cache-control")) redirect.headers.set("cache-control", "private, no-store");
   return redirect;
 }
 

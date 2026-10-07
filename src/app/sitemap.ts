@@ -3,8 +3,10 @@ import { absoluteUrl } from "@/lib/site";
 import { resourceHref } from "@/lib/resourceUrl";
 import { loadPublicResources } from "./resources/data";
 
-// Refresh hourly so newly published resources reach search engines without a deploy.
-export const revalidate = 3600;
+// Rebuilt as often as the shared catalogue cache (5 minutes), so newly
+// published resources reach search engines without a deploy and a transient
+// database error never leaves an empty sitemap in place for long.
+export const revalidate = 300;
 
 /**
  * Public, indexable pages only: the landing page, the library, legal pages and

@@ -12,7 +12,7 @@ view, a successful call).
 | Event | When | Properties |
 | --- | --- | --- |
 | `home_view` | The landing page is shown | none |
-| `search` | A search on the landing page, or a library page with a search or filters | `source`, `term`, `query_length`, `results_count`, `filters_count` |
+| `search` | A search on the landing page, or a library page with a search or filters | `source`, `query_length`, `results_count`, `filters_count` |
 | `resource_view` | A resource detail page is shown | `resource_id`, `slug`, `access_tier`, `delivery_mode`, `authenticated` |
 | `resource_start` | The main button is pressed by a viewer who can use the resource | `resource_id`, `slug`, `access_tier`, `delivery_mode`, `source` |
 | `outbound_game_open` | The same press when the resource is a web game or tool that opens another site | `resource_id`, `source` |
@@ -42,7 +42,8 @@ view, a successful call).
 Only the property names in `ALLOWED_PROPERTIES` are sent. Strings are cut to 80
 characters, and anything that looks like an email address or a phone number is
 dropped. No user id, name, email, IP address or user-agent string is ever part
-of an event. The search `term` is sent only if it passes those checks.
+of an event. The words typed into search are never sent (people type names and
+schools there); only the length of the search and how many results it had are.
 
 ## Connecting a tool
 

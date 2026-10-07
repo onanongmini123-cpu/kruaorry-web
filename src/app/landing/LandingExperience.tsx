@@ -105,7 +105,6 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
     setHasSearched(true);
     trackEvent("search", {
       source: "home",
-      term: query,
       query_length: query.length,
       results_count: filterDiscoveredResources(discoverableResources, { query }).length,
     });

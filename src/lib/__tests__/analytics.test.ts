@@ -21,13 +21,15 @@ describe("sanitizeProperties", () => {
   });
 
   it("drops values that look like an email or a phone number, even under an allowed name", () => {
-    expect(sanitizeProperties({ term: "teacher@school.ac.th", source: "081 234 5678", mode: "0812345678" })).toEqual({});
-    expect(sanitizeProperties({ term: "ศัพท์ ป.3" })).toEqual({ term: "ศัพท์ ป.3" });
+    expect(sanitizeProperties({ source: "teacher@school.ac.th", cta: "081 234 5678", mode: "0812345678" })).toEqual({});
+    expect(sanitizeProperties({ cta: "ศัพท์ ป.3" })).toEqual({ cta: "ศัพท์ ป.3" });
+    // What a visitor typed into search may be a name or a school: it is never reported.
+    expect(sanitizeProperties({ term: "ครูสมชาย ใจดี โรงเรียนวัดป่า", query: "ครูสมชาย", q: "x" })).toEqual({});
   });
 
   it("bounds strings and ignores non-finite numbers and empty text", () => {
-    expect(sanitizeProperties({ term: "ก".repeat(300) }).term).toHaveLength(80);
-    expect(sanitizeProperties({ results_count: Number.NaN, term: "   " })).toEqual({});
+    expect(sanitizeProperties({ cta: "ก".repeat(300) }).cta).toHaveLength(80);
+    expect(sanitizeProperties({ results_count: Number.NaN, cta: "   " })).toEqual({});
     expect(sanitizeProperties(undefined)).toEqual({});
   });
 

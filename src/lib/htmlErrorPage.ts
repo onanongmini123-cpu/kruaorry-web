@@ -15,6 +15,21 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+const DEFAULT_ACTION: ErrorPageAction = { href: "/app", label: "กลับไปที่แอป" };
+
+/**
+ * The next step is always a path on this site. Anything else (another origin,
+ * a protocol-relative or backslash path, a script URL) falls back to the app,
+ * so a future caller cannot turn this page into an open redirect or a
+ * script link by passing a computed value.
+ */
+function internalHref(value: string | undefined): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) {
+    return DEFAULT_ACTION.href;
+  }
+  return value;
+}
+
 /**
  * Friendly, self-contained Thai error page for route handlers that open in a
  * new tab (resource open / download). Always `no-store` with no referrer, so
@@ -47,7 +62,7 @@ export function htmlErrorPage(
   <main>
     <h1>${escapeHtml(heading)}</h1>
     <p>${escapeHtml(message)}</p>
-    <p><a href="${escapeHtml(action?.href ?? "/app")}">${escapeHtml(action?.label ?? "กลับไปที่แอป")}</a></p>
+    <p><a href="${escapeHtml(internalHref(action?.href))}">${escapeHtml(action?.label ?? DEFAULT_ACTION.label)}</a></p>
   </main>
 </body>
 </html>`;
