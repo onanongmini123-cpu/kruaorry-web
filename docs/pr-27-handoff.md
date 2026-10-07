@@ -1,8 +1,25 @@
 # PR #27 — รายงานส่งมอบงาน (Engineering handoff)
 
-> **สถานะ: Ready for Review** (เจ้าของระบบกดเมื่อ 2026-10-07) — **แต่ยังห้าม merge, ห้าม deploy production, ห้าม apply migration** จนกว่ารายการข้อ 3.3 และ Manual QA ข้อ 8 เสร็จ
-> **ขอบเขตการตรวจ:** โค้ดใน repo + ไฟล์ migration เท่านั้น **ไม่ได้เรียกหรือแก้ Supabase production** — SQL ทดสอบบนสำเนาในเครื่อง (PGlite เล่น migration 001–051 จริงซ้ำทั้งสาย), หน้าเว็บทดสอบกับ mock REST ในเครื่อง
-> **อ่านส่วนไหน:** เจ้าของระบบ → ข้อ 0, 1, 3.3, 8, 12, 13 · นักพัฒนาที่จะ rollout โดยไม่ต้องถามเจ้าของ → ข้อ 5, 9, 10, 11 (ทำตามลำดับ มีเงื่อนไขหยุดทุกขั้น)
+> **สถานะปัจจุบัน (อัปเดต 2026-10-07): Rolled out to production** — PR #27 merge เข้า `main` แล้วที่ `39e2cb8`; Vercel production ใช้โค้ดชุดนี้ และ verification ของ 052/053/054 ผ่านบน production
+> **คำเตือนสำคัญเรื่อง migration ledger:** schema production มีผลของ 052–054 ครบ แต่ `supabase_migrations.schema_migrations` ยังหยุดที่ 051 ห้ามรัน `db push` หรือ apply 052–054 ซ้ำโดยไม่ตรวจ ให้ reconcile ด้วย `supabase migration repair --status applied` เฉพาะหลังได้รับอนุมัติ
+> **วิธีอ่านเอกสาร:** ส่วน “สถานะ Production หลัง rollout” ด้านล่างคือข้อเท็จจริงล่าสุด ส่วนข้อความ Ready for Review / ยังไม่ deploy / ยังไม่ apply ใน runbook เดิมถือเป็นบันทึกก่อน rollout และห้ามนำไปรันซ้ำโดยไม่ตรวจสถานะจริง
+
+## สถานะ Production หลัง rollout (2026-10-07)
+
+| รายการ | ผลล่าสุด |
+| --- | --- |
+| Git / Vercel | PR #27 merge แล้วที่ `39e2cb8`; production redeploy จาก commit เดิมสำเร็จ |
+| Migration 052 | `052-verify.sql` ผ่านครบ 29 แถวบน production |
+| Migration 053 | `053-verify.sql` ผ่าน; 17 จาก 22 สื่อมี slug และอีก 5 รายการยังใช้ UUID |
+| Migration 054 | `054-verify.sql` ผ่านครบ 7 แถวบน production |
+| Migration ledger | remote ledger ยังแสดงถึง 051 เท่านั้น — เป็น history drift ที่ต้อง repair metadata ก่อน migration รอบถัดไป |
+| Sitemap | หลัง redeploy แสดง 17 slug + 5 UUID; custom domain และ Vercel origin ให้ผลตรงกัน; UUID ที่มี slug redirect 308 ไป canonical slug |
+| Preview database | Vercel Preview ใช้ Supabase production ตัวเดียวกัน จึงไม่ใช่พื้นที่ซ้อม migration หรือ destructive QA |
+| Vercel Firewall | เปิดกฎ Log-only สำหรับ path ที่ขึ้นต้น `/api/resources/`; ยังไม่บล็อกและยังไม่ rate-limit |
+| Supabase Auth | ตรวจแบบ read-only แล้ว: Confirm email เปิด, anonymous sign-in ปิด, minimum password 6, leaked-password protection ปิด (Pro), redirect allow-list 3 รายการ; ยังไม่ได้เปลี่ยนค่า |
+| QA ที่ยังค้าง | R18: iPhone Safari, Android Chrome, LINE in-app browser และธุรกรรมเงินจริงหนึ่งรอบ |
+
+**บทเรียนหลัง rollout:** catalog มีแคชข้อมูล 5 นาทีและ sitemap มีชั้น ISR ซ้อน จึงอาจใช้เวลาประมาณ 10 นาทีและ request แรกหลัง stale อาจยังได้ฉบับเดิม; redeploy จาก commit เดิมช่วยสร้าง sitemap ใหม่. Preview ที่ชี้ฐานข้อมูล production ต้องถือเป็น production ทุกครั้ง. ก่อน migration ใหม่ต้องมี staging แยกและแก้ ledger drift ให้เรียบร้อย.
 
 ---
 
@@ -10,20 +27,20 @@
 
 | เรื่อง | สถานะ |
 | --- | --- |
-| Security audit (source + migrations + ฐานข้อมูลจำลองที่เล่นสายจริง) | ทำแล้ว แก้ในโค้ดตามตาราง 3.1 + migration 052 (ยังไม่ apply); ไม่พบ secret รั่ว; ไม่พบทางเลี่ยงสิทธิ์ (ตาราง 3.2); ความเสี่ยงที่ยอมรับ/ยังไม่แก้อยู่ข้อ 12 |
+| Security audit (source + migrations + ฐานข้อมูลจำลองที่เล่นสายจริง) | ทำแล้ว แก้ในโค้ดตามตาราง 3.1; ผลของ migration 052 บน production ผ่าน verification แล้ว แต่ ledger ยังไม่บันทึก 052; ไม่พบ secret รั่ว; ไม่พบทางเลี่ยงสิทธิ์ (ตาราง 3.2); ความเสี่ยงที่ยอมรับ/ยังไม่แก้อยู่ข้อ 12 |
 | ข้อความเทคนิค/error ดิบใน UI ผู้ใช้ | ทำแล้ว (ผ่านตัวช่วยเดียว `friendlyErrorMessage`) |
 | โมเดลสิทธิ์เดียว (ใช้ฟรี / สมาชิกฟรี / Teacher Pro) | ทำแล้ว + matrix test 35 กรณี + ทดสอบ route เปิด/ดาวน์โหลดกับ URL ที่ถูกคัดลอก |
 | Pricing (Free + Teacher Pro, Founder = "จำกัด 100 บัญชีแรก") | ทำแล้ว ข้อมูลมาจากตาราง plans |
 | Resource Card / Detail / Related / Filters / Search / Empty state | ทำแล้ว; ค้นหาทนคำพิมพ์ผิด/ระดับชั้นหลายรูปแบบ (ข้อ 4) |
 | หน้าแรก (hero, 4 การ์ด, server-rendered) | ทำแล้ว |
 | Mobile 375–1366 + แป้นพิมพ์ + tap target 44px | ทดสอบด้วย Chromium จำลอง + แก้ที่พบ (ข้อ 4, 6); **ยังต้องทดสอบเครื่องจริง** |
-| SEO (slug, canonical, OG, sitemap, robots, noindex, metadata ไม่ซ้ำ) | โค้ด Phase A พร้อม deploy ก่อน migration; Phase B = migration 053 |
+| SEO (slug, canonical, OG, sitemap, robots, noindex, metadata ไม่ซ้ำ) | rollout แล้ว; 17 สื่อใช้ slug, 5 สื่อยังใช้ UUID และต้องตั้ง slug เพิ่ม |
 | Analytics | `trackEvent` กลาง เฉพาะ event ที่พิสูจน์ได้; ไม่ส่งคำที่ผู้ใช้พิมพ์ |
-| Report Problem + บริบทอัตโนมัติ + APP_VERSION | ทำแล้ว; หมวดใหม่รอ migration 054 |
-| Migration 052 / 053 / 054 | **ปรับให้พร้อม rollout**: guard ตรวจก่อนเขียน, รันซ้ำได้, atomic, rollback ที่ทดสอบแล้ว, SQL ตรวจผลแบบ read-only; ทดสอบกับสายจริง 001–051 (ข้อ 5) |
+| Report Problem + บริบทอัตโนมัติ + APP_VERSION | rollout แล้ว; ผลของ migration 054 ผ่าน verification บน production |
+| Migration 052 / 053 / 054 | schema production ผ่าน verification แล้ว; **ledger ยังหยุดที่ 051** จึงต้อง repair metadata ก่อน migration ถัดไปและห้าม apply ซ้ำแบบ blind |
 | Dependencies | next 16.3.8 / sharp 0.35.5 / source-map-js 1.2.2; `npm audit --omit=dev` = **0** (main = 3 รวม 1 critical) ไม่มี package เพิ่ม/ลด |
 
-**สิ่งที่ไม่ได้ทำโดยตั้งใจ:** merge, deploy, apply migration, แตะ Supabase production, หมุน secret (ไม่พบ secret รั่ว), เปลี่ยนราคา/สิทธิ์/จำนวน Founder/ตรรกะชำระเงิน, สร้างข้อมูลหรือรีวิวปลอม, เปิด PR อื่น (รายการเต็มข้อ 13)
+**สิ่งที่ยังไม่ได้ทำ:** ทดสอบ R18 บนเครื่องจริงและชำระเงินจริง, สร้าง staging Supabase แยก, เปลี่ยน Supabase Auth settings, ตั้ง slug อีก 5 รายการ, เปิด analytics provider, และแก้ความเสี่ยง follow-up ในข้อ 12. ข้อความ “ไม่ได้ทำ” ในรายงานเดิมด้านล่างเป็นหลักฐาน ณ เวลาก่อน rollout.
 
 ---
 
@@ -37,9 +54,9 @@
 | Browser QA บน build จริง (Chromium จำลอง + mock Supabase) | สาธารณะ 114 หน้า · สมาชิก 192 หน้า · ปฏิสัมพันธ์ 31/31 · ล็อกอิน/ออก/สมัคร/ลืมรหัส 33/33 · แป้นพิมพ์ 37/37 · axe 36 มุมมอง เหลือ 1 กฎ (contrast ของสีแบรนด์ — ต้องให้เจ้าของตัดสินใจ ข้อ 12) |
 | ข้อสมมติเรื่อง DB | โค้ดทำงานได้ทั้ง **ก่อน** และ **หลัง** 052/053/054 (ทดสอบทั้งสองสถานการณ์) |
 | env / secrets ที่ต้องหมุน | **ไม่พบ** secret ใน repo (สแกนทั้ง repo + ผู้ตรวจอิสระ) ไม่มี env ใหม่ที่ต้องตั้ง — โค้ดอ่านเฉพาะ `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_VERSION` (สร้างตอน build จาก `package.json` + `VERCEL_GIT_COMMIT_SHA`) |
-| Manual QA | เช็กลิสต์ข้อ 8 — เป็นของเจ้าของระบบ ทำบน Vercel Preview |
+| Manual QA | QA จำลองผ่านตามหลักฐานเดิม; R18 บน iPhone Safari, Android Chrome, LINE in-app browser และธุรกรรมเงินจริงยังค้าง และต้องทำกับ production/test account ที่ควบคุมได้ ไม่ใช่ Preview ที่ใช้ DB เดียวกันโดยไม่วางแผน |
 
-**ข้อสรุป:** เกณฑ์ฝั่งวิศวกรรมผ่านครบ จึงเปลี่ยนเป็น Ready for Review แล้ว (เจ้าของกด) · **ยังห้าม merge / deploy / apply migration** จนกว่ารายการข้อ 3.3 และ Manual QA ข้อ 8 เสร็จ — ปุ่ม Merge บน GitHub ใช้งานได้แล้วหลังพ้นสถานะ Draft จึงต้องระวังไม่กดก่อนเวลา
+**ข้อสรุปปัจจุบัน:** gate ฝั่งวิศวกรรมผ่านและ rollout แล้ว. ห้ามรัน runbook rollout ซ้ำ; งานค้างหลักคือ R18, staging แยก, migration-ledger repair และ follow-up ที่จัดลำดับในข้อ 14.
 
 ---
 
@@ -103,12 +120,12 @@
 - **ขีดจำกัดฝั่ง DB ที่มีอยู่:** คำขอ 5 ต่อ 24 ชม., รายงานปัญหา 5 ต่อชม. (+ ไม่ซ้ำตามหมวดที่ยังไม่แก้), บันทึกรายการโปรด 10 สำหรับสมาชิกฟรี, ชื่อ 2–80 ตัวอักษร, bucket รูปโปรไฟล์/ไฟล์สื่อจำกัดขนาด/ชนิด.
 - **ไม่ได้ตรวจ (ผู้ตรวจรายงานไว้):** ข้อความ error หน้า login ในแง่ user enumeration; logic ฝั่ง client ของ `ProfileSettings`/`AvatarCropper` แบบเต็ม; ทุกขั้นตอน UI ของแอดมิน.
 
-### 3.3 ต้องให้เจ้าของระบบตรวจเอง (ผมตรวจจาก repo ไม่ได้)
+### 3.3 ผลตรวจระบบภายนอกและรายการที่ยังต้องตรวจเอง
 
-1. **Supabase Storage:** policy จริงของ bucket ไฟล์สื่อ (private, ไม่มี public read) และ TTL ของ signed URL; ดูความเสี่ยง R2/R3 ข้อ 12.
-2. **Supabase Auth:** ต้องยืนยันอีเมล, Redirect URL allow-list ครอบ `https://kruaorry.com/**` (และโดเมน Preview ที่ใช้), ความยาวรหัสผ่านขั้นต่ำ/ตรวจรหัสรั่ว, rate limit, ปิด anonymous sign-in ถ้าไม่ได้ใช้, **email template ต้องเป็นแบบ PKCE (`code`)** (ดู R6).
-3. **Migration 049–051 ถูก apply จริงบน production** (รายงานของคุณระบุว่าถึง 051) — รัน `supabase/verification/pre-check.sql` (ข้อ 5.4) ซึ่งเป็นหลักฐานตรงกว่า.
-4. **Vercel:** `kruaorry.com` เป็นโดเมนหลัก (canonical ในโค้ดเป็น `https://kruaorry.com`), `www` redirect มาที่เดียวกัน; **Preview ชี้ Supabase ตัวไหน** (ดูข้อ 9 ขั้น 0); Deployment Protection; พิจารณากฎ WAF rate limit `/api/resources/*` (R1).
+1. **Supabase Storage:** ยังต้องตรวจ policy จริงของ bucket ไฟล์สื่อ (private, ไม่มี public read) และ TTL ของ signed URL; ดูความเสี่ยง R2/R3 ข้อ 12.
+2. **Supabase Auth (ตรวจ read-only แล้ว 2026-10-07):** Confirm email เปิด, anonymous sign-in ปิด, minimum password 6, leaked-password protection ปิดเพราะเป็นฟีเจอร์ Pro, Site URL = `https://kruaorry.com`, redirect allow-list = Vercel production wildcard + `/auth/callback**` + `/reset-password`. Confirm-signup template ยังใช้ `.ConfirmationURL`; reset-password ใช้ `token_hash`. ยังไม่ได้เปลี่ยนค่าใด ต้องออกแบบ callback/test ก่อนเปลี่ยน template และควรพิจารณาเพิ่ม minimum password เป็นอย่างน้อย 8.
+3. **Migration 052–054:** schema production ผ่าน verification แล้ว แต่ ledger ยังหยุดที่ 051; ต้อง repair ledger metadata หลังอนุมัติและก่อน migration ใหม่.
+4. **Vercel:** `kruaorry.com` เป็นโดเมนหลัก; ยืนยันแล้วว่า Preview ใช้ Supabase production ตัวเดียวกัน. Firewall มีกฎ Log-only ที่ `/api/resources/*`; แผนปัจจุบันยังไม่รองรับ rate-limit action จนกว่าจะอัปเกรด Pro/Enterprise.
 5. Repo เป็น private หรือไม่ (migration และโครงสร้างสิทธิ์อยู่ใน repo).
 6. `X-Frame-Options: SAMEORIGIN` จะกันการฝังหน้าเว็บนี้ใน iframe ของเว็บอื่น — ถ้ามีพาร์ตเนอร์ฝังอยู่ต้องแจ้งก่อน.
 7. ทดสอบบนเครื่องจริง (iOS Safari, Android Chrome, LINE in-app browser) และการชำระเงินจริงตามขั้นตอนของคุณ.
@@ -135,7 +152,7 @@
 
 ## 5. Database
 
-ทั้งหมดเป็น **ไฟล์เท่านั้น ยังไม่ apply** ที่ไหน. ทุกไฟล์รันซ้ำได้, ไม่ลบข้อมูล, ไม่ขยายสิทธิ์ของ browser role, และมี guard + rollback + SQL ตรวจผล.
+> **สถานะหลัง rollout:** ผลของทั้งสามไฟล์อยู่บน production และ verification ผ่าน แต่ ledger ยังไม่บันทึก 052–054. เนื้อหาด้านล่างเป็น runbook/หลักฐานก่อน rollout ไม่ใช่คำสั่งให้ apply ซ้ำ. ทุกไฟล์ออกแบบให้รันซ้ำได้ ไม่ลบข้อมูล ไม่ขยายสิทธิ์ browser role และมี guard + rollback + SQL ตรวจผล แต่ควร repair ledger แทนการรันซ้ำ.
 
 ### 5.1 ภาพรวม
 
@@ -281,7 +298,7 @@ supabase db push                                 # apply ตามลำดั�
 
 ---
 
-## 8. Manual QA checklist (รันบน Vercel Preview ก่อน; ใช้บัญชีทดสอบ)
+## 8. Manual QA checklist (หลักฐานเดิม + R18 ที่ยังต้องรันบนเครื่องจริง)
 
 ### ACCESS
 - [ ] ไม่ล็อกอิน: ป้ายสื่อ public = "ใช้ฟรี", สื่อสำหรับสมาชิก = "สมาชิกฟรี", สื่อแพ็ก = "Teacher Pro" (ป้ายไม่เปลี่ยนเมื่อล็อกอินด้วยบัญชีอื่น)
@@ -301,7 +318,7 @@ supabase db push                                 # apply ตามลำดั�
 - [ ] หน้า `/app` คลังสื่อที่ 1024–1300px ตัวกรองไม่ถูกตัด
 - [ ] พิมพ์ในช่องค้นหาด้วยแป้นพิมพ์ไทยบนมือถือ (ป.3, ประถม 3, grammer) ผลถูกต้อง ไม่ค้าง
 
-### PURCHASE (ห้ามใช้เงินจริง; ทดสอบบน Preview DB)
+### PURCHASE (รายการเดิมใช้ Preview; R18 รอบถัดไปใช้ธุรกรรมจริงที่เจ้าของควบคุมและบันทึกผล)
 - [ ] `/membership` ผู้เยี่ยมชม → ล็อกอิน → กลับมาเลือกแพ็ก → สร้างเลขอ้างอิง ("การสร้างเลขอ้างอิงยังไม่นับสิทธิ์/ยังไม่จองสิทธิ์")
 - [ ] ขั้นตอนส่งสลิปทาง LINE และสถานะ "รอตรวจ"; แอดมินยืนยัน → สิทธิ์ใช้งาน → สื่อ Pro เปิดได้
 - [ ] Founder: หน้าสาธารณะเห็นเฉพาะ "จำกัด 100 บัญชีแรก" (ไม่มีตัวเลขคงเหลือ/แถบ); แอดมินเห็นจำนวนจริง; เมื่อเต็มระบบยังบล็อกการสมัครราคา Founder
@@ -327,7 +344,9 @@ supabase db push                                 # apply ตามลำดั�
 
 ---
 
-## 9. ลำดับ rollout production (runbook สำหรับนักพัฒนา)
+## 9. ลำดับ rollout production (บันทึก runbook ที่ใช้แล้ว — ห้ามรันซ้ำแบบ blind)
+
+> ขั้นตอนนี้ถูกดำเนินการแล้ว. ก่อนใช้ในอนาคตต้องอ่าน “สถานะ Production หลัง rollout” และตรวจ ledger/schema ใหม่ทุกครั้ง โดยเฉพาะ history drift ของ 052–054.
 
 ผู้ทำ: นักพัฒนาที่มีสิทธิ์ Supabase/Vercel. เจ้าของระบบตัดสินใจเฉพาะ "merge" (ขั้น 1). **ทุกขั้นมีเงื่อนไขหยุด — ถ้าเจอ ให้หยุดและ rollback ตามข้อ 11 แล้วค่อยหาสาเหตุ**
 
@@ -395,23 +414,23 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 
 | # | เรื่อง | ผลกระทบ | ทางลด / ข้อเสนอ |
 | --- | --- | --- | --- |
-| R1 | route เปิด/ดาวน์โหลดสื่อ (ออก signed URL) ไม่มี throttle ต่อผู้ใช้/ไอพี — บัญชีเดียววนเรียกเพื่อดึงสื่อทั้งคลัง/แชร์บัญชีได้ (กลาง; ผลคือต้นทุน/การละเมิด ไม่ใช่ข้อมูลรั่ว) | ต้นทุน egress, การแจกจ่ายสื่อ Pro | **กฎ WAF บน Vercel** rate limit `/api/resources/*` (ไม่ต้องแก้โค้ด); ระยะยาว: RPC นับการดาวน์โหลดต่อผู้ใช้ที่ตารางเล็ก (ต้อง migration แยก) |
+| R1 | route เปิด/ดาวน์โหลดสื่อ (ออก signed URL) ยังไม่มี throttle ต่อผู้ใช้/ไอพี — บัญชีเดียววนเรียกเพื่อดึงสื่อทั้งคลัง/แชร์บัญชีได้ (กลาง; ผลคือต้นทุน/การละเมิด ไม่ใช่ข้อมูลรั่ว) | ต้นทุน egress, การแจกจ่ายสื่อ Pro | เปิดกฎ Vercel Firewall แบบ **Log-only** สำหรับ `/api/resources/*` แล้วเพื่อเก็บ baseline โดยไม่กระทบโรงเรียนที่ใช้ IP ร่วมกัน; rate-limit action ต้องอัปเกรดแผน Pro/Enterprise หรือทำ throttle ฝั่งแอป/DB |
 | R2 | สื่อ `public` แบบ **ไฟล์** ผู้เยี่ยมชมโหลดไม่ได้จริง — policy ของ Storage `resource_covers_admin_write` ไม่มี `TO` จึงถูกประเมินกับ anon แล้วเรียก `is_admin()` ที่ anon เรียกไม่ได้ (ต่ำ; ล้มแบบปลอดภัย = หน้า error) | ไม่มีสื่อ seed แบบนี้ในวันนี้ (public ทั้งหมดเป็นเว็บ) | migration แยกให้ policy เป็น `to authenticated` + ตัดสินใจเชิงผลิตภัณฑ์ว่าจะอนุญาต public+file หรือไม่ (นโยบาย 022 = ไฟล์ต้องสมัครสมาชิก) |
 | R3 | สมาชิกที่ล็อกอินทุกคนลิสต์ bucket `resource-covers` ได้ รวมปกของสื่อ draft/archived (ต่ำ; มีแค่ภาพและชื่อไฟล์) | ภาพก่อนเผยแพร่เห็นได้ | อัปโหลดปก draft ใต้ prefix ส่วนตัว หรือกรองลิสต์ด้วยสถานะ — หรือยอมรับความเสี่ยง |
 | R4 | รีวิวไม่มี throttle ต่อชั่วโมง (ต่ำ; รีวิวใหม่เป็น pending เห็นเฉพาะแอดมิน) | คิวตรวจรีวิวถูกท่วมได้ | ทำแบบเดียวกับรายงานปัญหา (เช่น 10 รีวิวใหม่/ชม.) ใน migration แยก |
 | R5 | ข้อมูลสาธารณะล้าหลังได้ ≤ 5 นาที (`/` และ sitemap ≤ ~10) | สื่อที่เพิ่งเผยแพร่/ปิด/ล็อกยังไม่สะท้อน | ตามข้อ 2; ตัวเลือก: route ของแอดมินเรียก `revalidateTag("catalog")` หลังเปลี่ยน |
-| R6 | ลิงก์ยืนยันอีเมลแบบ `token_hash` ไม่ผูก PKCE (info) — ผู้โจมตีส่งลิงก์ของตัวเองให้เหยื่อคลิก เหยื่อจะเข้า `/app` ในบัญชีผู้โจมตี | ต้องมีการคลิก; ไม่ได้ข้อมูลเหยื่อ | ใช้ email template แบบ PKCE (`code`) ซึ่งเป็นค่าเริ่มต้น; ตรวจที่ Supabase Auth (ข้อ 3.3) |
+| R6 | Confirm-signup template ปัจจุบันใช้ `.ConfirmationURL`; reset-password ใช้ `token_hash` ผ่าน app route แล้ว | ต้องตรวจ flow จริงก่อนเปลี่ยน template เพื่อไม่ให้ signup เสีย | ออกแบบ app-owned callback/PKCE ให้ครบ, ทดสอบ staging แล้วค่อยเปลี่ยนทีละค่า; ห้ามเปลี่ยน template บน production โดยไม่มี rollback |
 | R7 | สิทธิ์เขียนของ `anon`/`authenticated` บนตารางอื่น (`profiles`, `resources`, `saved_resources`, `upgrade_requests`, `requests`) เหลือ ถูกกันด้วย RLS/trigger เท่านั้น (info) + `REFERENCES`/`TRIGGER`/`MAINTAIN`(PG17+) บน 10 object ของ 052 | ไม่เป็นช่องโหว่วันนี้ (ทดสอบทุกการเขียนแล้วถูกปฏิเสธ) | migration แยกหลังตรวจว่าแอปเขียนตารางไหนตรง (บางตารางแอดมินเขียนจาก browser จริง) |
 | R8 | session แบบ anonymous ของ Supabase ผ่าน guard ไม่เท่ากันในบาง RPC (info) | เข้าถึงไม่ได้วันนี้ (`profiles.email NOT NULL` ทำให้ session แบบนี้สมัครไม่ได้) | เติม guard `is_anonymous` ใน `create_membership_application` และ policy insert ของ `saved_resources` เผื่อวันที่ผ่อน NOT NULL |
 | R9 | ยังไม่มี Content-Security-Policy | ไม่มีชั้นกัน XSS เพิ่ม | เริ่มจาก report-only ที่ทดสอบกับ inline script ของ Next และฟอนต์ก่อน |
 | R10 | `X-Frame-Options: SAMEORIGIN` | พาร์ตเนอร์ที่ฝังเว็บนี้จะเห็นว่าง | แจ้งก่อน (ข้อ 3.3) |
-| R11 | สื่อที่เผยแพร่หลัง 053 **ไม่ได้ slug อัตโนมัติ** (แอดมินและ `admin_save_resource` ยังไม่มีช่อง slug) — ใช้ URL แบบ UUID จนกว่าตั้งมือ | SEO ของสื่อใหม่ | ตั้งด้วย SQL (ข้อ 9 ขั้น 4.3) หรือเพิ่มช่อง slug/ RPC ใน PR ถัดไป |
-| R12 | **Contrast ของสีแบรนด์ต่ำกว่า WCAG AA (4.5:1)**: ปุ่มหลัก `#8a6df0` + ตัวขาว = 3.80; ข้อความรอง `#8a809e` บนพื้น `#f1eff7`/`#f8f7fc`/ขาว = 3.25/3.48/3.71; ข้อความสีแบรนด์ `#7355da` บน `#ede7ff` = 4.32 (ไม่ได้แก้เพราะเป็นอัตลักษณ์แบรนด์) | ผู้มีสายตาไม่ดีอ่านยาก | ข้อเสนอที่เปลี่ยนน้อยที่สุด (เจ้าของอนุมัติก่อน): ปุ่มหลัก `#7d5cee` (4.53), ข้อความรอง `#6f6584` (4.76–5.43), ข้อความแบรนด์บนพื้นอ่อน `#6f50d9` (4.57) — เปลี่ยนที่ token ใน `globals.css` ที่เดียว |
+| R11 | สื่อ 5 รายการยังไม่มี slug และสื่อที่เผยแพร่หลัง 053 **ไม่ได้ slug อัตโนมัติ** (แอดมินและ `admin_save_resource` ยังไม่มีช่อง slug) | SEO ของสื่อใหม่ | ตั้ง slug 5 รายการหลังยืนยัน mapping; เพิ่มช่อง slug/RPC หลังมี staging แยก |
+| R12 | **Contrast ของสีแบรนด์ต่ำกว่า WCAG AA (4.5:1)**: ปุ่มหลัก `#8a6df0` + ตัวขาว = 3.80; ข้อความรอง `#8a809e` บนพื้น `#f1eff7`/`#f8f7fc`/ขาว = 3.25/3.48/3.71; ข้อความสีแบรนด์ `#7355da` บน `#ede7ff` = 4.32 | ผู้มีสายตาไม่ดีอ่านยาก | งานถัดไปที่อนุมัติแล้ว: ปุ่มหลัก `#7d5cee` (4.53), ข้อความรอง `#6f6584` (4.76–5.43), ข้อความแบรนด์บนพื้นอ่อน `#6f50d9` (4.57) — ทำเป็น PR โค้ดแยก |
 | R13 | `/membership` ที่ ≥ 1280px: หัวข้อ hero เปลี่ยนจากค่า fallback "299 บาทเฉพาะปีแรก" เป็นป้ายจากฐานข้อมูล "299 บาท (เฉพาะปีแรก)" แล้วตัดบรรทัดเป็น 2 บรรทัด → CLS 0.18 (**มีบน main เหมือนกัน**: build ของ main กับ mock เดียวกันแสดงหัวข้อเปลี่ยน 83 → 166 px ตามลำดับเดียวกัน จึงไม่ใช่ regression; ไม่ได้แก้เพราะเป็นข้อความแพ็ก/ราคาและมีเทสต์ล็อกข้อความเดิม) | กระตุกเล็กน้อยตอนโหลด หน้า noindex | ใช้สตริง fallback เดียวกับป้ายใน DB (migration 048 ตั้ง `299 บาท (เฉพาะปีแรก)`) + ปรับเทสต์ `membershipFrontend.test.ts` — เจ้าของอนุมัติเพราะแตะข้อความราคา |
 | R14 | proxy เพิ่มการเรียก auth 1 ครั้งต่อคำขอของสมาชิกที่ล็อกอินบน `/resources`, `/app` (ผู้เยี่ยมชมไม่มี) | ความหน่วง/โควตา Supabase Auth เพิ่มเล็กน้อย | เฝ้าดูโควตา; ถ้าจำเป็นลดด้วยการแคชผลชั่วคราว |
 | R15 | รูปปกเสิร์ฟขนาดต้นฉบับ; รีวิวดึงฝั่ง client ต่อการเปิดรายละเอียด | แบนด์วิดท์/เวลาโหลดบนมือถือช้า | image transformation ของ Supabase หรือ loader ของ `next/image`; ดึงรีวิวฝั่งเซิร์ฟเวอร์ |
 | R16 | dev-only npm advisories 6 รายการ (สาย lint/glob), `eslint@9` deprecated | ไม่ถูก ship; กระทบเครื่อง dev/CI | อัปเกรด eslint เมื่อ `eslint-config-next` รองรับ; ไม่ใช้ `npm audit fix --force` |
-| R17 | ข้อสมมติว่า Supabase CLI รันแต่ละไฟล์ในธุรกรรมเดียวยังไม่ได้ยืนยันกับโปรเจกต์จริง | ถ้าไม่เป็นเช่นนั้น ไฟล์ที่ล้มกลางทางอาจเหลือบางส่วน | ทุกไฟล์รันซ้ำได้ → แก้สาเหตุแล้วรันซ้ำเพื่อให้ครบ; apply บน Preview/branch ก่อนเสมอ |
+| R17 | production schema มีผลของ 052–054 แต่ migration ledger ยังหยุดที่ 051; Preview ใช้ DB production ตัวเดียวกัน | migration ถัดไปอาจพยายามรันไฟล์เก่าซ้ำ และไม่มีพื้นที่ซ้อมจริง | repair ledger หลังอนุมัติ แล้วสร้าง staging แยก (Supabase Branching บน Pro หรือ repurpose project เก่าหลังยืนยันว่าเขียนทับได้) ก่อน migration ใหม่ |
 | R18 | ยังไม่ได้ทดสอบ: เครื่องจริง (iOS/Android/LINE), Supabase Storage/Auth จริง, การชำระเงินจริง, นโยบายจริงบน production | — | รายการข้อ 3.3 และ 8 |
 
 ## 13. สิ่งที่ตั้งใจไม่เปลี่ยน
@@ -420,14 +439,13 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 
 ## 14. Follow-up (ไม่อยู่ใน PR นี้) — เรียงตามคุณค่า
 
-1. Vercel WAF rate limit `/api/resources/*` (R1) — ทำได้ทันทีโดยไม่ต้องแก้โค้ด.
-2. ตัดสินใจ token ของ contrast (R12) และ fallback ป้ายราคา `/membership` (R13).
-3. ช่อง slug ในแอดมิน + RPC (R11); คอลัมน์ `detail_content` + ที่กรอกในแอดมิน เพื่อเปิดหัวข้อเนื้อหาเชิงโครงสร้าง.
-4. migration เสริมความปลอดภัย: scope policy Storage (R2/R3), throttle รีวิว (R4), เพิกถอนสิทธิ์เขียนที่เหลือของ anon/authenticated + `MAINTAIN` (R7), guard anonymous (R8).
-5. Content-Security-Policy แบบ report-only ก่อน (R9).
-6. รวมข้อความราคา fallback (299/599) ใน `membership/page.tsx`, `terms`, `membershipJourney`, `adminMembership` ให้อ่านจากค่าตั้งเดียว + เทสต์กันคลาดเคลื่อน (ต้องให้เจ้าของยืนยันแหล่งความจริงก่อน — ไม่ได้แตะเพราะเกี่ยวกับการชำระเงิน).
-7. รูปปก: image transformation/`next/image` loader (R15); ดึงรีวิวฝั่งเซิร์ฟเวอร์.
-8. `/app` คลังสื่อมีช่องค้นหาสองช่อง (หัวหน้าจอ + ในคลัง) ผูกกับค่าเดียวกัน — ควรตัดช่องใดช่องหนึ่งออก (ตัดสินใจเชิงดีไซน์); ปุ่มให้ดาวรีวิวเริ่มที่ 5 ดาวโดยปริยาย — ควรเริ่มที่ยังไม่เลือก (พฤติกรรมเดิม).
-9. ค้นหาในหัวหน้า (header search) สำหรับหน้าที่ไม่ใช่หน้าแรก.
-10. ตั้งค่า GTM/Plausible จริงตาม `docs/analytics.md` เมื่อพร้อมวัดผล.
-11. ทดสอบอุปกรณ์จริง (iOS Safari, Android Chrome, LINE in-app browser).
+1. ทำ R18 บน iPhone Safari, Android Chrome, LINE in-app browser และธุรกรรมเงินจริงหนึ่งรอบโดยเจ้าของระบบ.
+2. เลือก staging Supabase แยก: Branching (ต้อง Pro) หรือยืนยันว่า project เก่าที่ inactive สามารถ repurpose ได้; จากนั้น repair ledger 052–054 ตามขั้นตอนที่อนุมัติ.
+3. เฝ้าดู Vercel Firewall Log-only `/api/resources/*`; ถ้าจะ enforce rate limit ต้องอัปเกรด Pro/Enterprise หรือทำ throttle ฝั่งแอป/DB.
+4. ตั้ง slug 5 รายการที่เหลือหลังยืนยัน mapping; เพิ่มช่อง slug ในแอดมิน + RPC หลัง staging พร้อม.
+5. ปรับ token contrast (R12) เป็น PR โค้ดแยก และ QA สี/axe/viewport.
+6. migration เสริมความปลอดภัยหลัง staging พร้อม: scope policy Storage (R2/R3), throttle รีวิว (R4), เพิกถอนสิทธิ์เขียนที่เหลือของ anon/authenticated + `MAINTAIN` (R7), guard anonymous (R8).
+7. เปิด analytics provider ตาม `docs/analytics.md` เมื่อพร้อมวัดผล แล้วจึงเริ่ม CSP แบบ report-only (R9) และวัดรูปปกก่อนปรับ image transformation (R15).
+8. รวมข้อความราคา fallback (299/599) ใน `membership/page.tsx`, `terms`, `membershipJourney`, `adminMembership` ให้อ่านจากค่าตั้งเดียว + เทสต์กันคลาดเคลื่อน (ต้องให้เจ้าของยืนยันแหล่งความจริงก่อน).
+9. `/app` คลังสื่อมีช่องค้นหาสองช่องผูกกับค่าเดียวกัน — ตัดสินใจเชิงดีไซน์ก่อนลดเหลือหนึ่ง; ปุ่มให้ดาวรีวิวควรเริ่มที่ยังไม่เลือก.
+10. ค้นหาในหัวหน้า (header search) สำหรับหน้าที่ไม่ใช่หน้าแรก.
