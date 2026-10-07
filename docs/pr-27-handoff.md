@@ -49,7 +49,7 @@
 
 **ข้อมูลสาธารณะ** — คลังสื่อสาธารณะอ่านครั้งเดียวด้วย Supabase anon client แบบไม่ผูก cookie + `unstable_cache` 5 นาที (`src/app/resources/data.ts`) ใช้ร่วมกันระหว่างหน้ารายการ หน้ารายละเอียด related, sitemap และหน้าแรก. หน้าแรกเป็น server component (`revalidate = 300`); ถ้าอ่านฝั่งเซิร์ฟเวอร์ไม่ได้ ฝั่งเบราว์เซอร์จะดึงเองเหมือนเดิม. ข้อมูลเฉพาะผู้ดู (สิทธิ์ แพ็ก คำขออัปเกรดที่รอ) อ่านต่อคำขอผ่าน cookie จึง **ไม่เข้าแคชที่ใช้ร่วมกัน**.
 
-**ข้อแลกเปลี่ยนที่ควรรู้ (caching):** หน้าสาธารณะอ่านจากแคช 5 นาที — สื่อที่เพิ่ง *เผยแพร่/แก้ไข/ปิด* ในแอดมินขึ้นหน้าสาธารณะภายใน ≤ 5 นาที (`/resources`, รายละเอียด), ≤ ~10 นาที (`/` และ sitemap ซึ่งมีชั้น ISR ซ้อนบนแคชข้อมูล). หน้า `/app` ของสมาชิกอ่านตรงจึงเห็นทันที. ป้าย/ปุ่มอาจล้าหลังได้ตามช่วงนั้นเมื่อมีการเปลี่ยนสิทธิ์ของสื่อ แต่การตัดสินสิทธิ์ตอนกดเปิด/ดาวน์โหลดตรวจสดที่เซิร์ฟเวอร์ทุกครั้ง ไม่ผ่านแคช จึงไม่เปิดสิทธิ์เกิน (ผลกระทบสูงสุด: สื่อที่เพิ่งล็อกยังโชว์ปุ่มเล่นฟรี ≤ 5 นาที แล้วคลิกได้หน้า error ภาษาไทย). การสั่งล้างแคชทันทีต้องมี endpoint ที่ใช้ secret ใหม่ จึงไม่ใส่ใน PR นี้. proxy ที่ `/resources` เพิ่มการตรวจ session ต่อคำขอของสมาชิกที่ล็อกอิน (ผู้เยี่ยมชมที่ไม่มี cookie ไม่เรียกเครือข่าย) ทำให้คำขอของสมาชิกมีการเรียก auth 2 ครั้ง (proxy + server component).
+**ข้อแลกเปลี่ยนที่ควรรู้ (caching):** หน้าสาธารณะอ่านจากแคชที่ตั้งอายุไว้ 5 นาที — จากการวัดจริง สื่อที่เพิ่ง *เผยแพร่/แก้ไข/ปิด* ในแอดมินสะท้อนบน `/resources` และหน้ารายละเอียดในราว 5–6 นาที (หลังหมดอายุ คำขอแรกยังได้ข้อมูลเดิมและสั่งให้รีเฟรช คำขอถัดไปได้ข้อมูลใหม่), ส่วน `/` และ sitemap มีชั้น ISR ซ้อนบนแคชข้อมูล. หน้า `/app` ของสมาชิกอ่านตรงจึงเห็นทันที. ป้าย/ปุ่มอาจล้าหลังได้ตามช่วงนั้นเมื่อมีการเปลี่ยนสิทธิ์ของสื่อ แต่การตัดสินสิทธิ์ตอนกดเปิด/ดาวน์โหลดตรวจสดที่เซิร์ฟเวอร์ทุกครั้ง ไม่ผ่านแคช จึงไม่เปิดสิทธิ์เกิน (ผลกระทบสูงสุด: สื่อที่เพิ่งล็อกอาจยังโชว์ปุ่มเล่นฟรีราว 5–6 นาที แล้วคลิกได้หน้า error ภาษาไทย). การสั่งล้างแคชทันทีต้องมี endpoint ที่ใช้ secret ใหม่ จึงไม่ใส่ใน PR นี้. proxy ที่ `/resources` เพิ่มการตรวจ session ต่อคำขอของสมาชิกที่ล็อกอิน (ผู้เยี่ยมชมที่ไม่มี cookie ไม่เรียกเครือข่าย) ทำให้คำขอของสมาชิกมีการเรียก auth 2 ครั้ง (proxy + server component).
 
 **URL สื่อ** — `/resources/[id]` → `/resources/[key]` รับทั้ง UUID และ slug. UUID → 308 ไป slug เฉพาะเมื่อสื่อนั้นมี slug แล้ว; ตัวพิมพ์ใหญ่ → 308 เป็นตัวเล็ก. อ่านคอลัมน์ `slug` ก่อน ถ้า DB ยังไม่มี (error 42703) ถอยไป query เดิมโดยอัตโนมัติ.
 
@@ -109,7 +109,7 @@
 2. **Supabase Auth:** ต้องยืนยันอีเมล, Redirect URL allow-list ครอบ `https://kruaorry.com/**` (และโดเมน Preview ที่ใช้), ความยาวรหัสผ่านขั้นต่ำ/ตรวจรหัสรั่ว, rate limit, ปิด anonymous sign-in ถ้าไม่ได้ใช้, **email template ต้องเป็นแบบ PKCE (`code`)** (ดู R6).
 3. **Migration 049–051 ถูก apply จริงบน production** (รายงานของคุณระบุว่าถึง 051) — รัน `supabase/verification/pre-check.sql` (ข้อ 5.4) ซึ่งเป็นหลักฐานตรงกว่า.
 4. **Vercel:** `kruaorry.com` เป็นโดเมนหลัก (canonical ในโค้ดเป็น `https://kruaorry.com`), `www` redirect มาที่เดียวกัน; **Preview ชี้ Supabase ตัวไหน** (ดูข้อ 9 ขั้น 0); Deployment Protection; พิจารณากฎ WAF rate limit `/api/resources/*` (R1).
-5. Repo เป็น private หรือไม่ (migration และโครงสร้างสิทธิ์อยู่ใน repo).
+5. Repo เป็น public (ยืนยัน 2026-10-07) — ห้ามใส่ค่าตั้งค่าความปลอดภัยหรือรายละเอียดความเสี่ยงที่ยังไม่แก้ใน repo; ใช้บันทึกส่วนตัวของเจ้าของระบบ.
 6. `X-Frame-Options: SAMEORIGIN` จะกันการฝังหน้าเว็บนี้ใน iframe ของเว็บอื่น — ถ้ามีพาร์ตเนอร์ฝังอยู่ต้องแจ้งก่อน.
 7. ทดสอบบนเครื่องจริง (iOS Safari, Android Chrome, LINE in-app browser) และการชำระเงินจริงตามขั้นตอนของคุณ.
 
@@ -218,7 +218,7 @@ supabase db push                                 # apply ตามลำดั�
 | --- | --- | --- | --- |
 | 052 | `…052….rollback.sql` | คืนสิทธิ์เขียนเดิมทั้ง 10 object (ACL เท่าก่อน 052 ทุกประการ) | — |
 | 054 | `…054….rollback.sql` | ลบ marker, คืนฟังก์ชัน 3 อาร์กิวเมนต์ + สิทธิ์ตาม 029, คืน CHECK 5 หมวด + ลบ `context` **เฉพาะเมื่อไม่มีรายงานหมวดใหม่**; ถ้ามี จะเก็บ CHECK ที่ขยายและ `context` ไว้ (ไม่ลบรายงานใด) และแจ้งด้วย NOTICE | แท็บที่เปิดค้างยังเสนอ 10 หมวดจนกว่าจะรีโหลด; ส่งหมวดใหม่หลัง rollback จะได้ข้อความขออภัยของแอป |
-| 053 | ทางเลือกที่ปลอดภัยเสมอ: `update public.resources set slug = null;` — ลิงก์กลับเป็น UUID ภายใน ≤ 5 นาที ไม่แตะ schema · หรือ `…053….rollback.sql` ลบ slug/constraint/index/คอลัมน์ | view `resource_catalog` ยังคงคอลัมน์ `slug` ที่เป็น NULL เสมอ (เพื่อไม่ต้องแตะ policy ของ `saved_resources` ที่พึ่ง view; แอปทั้งสองเวอร์ชันรองรับ) | **ห้าม** `drop view resource_catalog` มือ (`cascade` จะทิ้ง policy 2 ตัวของ `saved_resources`); ถ้า slug ถูก index/แชร์ไปแล้ว URL slug จะกลายเป็น 404 จนกว่าบอทจะ crawl ใหม่ — แก้ไปข้างหน้าแทน rollback |
+| 053 | ทางเลือกที่ปลอดภัยเสมอ: `update public.resources set slug = null;` — ลิงก์กลับเป็น UUID ในราว 5–6 นาที ไม่แตะ schema · หรือ `…053….rollback.sql` ลบ slug/constraint/index/คอลัมน์ | view `resource_catalog` ยังคงคอลัมน์ `slug` ที่เป็น NULL เสมอ (เพื่อไม่ต้องแตะ policy ของ `saved_resources` ที่พึ่ง view; แอปทั้งสองเวอร์ชันรองรับ) | **ห้าม** `drop view resource_catalog` มือ (`cascade` จะทิ้ง policy 2 ตัวของ `saved_resources`); ถ้า slug ถูก index/แชร์ไปแล้ว URL slug จะกลายเป็น 404 จนกว่าบอทจะ crawl ใหม่ — แก้ไปข้างหน้าแทน rollback |
 
 ทดสอบแล้ว: rollback แต่ละไฟล์คืนสถานะเดิมจริง (เทียบ fingerprint ของ ACL/view/constraint/index/function/policy/ข้อมูล) รันซ้ำได้ และ apply ไปข้างหน้าซ้ำหลัง rollback ได้ผลเท่าเดิม; ย้อนทั้งสามตามลำดับ 054 → 053 → 052 เหลือความต่างเพียงคอลัมน์ `slug` (NULL) ของ view.
 
@@ -319,7 +319,7 @@ supabase db push                                 # apply ตามลำดั�
 
 ### SEO-SLUG
 - [ ] **ก่อน 053:** `/resources/<uuid>` = 200, canonical เป็น UUID; `/resources/<slug>` = 404
-- [ ] **หลัง 053 (≤ 5 นาที):** `/resources/<uuid>` → 308 ไป slug; slug = 200; canonical = `https://kruaorry.com/resources/<slug>`; ตัวพิมพ์ใหญ่ → 308 เป็นตัวเล็ก; slug ที่ไม่มี = 404 (คำสั่งตรวจอยู่ข้อ 10)
+- [ ] **หลัง 053 (ราว 5–6 นาที):** `/resources/<uuid>` → 308 ไป slug; slug = 200; canonical = `https://kruaorry.com/resources/<slug>`; ตัวพิมพ์ใหญ่ → 308 เป็นตัวเล็ก; slug ที่ไม่มี = 404 (คำสั่งตรวจอยู่ข้อ 10)
 - [ ] `/sitemap.xml` มีเฉพาะ slug (ไม่มี UUID, ไม่มีสื่อ locked); `/robots.txt` ไม่มีบรรทัด `Host:` และ Disallow `/app /admin /auth /download /api /reset-password`
 - [ ] `/resources?q=…` หรือมีตัวกรอง → `noindex, follow` และ canonical `/resources`; `/login /membership /app /admin` noindex
 - [ ] JSON-LD (LearningResource + BreadcrumbList) ผ่าน Rich Results Test; ตัวอย่างแชร์ LINE/Facebook มีชื่อ+รูป (ไม่มีปก → ใช้ mascot); `/terms` `/privacy` มี description ของตัวเอง
@@ -350,7 +350,7 @@ supabase db push                                 # apply ตามลำดั�
 
 **ขั้น 4 — 053** (slug) — ทำสุดท้ายเพราะผู้ใช้/บอทเห็นผล
 1. `053-verify.sql` ผ่านทั้งหมด (แถว info: N slug, รายชื่อสื่อที่เผยแพร่แล้วยังไม่มี slug).
-2. รอ ≤ 5 นาที (หรือ redeploy) แล้วรันข้อ 10 (curl) ทั้งชุด.
+2. รอราว 5–6 นาที (หลังหมดอายุให้เปิดหน้ารายการสองครั้ง) หรือ redeploy แล้วรันข้อ 10 (curl) ทั้งชุด.
 3. ตั้ง slug ให้สื่อที่เผยแพร่แล้วแต่ยังไม่มี (R11) ถ้าต้องการ: `update public.resources set slug = 'my-slug' where id = '…';` (รูปแบบ/ซ้ำถูกปฏิเสธโดย DB).
 4. ส่ง sitemap ใหม่ใน Search Console.
 5. **หยุด** ถ้ามีหน้าสื่อใด 404/500 → `update public.resources set slug = null;` (ไม่แตะ schema).
@@ -399,7 +399,7 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 | R2 | สื่อ `public` แบบ **ไฟล์** ผู้เยี่ยมชมโหลดไม่ได้จริง — policy ของ Storage `resource_covers_admin_write` ไม่มี `TO` จึงถูกประเมินกับ anon แล้วเรียก `is_admin()` ที่ anon เรียกไม่ได้ (ต่ำ; ล้มแบบปลอดภัย = หน้า error) | ไม่มีสื่อ seed แบบนี้ในวันนี้ (public ทั้งหมดเป็นเว็บ) | migration แยกให้ policy เป็น `to authenticated` + ตัดสินใจเชิงผลิตภัณฑ์ว่าจะอนุญาต public+file หรือไม่ (นโยบาย 022 = ไฟล์ต้องสมัครสมาชิก) |
 | R3 | สมาชิกที่ล็อกอินทุกคนลิสต์ bucket `resource-covers` ได้ รวมปกของสื่อ draft/archived (ต่ำ; มีแค่ภาพและชื่อไฟล์) | ภาพก่อนเผยแพร่เห็นได้ | อัปโหลดปก draft ใต้ prefix ส่วนตัว หรือกรองลิสต์ด้วยสถานะ — หรือยอมรับความเสี่ยง |
 | R4 | รีวิวไม่มี throttle ต่อชั่วโมง (ต่ำ; รีวิวใหม่เป็น pending เห็นเฉพาะแอดมิน) | คิวตรวจรีวิวถูกท่วมได้ | ทำแบบเดียวกับรายงานปัญหา (เช่น 10 รีวิวใหม่/ชม.) ใน migration แยก |
-| R5 | ข้อมูลสาธารณะล้าหลังได้ ≤ 5 นาที (`/` และ sitemap ≤ ~10) | สื่อที่เพิ่งเผยแพร่/ปิด/ล็อกยังไม่สะท้อน | ตามข้อ 2; ตัวเลือก: route ของแอดมินเรียก `revalidateTag("catalog")` หลังเปลี่ยน |
+| R5 | ข้อมูลสาธารณะล้าหลังได้ราว 5–6 นาที (`/` และ sitemap มีชั้น ISR ซ้อน) | สื่อที่เพิ่งเผยแพร่/ปิด/ล็อกยังไม่สะท้อน | หลังหมดอายุ คำขอแรกยังได้ข้อมูลเดิมและสั่งให้รีเฟรช คำขอถัดไปได้ข้อมูลใหม่; ตัวเลือก: route ของแอดมินเรียก `revalidateTag("catalog")` หลังเปลี่ยน |
 | R6 | ลิงก์ยืนยันอีเมลแบบ `token_hash` ไม่ผูก PKCE (info) — ผู้โจมตีส่งลิงก์ของตัวเองให้เหยื่อคลิก เหยื่อจะเข้า `/app` ในบัญชีผู้โจมตี | ต้องมีการคลิก; ไม่ได้ข้อมูลเหยื่อ | ใช้ email template แบบ PKCE (`code`) ซึ่งเป็นค่าเริ่มต้น; ตรวจที่ Supabase Auth (ข้อ 3.3) |
 | R7 | สิทธิ์เขียนของ `anon`/`authenticated` บนตารางอื่น (`profiles`, `resources`, `saved_resources`, `upgrade_requests`, `requests`) เหลือ ถูกกันด้วย RLS/trigger เท่านั้น (info) + `REFERENCES`/`TRIGGER`/`MAINTAIN`(PG17+) บน 10 object ของ 052 | ไม่เป็นช่องโหว่วันนี้ (ทดสอบทุกการเขียนแล้วถูกปฏิเสธ) | migration แยกหลังตรวจว่าแอปเขียนตารางไหนตรง (บางตารางแอดมินเขียนจาก browser จริง) |
 | R8 | session แบบ anonymous ของ Supabase ผ่าน guard ไม่เท่ากันในบาง RPC (info) | เข้าถึงไม่ได้วันนี้ (`profiles.email NOT NULL` ทำให้ session แบบนี้สมัครไม่ได้) | เติม guard `is_anonymous` ใน `create_membership_application` และ policy insert ของ `saved_resources` เผื่อวันที่ผ่อน NOT NULL |
