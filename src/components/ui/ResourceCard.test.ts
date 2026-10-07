@@ -15,6 +15,21 @@ function render(props: Partial<ResourceCardProps> = {}) {
   return renderToStaticMarkup(React.createElement(ResourceCard, { ...base, ...props }));
 }
 
+describe("ResourceCard save button", () => {
+  it("stays focusable while the save is in flight (no disabled attribute) and says it is busy", () => {
+    const html = render({ onSave: () => {}, savePending: true });
+    expect(html).toMatch(/class="kru-resource-card__save"[^>]*aria-busy="true"/);
+    expect(html).toMatch(/class="kru-resource-card__save"[^>]*aria-disabled="true"/);
+    expect(html).not.toMatch(/class="kru-resource-card__save"[^>]*\sdisabled/);
+  });
+
+  it("has no busy attributes when idle", () => {
+    const html = render({ onSave: () => {}, saved: true });
+    expect(html).toMatch(/aria-pressed="true"/);
+    expect(html).not.toMatch(/class="kru-resource-card__save"[^>]*aria-busy/);
+  });
+});
+
 describe("ResourceCard content contract", () => {
   it("shows cover, title, a short blurb, grade, subject, type, access badge and one CTA", () => {
     const html = render({

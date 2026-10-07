@@ -81,7 +81,7 @@
   color: var(--brand);
 }
 
-.kru-resource-card__save:disabled {
+.kru-resource-card__save[aria-disabled="true"] {
   cursor: wait;
   opacity: 0.65;
 }

@@ -118,8 +118,10 @@ export function ResourceCard({
             aria-label={saved ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"}
             aria-pressed={Boolean(saved)}
             aria-busy={savePending || undefined}
-            disabled={savePending}
-            onClick={onSave}
+            // Not `disabled`: a focused button that becomes disabled drops keyboard
+            // focus to the page, so the member would have to tab from the top again.
+            aria-disabled={savePending || undefined}
+            onClick={savePending ? undefined : onSave}
           >
             <Heart size={20} fill={saved ? "currentColor" : "none"} aria-hidden="true" />
           </button>

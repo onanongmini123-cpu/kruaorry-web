@@ -271,13 +271,17 @@ img {
 .kru-btn:active {
   transform: scale(var(--press-scale));
 }
-.kru-btn:disabled {
+.kru-btn:disabled,
+.kru-btn[aria-disabled="true"] {
   cursor: not-allowed;
   background: var(--ink-100) !important;
   color: var(--text-faint) !important;
   border-color: transparent !important;
   box-shadow: none !important;
   transform: none;
+}
+.kru-btn[aria-busy="true"] {
+  cursor: progress;
 }
 .kru-btn--lg {
   min-height: 52px;
@@ -304,7 +308,7 @@ img {
   color: var(--text-on-brand);
   box-shadow: var(--shadow-brand), var(--shadow-inset-top);
 }
-.kru-btn--primary:hover:not(:disabled) {
+.kru-btn--primary:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--brand-hover);
 }
 .kru-btn--secondary {
@@ -313,21 +317,21 @@ img {
   border-color: var(--border-default);
   box-shadow: var(--shadow-xs);
 }
-.kru-btn--secondary:hover:not(:disabled) {
+.kru-btn--secondary:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--ink-50);
 }
 .kru-btn--soft {
   background: var(--brand-soft);
   color: var(--text-link);
 }
-.kru-btn--soft:hover:not(:disabled) {
+.kru-btn--soft:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--brand-soft-hover);
 }
 .kru-btn--ghost {
   background: transparent;
   color: var(--text-body);
 }
-.kru-btn--ghost:hover:not(:disabled) {
+.kru-btn--ghost:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--ink-100);
 }
 
