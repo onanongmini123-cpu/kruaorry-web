@@ -487,8 +487,9 @@ application first, then apply. The file can be applied twice; roll back with
 `npm run test:migration-chain-sql`.
 
 The three pending files above do not depend on each other: every apply order
-gives the same final state. See `docs/pr-27-handoff.md` for the rollout runbook
-(prerequisites, pre-check, apply, verification, rollback, post-deploy checks).
+gives the same final state. The hand-off report under `docs/` has the rollout
+runbook (prerequisites, pre-check, apply, verification, rollback, post-deploy
+checks).
 
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
