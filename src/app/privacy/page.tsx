@@ -5,6 +5,7 @@ import { LINE_OA_URL } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: "นโยบายความเป็นส่วนตัว",
+  description: "นโยบายความเป็นส่วนตัวของ KruAorry: ข้อมูลที่เราเก็บ การชำระเงิน ผู้ให้บริการที่เราใช้ และสิทธิ์ของคุณ",
   alternates: { canonical: "/privacy" },
 };
 

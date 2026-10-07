@@ -5,6 +5,7 @@ import { LINE_OA_URL } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: "เงื่อนไขการใช้งาน",
+  description: "เงื่อนไขการใช้งาน KruAorry: บริการ บัญชีผู้ใช้ การชำระเงินและการอัปเกรดแพ็กเกจ เนื้อหาและทรัพย์สินทางปัญญา",
   alternates: { canonical: "/terms" },
 };
 
