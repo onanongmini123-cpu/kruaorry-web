@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isResourceUuid, isValidSlug, slugify, uniqueSlug } from "../resourceSlug";
+import corpus from "./fixtures/slug-corpus.json";
 
 describe("slug rules", () => {
   it("accepts readable ASCII slugs and rejects everything else", () => {
@@ -7,6 +8,13 @@ describe("slug rules", () => {
     for (const bad of ["", "ab", "Sentence-Train", "sentence_train", "-lead", "trail-", "double--dash", "กู้ระเบิด", "a".repeat(81), null, undefined, 42]) {
       expect(isValidSlug(bad), String(bad)).toBe(false);
     }
+  });
+
+  it("agrees with the database CHECK on the shared corpus (scripts/test-migration-chain-sql.mjs runs the same list against resources_slug_format)", () => {
+    expect(corpus.valid.length).toBeGreaterThan(5);
+    expect(corpus.invalid.length).toBeGreaterThan(20);
+    for (const value of corpus.valid) expect(isValidSlug(value), JSON.stringify(value)).toBe(true);
+    for (const value of corpus.invalid) expect(isValidSlug(value), JSON.stringify(value)).toBe(false);
   });
 
   it("never lets a UUID pass as a slug, so the two URL forms cannot collide", () => {

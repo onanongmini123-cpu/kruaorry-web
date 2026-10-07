@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 
 // Runs migration 053 against a small stand-in schema whose catalogue view is
-// the exact text of migration 029, then checks the backfill, the constraint,
-// the unique index and that the view exposes slug without losing anything.
-// Not a substitute for a Preview-database run before production.
+// the exact text of migration 029, then checks the id-keyed backfill, the
+// constraint, the unique index and that the view exposes slug without losing
+// anything. The REAL chain (001..051 replayed) is covered by
+// `npm run test:migration-chain-sql`; this file isolates 053 on a minimal
+// schema. Not a substitute for a Preview-database run before production.
 const read = (name) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
 const m029 = read("20260925120000_029_private_requests_reviews_reports.sql");
 const m053 = read("20261006100000_053_resource_slugs.sql");
@@ -36,33 +38,38 @@ await db.exec(`
   grant all on public.resource_catalog to anon, authenticated;
 `);
 
-async function addResource(title, ctaUrl = "https://games.kruaorry.app/play") {
+async function addResource(title, ctaUrl = "https://games.kruaorry.app/play", id = null) {
   const { rows } = await db.query(
-    "insert into public.resources (title, delivery_mode, cta_url) values ($1, 'web_app', $2) returning id",
-    [title, ctaUrl],
+    "insert into public.resources (id, title, delivery_mode, cta_url) values (coalesce($3::uuid, gen_random_uuid()), $1, 'web_app', $2) returning id",
+    [title, ctaUrl, id],
   );
   return rows[0].id;
 }
 
-const seeded = await addResource("Sentence Train");
-await addResource("Grammar Boss Battle — ศึกบอสไวยากรณ์");
-const renamed = await addResource("ชื่อที่แอดมินแก้แล้ว");
-const dupA = await addResource("ตกปลาคำศัพท์");
+// Ids of seeded resources named in the 053 backfill list (fixed by migrations 031-047).
+const SENTENCE_TRAIN = "86afb9c3-20f2-4ab6-9ebc-9a454b36692b";
+const GRAMMAR_BOSS = "f14855b7-3a39-4f59-85b9-06dde698d4d4";
+const DAILY_WORD = "4136ab94-76c8-43c7-a622-37ed9f41b167";
+
+const seeded = await addResource("Sentence Train", undefined, SENTENCE_TRAIN);
+const renamed = await addResource("ชื่อที่แอดมินแก้แล้ว", undefined, GRAMMAR_BOSS); // title edited since seeding
+const dupA = await addResource("Sentence Train"); // same title as a seeded row, but not that row
 const dupB = await addResource("ตกปลาคำศัพท์");
-const preSet = await addResource("Daily Word Detective");
+const dupC = await addResource("ตกปลาคำศัพท์");
+// A slug an editor already chose is never overwritten; the column pre-exists here.
 await db.query("alter table public.resources add column slug text");
+const preSet = await addResource("Daily Word Detective", undefined, DAILY_WORD);
 await db.query("update public.resources set slug = 'my-custom-slug' where id = $1", [preSet]);
-await db.query("alter table public.resources drop column slug");
 const countBefore = (await db.query("select count(*)::int as n from public.resources")).rows[0].n;
 
 for (const run of [1, 2]) {
   await db.exec(m053);
 
   const slugOf = async (id) => (await db.query("select slug from public.resources where id = $1", [id])).rows[0].slug;
-  assert.equal(await slugOf(seeded), "sentence-train", `run ${run}: seeded title gets its slug`);
-  assert.equal(await slugOf(renamed), null, `run ${run}: a renamed resource keeps its UUID address`);
-  assert.equal(await slugOf(dupA), null, `run ${run}: ambiguous titles are skipped`);
-  assert.equal(await slugOf(dupB), null, `run ${run}: ambiguous titles are skipped`);
+  assert.equal(await slugOf(seeded), "sentence-train", `run ${run}: a seeded id gets its slug`);
+  assert.equal(await slugOf(renamed), "grammar-boss-battle", `run ${run}: the backfill is keyed by id, so an edited title changes nothing`);
+  assert.equal(await slugOf(preSet), "my-custom-slug", `run ${run}: a slug that is already set is never overwritten`);
+  for (const id of [dupA, dupB, dupC]) assert.equal(await slugOf(id), null, `run ${run}: a resource whose id is not listed keeps its UUID address`);
 
   const catalog = (await db.query("select id, slug from public.resource_catalog order by title")).rows;
   assert.equal(catalog.length, countBefore, `run ${run}: the view still lists every published resource`);
