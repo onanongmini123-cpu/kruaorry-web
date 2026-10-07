@@ -10,10 +10,10 @@
 | --- | --- |
 | Git / Vercel | PR #27 merge แล้วที่ `39e2cb8`; production redeploy จาก commit เดิมสำเร็จ |
 | Migration 052 | `052-verify.sql` ผ่านครบ 29 แถวบน production |
-| Migration 053 | `053-verify.sql` ผ่าน; 17 จาก 22 สื่อมี slug และอีก 5 รายการยังใช้ UUID |
+| Migration 053 | `053-verify.sql` ผ่าน; ตั้ง slug เพิ่มให้ 5 รายการเมื่อ 2026-10-07 แล้ว ปัจจุบัน 22 จาก 22 สื่อมี slug และ `null_slugs = 0` |
 | Migration 054 | `054-verify.sql` ผ่านครบ 7 แถวบน production |
 | Migration ledger | remote ledger ยังแสดงถึง 051 เท่านั้น — เป็น history drift ที่ต้อง repair metadata ก่อน migration รอบถัดไป |
-| Sitemap | หลัง redeploy แสดง 17 slug + 5 UUID; custom domain และ Vercel origin ให้ผลตรงกัน; UUID ที่มี slug redirect 308 ไป canonical slug |
+| Sitemap | หลัง redeploy รอบแรกแสดง 17 slug + 5 UUID; หลังตั้ง slug ที่เหลือ direct route ใหม่ทั้ง 5 ตอบ 200 แล้ว ส่วน sitemap อาจยังคืนฉบับแคชเก่าจนกว่า catalog cache + ISR จะ regenerate (≤ ~10 นาที) |
 | Preview database | Vercel Preview ใช้ Supabase production ตัวเดียวกัน จึงไม่ใช่พื้นที่ซ้อม migration หรือ destructive QA |
 | Vercel Firewall | เปิดกฎ Log-only สำหรับ path ที่ขึ้นต้น `/api/resources/`; ยังไม่บล็อกและยังไม่ rate-limit |
 | Supabase Auth | ตรวจแบบ read-only แล้ว: Confirm email เปิด, anonymous sign-in ปิด, minimum password 6, leaked-password protection ปิด (Pro), redirect allow-list 3 รายการ; ยังไม่ได้เปลี่ยนค่า |
@@ -34,13 +34,13 @@
 | Resource Card / Detail / Related / Filters / Search / Empty state | ทำแล้ว; ค้นหาทนคำพิมพ์ผิด/ระดับชั้นหลายรูปแบบ (ข้อ 4) |
 | หน้าแรก (hero, 4 การ์ด, server-rendered) | ทำแล้ว |
 | Mobile 375–1366 + แป้นพิมพ์ + tap target 44px | ทดสอบด้วย Chromium จำลอง + แก้ที่พบ (ข้อ 4, 6); **ยังต้องทดสอบเครื่องจริง** |
-| SEO (slug, canonical, OG, sitemap, robots, noindex, metadata ไม่ซ้ำ) | rollout แล้ว; 17 สื่อใช้ slug, 5 สื่อยังใช้ UUID และต้องตั้ง slug เพิ่ม |
+| SEO (slug, canonical, OG, sitemap, robots, noindex, metadata ไม่ซ้ำ) | rollout แล้ว; สื่อ 22/22 มี slug; direct route ใหม่ทั้ง 5 ตอบ 200; รอ sitemap cache regenerate |
 | Analytics | `trackEvent` กลาง เฉพาะ event ที่พิสูจน์ได้; ไม่ส่งคำที่ผู้ใช้พิมพ์ |
 | Report Problem + บริบทอัตโนมัติ + APP_VERSION | rollout แล้ว; ผลของ migration 054 ผ่าน verification บน production |
 | Migration 052 / 053 / 054 | schema production ผ่าน verification แล้ว; **ledger ยังหยุดที่ 051** จึงต้อง repair metadata ก่อน migration ถัดไปและห้าม apply ซ้ำแบบ blind |
 | Dependencies | next 16.3.8 / sharp 0.35.5 / source-map-js 1.2.2; `npm audit --omit=dev` = **0** (main = 3 รวม 1 critical) ไม่มี package เพิ่ม/ลด |
 
-**สิ่งที่ยังไม่ได้ทำ:** ทดสอบ R18 บนเครื่องจริงและชำระเงินจริง, สร้าง staging Supabase แยก, เปลี่ยน Supabase Auth settings, ตั้ง slug อีก 5 รายการ, เปิด analytics provider, และแก้ความเสี่ยง follow-up ในข้อ 12. ข้อความ “ไม่ได้ทำ” ในรายงานเดิมด้านล่างเป็นหลักฐาน ณ เวลาก่อน rollout.
+**สิ่งที่ยังไม่ได้ทำ:** ทดสอบ R18 บนเครื่องจริงและชำระเงินจริง, สร้าง staging Supabase แยก, เปลี่ยน Supabase Auth settings, เปิด analytics provider, และแก้ความเสี่ยง follow-up ในข้อ 12. ข้อความ “ไม่ได้ทำ” ในรายงานเดิมด้านล่างเป็นหลักฐาน ณ เวลาก่อน rollout.
 
 ---
 
@@ -424,7 +424,7 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 | R8 | session แบบ anonymous ของ Supabase ผ่าน guard ไม่เท่ากันในบาง RPC (info) | เข้าถึงไม่ได้วันนี้ (`profiles.email NOT NULL` ทำให้ session แบบนี้สมัครไม่ได้) | เติม guard `is_anonymous` ใน `create_membership_application` และ policy insert ของ `saved_resources` เผื่อวันที่ผ่อน NOT NULL |
 | R9 | ยังไม่มี Content-Security-Policy | ไม่มีชั้นกัน XSS เพิ่ม | เริ่มจาก report-only ที่ทดสอบกับ inline script ของ Next และฟอนต์ก่อน |
 | R10 | `X-Frame-Options: SAMEORIGIN` | พาร์ตเนอร์ที่ฝังเว็บนี้จะเห็นว่าง | แจ้งก่อน (ข้อ 3.3) |
-| R11 | สื่อ 5 รายการยังไม่มี slug และสื่อที่เผยแพร่หลัง 053 **ไม่ได้ slug อัตโนมัติ** (แอดมินและ `admin_save_resource` ยังไม่มีช่อง slug) | SEO ของสื่อใหม่ | ตั้ง slug 5 รายการหลังยืนยัน mapping; เพิ่มช่อง slug/RPC หลังมี staging แยก |
+| R11 | สื่อปัจจุบัน 22/22 มี slug แล้ว แต่สื่อที่เผยแพร่ในอนาคต **ไม่ได้ slug อัตโนมัติ** (แอดมินและ `admin_save_resource` ยังไม่มีช่อง slug) | SEO ของสื่อใหม่ | เพิ่มช่อง slug/RPC หลังมี staging แยก |
 | R12 | **Contrast ของสีแบรนด์ต่ำกว่า WCAG AA (4.5:1)**: ปุ่มหลัก `#8a6df0` + ตัวขาว = 3.80; ข้อความรอง `#8a809e` บนพื้น `#f1eff7`/`#f8f7fc`/ขาว = 3.25/3.48/3.71; ข้อความสีแบรนด์ `#7355da` บน `#ede7ff` = 4.32 | ผู้มีสายตาไม่ดีอ่านยาก | งานถัดไปที่อนุมัติแล้ว: ปุ่มหลัก `#7d5cee` (4.53), ข้อความรอง `#6f6584` (4.76–5.43), ข้อความแบรนด์บนพื้นอ่อน `#6f50d9` (4.57) — ทำเป็น PR โค้ดแยก |
 | R13 | `/membership` ที่ ≥ 1280px: หัวข้อ hero เปลี่ยนจากค่า fallback "299 บาทเฉพาะปีแรก" เป็นป้ายจากฐานข้อมูล "299 บาท (เฉพาะปีแรก)" แล้วตัดบรรทัดเป็น 2 บรรทัด → CLS 0.18 (**มีบน main เหมือนกัน**: build ของ main กับ mock เดียวกันแสดงหัวข้อเปลี่ยน 83 → 166 px ตามลำดับเดียวกัน จึงไม่ใช่ regression; ไม่ได้แก้เพราะเป็นข้อความแพ็ก/ราคาและมีเทสต์ล็อกข้อความเดิม) | กระตุกเล็กน้อยตอนโหลด หน้า noindex | ใช้สตริง fallback เดียวกับป้ายใน DB (migration 048 ตั้ง `299 บาท (เฉพาะปีแรก)`) + ปรับเทสต์ `membershipFrontend.test.ts` — เจ้าของอนุมัติเพราะแตะข้อความราคา |
 | R14 | proxy เพิ่มการเรียก auth 1 ครั้งต่อคำขอของสมาชิกที่ล็อกอินบน `/resources`, `/app` (ผู้เยี่ยมชมไม่มี) | ความหน่วง/โควตา Supabase Auth เพิ่มเล็กน้อย | เฝ้าดูโควตา; ถ้าจำเป็นลดด้วยการแคชผลชั่วคราว |
@@ -442,7 +442,7 @@ curl -sI "$BASE/api/resources/<id สื่อสมาชิก/Pro>/open" | gr
 1. ทำ R18 บน iPhone Safari, Android Chrome, LINE in-app browser และธุรกรรมเงินจริงหนึ่งรอบโดยเจ้าของระบบ.
 2. เลือก staging Supabase แยก: Branching (ต้อง Pro) หรือยืนยันว่า project เก่าที่ inactive สามารถ repurpose ได้; จากนั้น repair ledger 052–054 ตามขั้นตอนที่อนุมัติ.
 3. เฝ้าดู Vercel Firewall Log-only `/api/resources/*`; ถ้าจะ enforce rate limit ต้องอัปเกรด Pro/Enterprise หรือทำ throttle ฝั่งแอป/DB.
-4. ตั้ง slug 5 รายการที่เหลือหลังยืนยัน mapping; เพิ่มช่อง slug ในแอดมิน + RPC หลัง staging พร้อม.
+4. เพิ่มช่อง slug ในแอดมิน + RPC หลัง staging พร้อม (ข้อมูลปัจจุบันครบ 22/22 แล้ว).
 5. ปรับ token contrast (R12) เป็น PR โค้ดแยก และ QA สี/axe/viewport.
 6. migration เสริมความปลอดภัยหลัง staging พร้อม: scope policy Storage (R2/R3), throttle รีวิว (R4), เพิกถอนสิทธิ์เขียนที่เหลือของ anon/authenticated + `MAINTAIN` (R7), guard anonymous (R8).
 7. เปิด analytics provider ตาม `docs/analytics.md` เมื่อพร้อมวัดผล แล้วจึงเริ่ม CSP แบบ report-only (R9) และวัดรูปปกก่อนปรับ image transformation (R15).
