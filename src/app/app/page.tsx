@@ -12,7 +12,7 @@ import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
-import { Button, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
+import { Button, FilterSheet, Input, SearchField, SideNav, ResourceCard, EmptyState, Badge, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import {
   fetchPublishedResources,
@@ -25,8 +25,6 @@ import {
   submitRequest,
   fetchSavedResourceIds,
   setResourceSaved,
-  resourceIcon,
-  resourceTint,
   type Resource,
   type Plan,
   type PlanBenefit,
@@ -35,7 +33,7 @@ import {
   type UpgradeRequest,
 } from "@/lib/data";
 import { canAccessResource } from "@/lib/entitlement";
-import type { FounderCapacity } from "@/lib/founderCapacity";
+import { founderPublicNotice, type FounderCapacity } from "@/lib/founderCapacity";
 import {
   fetchMembershipSchemaReadiness,
   type MembershipSchemaReadiness,
@@ -43,9 +41,10 @@ import {
 import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
 import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
-import { filterDiscoveredResources } from "@/lib/resourceDiscovery";
-import { RESOURCE_GRADE_OPTIONS, resourceGradeLabel } from "@/lib/resourceGrades";
-import { persistFavoriteOptimistically } from "@/lib/favoriteState";
+import { ACCESS_FILTER_OPTIONS, activeFilterCount, filterDiscoveredResources, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
+import { RESOURCE_TYPE_OPTIONS, type ResourceTypeFilter } from "@/lib/resourceMeta";
+import { RESOURCE_GRADE_OPTIONS, formatResourceGrades } from "@/lib/resourceGrades";
+import { createFavoriteRefreshGuard, persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import {
   beginMemberEntitlementsRefresh,
@@ -60,6 +59,9 @@ import { membershipUpgradeHref } from "@/app/resources/catalog";
 import { createLatestRefreshController, createLatestRefreshRunner } from "@/lib/latestRefresh";
 import { planDisplayName } from "@/lib/planDisplay";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
+import { accessTier } from "@/lib/resourceAccess";
+import { trackEvent } from "@/lib/analytics";
+import { proUpgradeHref, type UpgradePlanId } from "@/lib/upgradeFlow";
 
 export const dynamic = "force-dynamic";
 
@@ -103,7 +105,11 @@ export default function TeacherAppPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [grade, setGrade] = useState("");
+  const [accessFilter, setAccessFilter] = useState<ResourceAccessFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<ResourceTypeFilter>("all");
   const [saved, setSaved] = useState<string[]>([]);
+  // Lets a saved-list refresh that began before a heart was pressed be ignored.
+  const [favoriteGuard] = useState(createFavoriteRefreshGuard);
   const [savingIds, setSavingIds] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -240,8 +246,9 @@ export default function TeacherAppPage() {
     if (!userId) return;
     let active = true;
     const refreshSaved = () => {
+      const stillCurrent = favoriteGuard.beginRefresh();
       void fetchSavedResourceIds(supabase, userId).then((ids) => {
-        if (active) setSaved(ids);
+        if (active && stillCurrent()) setSaved(ids);
       });
     };
     window.addEventListener("focus", refreshSaved);
@@ -249,7 +256,7 @@ export default function TeacherAppPage() {
       active = false;
       window.removeEventListener("focus", refreshSaved);
     };
-  }, [supabase, userId]);
+  }, [supabase, userId, favoriteGuard]);
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,6 +285,7 @@ export default function TeacherAppPage() {
     if (!userId || savingIds.includes(id)) return;
     setSavingIds((current) => [...current, id]);
     setSaveError(null);
+    const settleWrite = favoriteGuard.beginWrite();
     const wasSaved = saved.includes(id);
     const nowSaved = !wasSaved;
     const error = await persistFavoriteOptimistically(
@@ -285,7 +293,8 @@ export default function TeacherAppPage() {
       nowSaved,
       setSaved,
       () => setResourceSaved(supabase, id, nowSaved),
-    );
+    ).finally(settleWrite);
+    if (!error && nowSaved) trackEvent("favorite_add", { resource_id: id, source: "member_app" });
     if (error) {
       setSaveError(nowSaved
         ? "บันทึกรายการไม่สำเร็จ กรุณาตรวจสอบสิทธิ์หรือจำนวนรายการที่แพ็กของคุณบันทึกได้"
@@ -321,8 +330,19 @@ export default function TeacherAppPage() {
       // Premium discovery stays visible to Free members, but the action is an
       // explicit upgrade journey. The remembered destination is a validated
       // same-origin app detail, never a private target URL.
+      trackEvent("upgrade_click", { resource_id: r.id, access_tier: accessTier(r.accessMode), source: "member_app_resource" });
       router.push(membershipUpgradeHref(r, `/app?resource=${r.id}`));
       return;
+    }
+    // Access is confirmed on this device; the server still re-checks on open.
+    trackEvent("resource_start", {
+      resource_id: r.id,
+      access_tier: accessTier(r.accessMode),
+      delivery_mode: r.affordance,
+      source: "member_app",
+    });
+    if (r.affordance === "web_app") {
+      trackEvent("outbound_game_open", { resource_id: r.id, source: "member_app" });
     }
     if (r.affordance === "file_download") {
       // The URL is same-origin and known synchronously, so window.open()
@@ -384,10 +404,11 @@ export default function TeacherAppPage() {
 
   const filtered = filterDiscoveredResources(
     resources.map((resource) => ({ ...resource, isFree: resource.free })),
-    { query, category, grade },
+    { query, category, grade, access: accessFilter, type: typeFilter },
   );
   const favoriteResources = filtered.filter((resource) => saved.includes(resource.id));
-  const hasActiveFilters = Boolean(query.trim() || category || grade);
+  const narrowingFilters = activeFilterCount({ category, grade, access: accessFilter, type: typeFilter });
+  const hasActiveFilters = Boolean(query.trim()) || narrowingFilters > 0;
   const currentPlanId = memberPlanIdForDisplay(entitlements, subscription);
   const currentPlanDisplayName = entitlementState.status !== "loaded" && currentPlanId === "free"
     ? entitlementState.status === "loading" ? "กำลังตรวจสอบสิทธิ์…" : "ยังตรวจสอบไม่ได้"
@@ -405,6 +426,8 @@ export default function TeacherAppPage() {
     setQuery("");
     setCategory("");
     setGrade("");
+    setAccessFilter("all");
+    setTypeFilter("all");
   };
 
   const hasPendingUpgradeFor = (resource: Resource) => (
@@ -435,31 +458,30 @@ export default function TeacherAppPage() {
     );
   }
 
-  const renderResourceGrid = (items: Resource[]) => (
+  // Cards under a section heading (home) are third level; in the library and
+  // favourites they follow the page title directly, so they are second level.
+  const renderResourceGrid = (items: Resource[], headingLevel: 2 | 3 = 3) => (
     <div className="kru-resource-grid">
-      {items.map((resource) => (
+      {items.map((resource, index) => (
         <ResourceCard
+          headingLevel={headingLevel}
           key={resource.id}
           title={resource.title}
-          meta={resource.meta}
           description={resource.description}
-          affordance={resource.affordance}
-          tags={resource.tags}
+          meta={resource.meta}
+          category={resource.category}
+          deliveryMode={resource.affordance}
           gradeLevels={resource.gradeLevels}
           requiredPlanNames={resource.requiredPlanNames}
-          icon={resourceIcon(resource.affordance)}
+          accessTier={accessTier(resource.accessMode)}
           coverImageUrl={resource.coverImageUrl}
-          tint={resourceTint(resource.affordance)}
-          free={resource.free}
           isNew={resource.isNew}
           locked={!canAccess(resource)}
-          upgradePending={hasPendingUpgradeFor(resource)}
-          unavailable={resource.accessMode === "locked" && profile?.role !== "admin" && profile?.role !== "owner"}
           saved={saved.includes(resource.id)}
           savePending={savingIds.includes(resource.id)}
           onSave={() => toggleSaved(resource.id)}
-          onClick={() => openDetail(resource)}
-          onAction={() => resource.accessMode === "locked" && profile?.role !== "admin" && profile?.role !== "owner" ? openDetail(resource) : openResource(resource)}
+          onSelect={() => openDetail(resource)}
+          priority={index < 4}
         />
       ))}
     </div>
@@ -513,7 +535,7 @@ export default function TeacherAppPage() {
               </Button>
             )}
             {profile && (
-              <button type="button" className="kru-app-header-account" onClick={() => setView("account")} aria-label="เปิดบัญชีของฉัน">
+              <button type="button" className="kru-app-header-account" onClick={() => setView("account")} title="เปิดบัญชีของฉัน">
                 <ProfileAvatar supabase={supabase} avatarPath={profile.avatarPath} name={profile.fullName || profile.email} size={36} />
                 <span className="kru-app-header-account__copy">
                   <strong>{profile.fullName || profile.email}</strong>
@@ -589,31 +611,47 @@ export default function TeacherAppPage() {
               <div>
                 <h1 style={{ fontSize: "var(--fs-30)" }}>คลังสื่อ</h1>
                 <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-16)", color: "var(--text-muted)" }}>ดูตัวอย่างได้ทุกชิ้นก่อนใช้ ดาวน์โหลดแล้วสอนได้เลย</p>
+                <div className="kru-discovery">
                 <div className="kru-discovery-controls" role="search" aria-label="ค้นหาและกรองคลังสื่อ">
-                  <label className="kru-filter-field">
+                  <label className="kru-filter-field kru-filter-field--search">
                     <span>คำค้น</span>
-                    <SearchField value={query} onChange={setQuery} placeholder="ค้นหาชื่อ เรื่อง หรือคำอธิบาย" />
+                    <SearchField value={query} onChange={setQuery} placeholder="พิมพ์วิชา ระดับชั้น หรือเรื่องที่ต้องการ" />
                   </label>
-                  <label className="kru-filter-field">
-                    <span>หมวดหมู่</span>
-                    <select value={category} onChange={(event) => setCategory(event.target.value)}>
-                      <option value="">ทุกหมวดหมู่</option>
-                      {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="kru-filter-field">
-                    <span>ระดับชั้น</span>
-                    <select value={grade} onChange={(event) => setGrade(event.target.value)}>
-                      <option value="">ทุกระดับชั้น</option>
-                      {RESOURCE_GRADE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <button type="button" className="kru-btn kru-btn--ghost" onClick={clearFilters} disabled={!hasActiveFilters}>ล้างตัวกรอง</button>
+                  <FilterSheet id="member-library-filters" activeCount={narrowingFilters}>
+                    <label className="kru-filter-field">
+                      <span>ระดับชั้น</span>
+                      <select value={grade} onChange={(event) => setGrade(event.target.value)}>
+                        <option value="">ทุกระดับชั้น</option>
+                        {RESOURCE_GRADE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="kru-filter-field">
+                      <span>วิชา</span>
+                      <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                        <option value="">ทุกวิชา</option>
+                        {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="kru-filter-field">
+                      <span>ประเภท</span>
+                      <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as ResourceTypeFilter)}>
+                        {RESOURCE_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="kru-filter-field">
+                      <span>สิทธิ์การใช้งาน</span>
+                      <select value={accessFilter} onChange={(event) => setAccessFilter(event.target.value as ResourceAccessFilter)}>
+                        {ACCESS_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                  </FilterSheet>
+                  <button type="button" className="kru-btn kru-btn--ghost kru-discovery-clear" onClick={clearFilters} disabled={!hasActiveFilters}>ล้างตัวกรอง</button>
+                </div>
                 </div>
                 <div role="status" style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", margin: "var(--sp-5) 0" }}>พบ {filtered.length} รายการ</div>
                 {filtered.length === 0 ? (
                   <EmptyState icon={FolderOpen} title="ยังไม่มีไฟล์ตามตัวกรองนี้" description="ลองเปลี่ยนหรือล้างตัวกรอง" />
-                ) : renderResourceGrid(filtered)}
+                ) : renderResourceGrid(filtered, 2)}
               </div>
             )}
 
@@ -635,7 +673,7 @@ export default function TeacherAppPage() {
                   />
                 ) : favoriteResources.length === 0 ? (
                   <EmptyState icon={Heart} title="ไม่พบสื่อโปรดตามตัวกรอง" description="ลองล้างคำค้นหรือตัวกรองเพื่อดูสื่อโปรดทั้งหมด" />
-                ) : renderResourceGrid(favoriteResources)}
+                ) : renderResourceGrid(favoriteResources, 2)}
               </div>
             )}
 
@@ -648,9 +686,9 @@ export default function TeacherAppPage() {
                   <div>
                     <h1 style={{ fontSize: "var(--fs-36)" }}>{detail.title}</h1>
                     <div style={{ margin: "var(--sp-5) 0 var(--sp-6)", color: "var(--text-muted)" }}>{detail.meta}</div>
-                    {detail.gradeLevels.length > 0 && (
+                    {formatResourceGrades(detail.gradeLevels) && (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "calc(-1 * var(--sp-3)) 0 var(--sp-5)" }}>
-                        {detail.gradeLevels.map((item) => <Badge key={item} tone="info">{resourceGradeLabel(item)}</Badge>)}
+                        <Badge tone="info">{formatResourceGrades(detail.gradeLevels)}</Badge>
                       </div>
                     )}
                     <PublicResourceCover
@@ -662,7 +700,7 @@ export default function TeacherAppPage() {
                     />
                     <div style={{ display: "grid", gap: "var(--sp-6)", marginTop: "var(--sp-8)", maxWidth: 640 }}>
                       <div>
-                        <h3 style={{ fontSize: "var(--fs-20)" }}>สื่อนี้คืออะไร</h3>
+                        <h2 style={{ fontSize: "var(--fs-20)" }}>สื่อนี้คืออะไร</h2>
                         <p style={{ fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)", color: "var(--text-body)" }}>{detail.description || "—"}</p>
                       </div>
                     </div>
@@ -672,7 +710,7 @@ export default function TeacherAppPage() {
                       <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>
                         {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
                           ? "ยังตรวจสอบสิทธิ์แพ็กไม่ได้"
-                          : canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ" : "สื่อนี้สำหรับสมาชิก"}
+                          : canAccess(detail) ? "พร้อมใช้สอนได้เลย" : detail.accessMode === "locked" ? "สื่อนี้ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "คำขออัปเกรดอยู่ระหว่างดำเนินการ" : "สื่อนี้สำหรับสมาชิก Teacher Pro"}
                       </div>
                       {!canAccess(detail) && detail.requiredPlanNames.length > 0 && (
                         <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
@@ -686,13 +724,12 @@ export default function TeacherAppPage() {
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} disabled={!canAccess(detail) && detail.accessMode === "locked"} onClick={() => openResource(detail)}>
                         {detail.accessMode === "plans" && !canAccess(detail) && entitlementState.status !== "loaded"
                           ? entitlementState.status === "loading" ? "กำลังตรวจสอบ…" : "ลองตรวจสอบสิทธิ์อีกครั้ง"
-                          : canAccess(detail) ? "เปิดใช้งาน" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "ติดตามคำขออัปเกรด" : "อัปเกรดเพื่อปลดล็อก"}
+                          : canAccess(detail) ? "เปิดใช้" : detail.accessMode === "locked" ? "ยังไม่เปิดให้ใช้งาน" : hasPendingUpgradeFor(detail) ? "ติดตามคำขออัปเกรด" : "อัปเกรดเพื่อปลดล็อก"}
                       </Button>
                       <Button
                         block
                         variant="ghost"
                         loading={savingIds.includes(detail.id)}
-                        aria-label={saved.includes(detail.id) ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"}
                         aria-pressed={saved.includes(detail.id)}
                         onClick={() => toggleSaved(detail.id)}
                         style={{ marginTop: "var(--sp-4)" }}
@@ -757,7 +794,7 @@ export default function TeacherAppPage() {
                     return (
                       <div key={plan.id} className="kru-card" style={{ padding: "var(--sp-7)", display: "flex", flexDirection: "column" }}>
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-20)", fontWeight: "var(--fw-semibold)" }}>{plan.name}</div>
-                        {plan.isPopular && <Badge tone="success">ยอดนิยม</Badge>}
+                        {plan.isPopular && <Badge tone="success">แนะนำ</Badge>}
                         <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-30)", fontWeight: "var(--fw-bold)", marginTop: 8 }}>{plan.priceLabel}</div>
                         <p style={{ fontSize: "var(--fs-14)", color: "var(--text-muted)", marginTop: 8 }}>{plan.note}</p>
                         <div className="kru-plan-benefits">
@@ -776,13 +813,7 @@ export default function TeacherAppPage() {
                             {membershipSchemaReadiness === "unavailable" ? (
                               <span>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</span>
                             ) : founderCapacity ? (
-                              <>
-                                <strong>ยืนยันชำระแล้ว {founderCapacity.used}/{founderCapacity.capacity}</strong>
-                                <span>{founderCapacity.isFull ? "Founder 100 เต็มแล้ว" : `เหลืออีก ${founderCapacity.remaining} สิทธิ์`}</span>
-                                <span aria-hidden="true" className="kru-founder-capacity__track">
-                                  <span style={{ width: `${Math.min(100, (founderCapacity.used / founderCapacity.capacity) * 100)}%` }} />
-                                </span>
-                              </>
+                              <strong>{founderPublicNotice(founderCapacity)}</strong>
                             ) : (
                               <span>{membershipSchemaReadiness === "checking" ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ยังตรวจสอบจำนวนสิทธิ์ไม่ได้"}</span>
                             )}
@@ -796,7 +827,8 @@ export default function TeacherAppPage() {
                           ) : plan.id === "free" ? null : (
                             <Link
                               className="kru-btn kru-btn--primary kru-btn--block"
-                              href={`/membership?plan=${plan.id === "founder" && founderCapacity?.isFull ? "teacher" : plan.id}`}
+                              href={proUpgradeHref({ planId: plan.id === "founder" && founderCapacity?.isFull ? "teacher" : (plan.id as UpgradePlanId) })}
+                              onClick={() => trackEvent("upgrade_click", { plan_id: plan.id, source: "member_app_plans" })}
                             >
                               สมัครหรือดูสถานะ
                             </Link>
@@ -871,6 +903,7 @@ export default function TeacherAppPage() {
         .kru-app-mobile-tabs { position: fixed; bottom: 0; left: 0; right: 0; min-height: 64px; padding-bottom: env(safe-area-inset-bottom); background: var(--white); border-top: 1px solid var(--border-subtle); display: flex; z-index: 20; }
         .kru-app-mobile-tabs > button { min-width: 0; min-height: 56px; }
         .kru-resource-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); align-items: stretch; gap: var(--gap-grid); }
+        .kru-discovery { container-type: inline-size; container-name: kru-discovery; }
         .kru-discovery-controls { padding: var(--sp-5); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: end; border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-card); }
         .kru-filter-field { min-width: 0; display: grid; gap: 7px; color: var(--text-body); font-size: var(--fs-13); font-weight: var(--fw-semibold); }
         .kru-filter-field select { width: 100%; min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--white); color: var(--text-strong); font: inherit; font-weight: var(--fw-regular); }
@@ -897,8 +930,6 @@ export default function TeacherAppPage() {
         .kru-member-section-heading button { border: 0; background: transparent; color: var(--purple-700); display: inline-flex; align-items: center; gap: 5px; min-height: var(--tap-min); font-weight: var(--fw-semibold); cursor: pointer; }
         .kru-founder-capacity { margin-top: var(--sp-4); padding: var(--sp-4); border-radius: var(--r-md); background: var(--purple-50); display: grid; gap: 4px; color: var(--text-body); font-size: var(--fs-13); }
         .kru-founder-capacity strong { color: var(--text-strong); }
-        .kru-founder-capacity__track { height: 7px; margin-top: 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--purple-100); }
-        .kru-founder-capacity__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple-500), var(--pink-500)); }
         .kru-plan-benefits { margin-top: var(--sp-5); display: grid; gap: var(--sp-3); }
         .kru-plan-benefits ul { margin: 0; padding: 0; display: grid; gap: 8px; }
         .kru-plan-benefits li { display: flex; align-items: flex-start; gap: 8px; color: var(--text-body); font-size: var(--fs-14); list-style: none; }
@@ -910,8 +941,19 @@ export default function TeacherAppPage() {
         .kru-contact-fab__menu p { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-13); }
         .kru-contact-fab__link { min-height: 44px; padding: 0 var(--sp-4); display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); background: var(--purple-50); color: var(--purple-700); font-size: var(--fs-14); font-weight: var(--fw-semibold); }
         .kru-contact-fab__link:hover { background: var(--purple-100); color: var(--purple-800); text-decoration: none; }
+        .kru-contact-fab__version { margin: 0; color: var(--text-muted); font-size: var(--fs-12); }
+        @media (min-width: 768px) {
+          @container kru-discovery (min-width: 640px) {
+            .kru-discovery-controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .kru-filter-field--search { grid-column: 1 / 4; grid-row: 1; }
+            .kru-discovery-clear { grid-column: 4; grid-row: 1; }
+          }
+          @container kru-discovery (min-width: 900px) {
+            .kru-discovery-controls { grid-template-columns: minmax(200px, 1.5fr) repeat(4, minmax(110px, 1fr)) auto; }
+            .kru-filter-field--search, .kru-discovery-clear { grid-column: auto; grid-row: auto; }
+          }
+        }
         @media (min-width: 900px) {
-          .kru-discovery-controls { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
           .kru-member-hero { grid-template-columns: minmax(0, 1fr) 220px; padding: var(--sp-9); }
           .kru-member-hero__mascot { min-height: 230px; margin-top: 0; }
           .kru-member-hero__glow { width: 190px; height: 190px; box-shadow: 0 0 0 20px rgba(255,255,255,.2); }

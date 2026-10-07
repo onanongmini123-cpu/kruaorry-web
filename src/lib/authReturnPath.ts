@@ -1,4 +1,5 @@
 import { isResourceGrade } from "@/lib/resourceGrades";
+import { isValidSlug } from "@/lib/resourceSlug";
 
 // A login link may carry a destination, but never an arbitrary URL. Keeping
 // this allowlist small prevents both open redirects and accidental navigation
@@ -48,7 +49,8 @@ function safeAppPath(url: URL): string | null {
 
 function safeResourceDetailPath(url: URL): string | null {
   const match = /^\/resources\/([^/]+)$/.exec(url.pathname);
-  return match && UUID.test(match[1]) && hasOnlyParams(url.searchParams, [])
+  // A detail page is addressed by UUID (every older link) or by slug.
+  return match && (UUID.test(match[1]) || isValidSlug(match[1])) && hasOnlyParams(url.searchParams, [])
     ? url.pathname
     : null;
 }

@@ -1,11 +1,18 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Mascot } from "@/components/Mascot";
 import { LINE_OA_URL } from "@/lib/config";
 
+export const metadata: Metadata = {
+  title: "เงื่อนไขการใช้งาน",
+  description: "เงื่อนไขการใช้งาน KruAorry: บริการ บัญชีผู้ใช้ การชำระเงินและการอัปเกรดแพ็กเกจ เนื้อหาและทรัพย์สินทางปัญญา",
+  alternates: { canonical: "/terms" },
+};
+
 export default function TermsPage() {
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
-      <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
+      <Link href="/" style={{ minHeight: "var(--tap-min)", display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
         <Mascot size={32} />
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
       </Link>
@@ -58,6 +65,6 @@ export default function TermsPage() {
           <p>หากมีข้อสงสัยเกี่ยวกับเงื่อนไขการใช้งาน ติดต่อทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a></p>
         </section>
       </div>
-    </div>
+    </main>
   );
 }

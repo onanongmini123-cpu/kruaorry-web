@@ -9,6 +9,7 @@ import { AvatarCropper } from "@/components/AvatarCropper";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import type { Profile } from "@/lib/data";
 import { updateMyDisplayName } from "@/lib/data";
+import { friendlyErrorMessage } from "@/lib/userMessages";
 import {
   cropAndOptimizeAvatar,
   persistMyAvatarBlob,
@@ -69,7 +70,7 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
       onUpdated({ ...profile, fullName: normalizedName, avatarPath });
       setMessage("บันทึกชื่อที่แสดงเรียบร้อยแล้ว");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "บันทึกชื่อที่แสดงไม่สำเร็จ");
+      setError(friendlyErrorMessage(caught, "บันทึกชื่อที่แสดงไม่สำเร็จ"));
     } finally {
       operationRef.current = false;
       setSavingName(false);
@@ -95,7 +96,7 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
       setMessage("เปลี่ยนรูปโปรไฟล์เรียบร้อยแล้ว");
       if (result.cleanupWarning) setError(result.cleanupWarning);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "บันทึกรูปโปรไฟล์ไม่สำเร็จ");
+      setError(friendlyErrorMessage(caught, "บันทึกรูปโปรไฟล์ไม่สำเร็จ"));
     } finally {
       operationRef.current = false;
       setAvatarBusy(false);
@@ -117,7 +118,7 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
       setMessage("นำรูปโปรไฟล์ออกแล้ว");
       if (result.cleanupWarning) setError(result.cleanupWarning);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "นำรูปโปรไฟล์ออกไม่สำเร็จ");
+      setError(friendlyErrorMessage(caught, "นำรูปโปรไฟล์ออกไม่สำเร็จ"));
     } finally {
       operationRef.current = false;
       setAvatarBusy(false);
@@ -151,6 +152,7 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
           <input
             ref={inputRef}
             id="profile-avatar-input"
+            aria-label="เลือกรูปโปรไฟล์"
             className="kru-visually-hidden"
             type="file"
             accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"

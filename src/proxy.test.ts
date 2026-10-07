@@ -127,4 +127,64 @@ describe("application proxy", () => {
       "https://example.com/login?next=%2Fapp",
     );
   });
+
+  it("runs on server-rendered /resources pages so refreshed sessions are saved", () => {
+    expect(config.matcher).toContain("/resources");
+    expect(config.matcher).toContain("/resources/:path*");
+  });
+
+  it("marks a response that carries refreshed auth cookies as non-cacheable", async () => {
+    mockedCreateServerClient.mockImplementation(((_url: string, _key: string, options: {
+      cookies: { setAll: (cookies: { name: string; value: string; options: object }[], headers: Record<string, string>) => void };
+    }) => ({
+      auth: {
+        getUser: vi.fn(async () => {
+          options.cookies.setAll(
+            [{ name: "sb-session", value: "refreshed", options: {} }],
+            { "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0", Pragma: "no-cache" },
+          );
+          return { data: { user: { id: "member-1" } }, error: null };
+        }),
+      },
+    })) as never);
+
+    const response = await proxy(new NextRequest("https://example.com/resources"));
+
+    expect(response.status).toBe(200);
+    expect(response.cookies.get("sb-session")?.value).toBe("refreshed");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+  });
+
+  it("never lets a redirect that may carry refreshed cookies be cached", async () => {
+    mockedCreateServerClient.mockImplementation(((_url: string, _key: string, options: {
+      cookies: { setAll: (cookies: { name: string; value: string; options: object }[], headers: Record<string, string>) => void };
+    }) => ({
+      auth: {
+        getUser: vi.fn(async () => {
+          options.cookies.setAll(
+            [{ name: "sb-session", value: "refreshed", options: {} }],
+            { "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0", Expires: "0", Pragma: "no-cache" },
+          );
+          return { data: { user: { id: "member-1" } }, error: null };
+        }),
+      },
+    })) as never);
+
+    // A signed-in member opening /login is sent on to the app with the new cookies.
+    const redirect = await proxy(new NextRequest("https://example.com/login"));
+    expect(redirect.status).toBe(307);
+    expect(redirect.cookies.get("sb-session")?.value).toBe("refreshed");
+    expect(redirect.headers.get("cache-control")).toContain("no-store");
+    expect(redirect.headers.get("pragma")).toBe("no-cache");
+    expect(redirect.headers.get("expires")).toBe("0");
+  });
+
+  it("marks the sign-in redirect for a signed-out visitor as non-cacheable too", async () => {
+    mockSession(null);
+    const response = await proxy(new NextRequest("https://example.com/app"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
 });

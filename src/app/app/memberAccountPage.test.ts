@@ -44,7 +44,8 @@ describe("member account integration", () => {
 
   it("shows pending upgrade status only for a matching required plan", () => {
     expect(pageSource).toContain('application.status === "pending" && resource.requiredPlanIds.includes(application.planId)');
-    expect(pageSource).toContain("upgradePending={hasPendingUpgradeFor(resource)}");
+    // The pending state lives in the detail panel; the card badge only shows the tier.
+    expect(pageSource).toContain("hasPendingUpgradeFor(detail)");
     expect(pageSource).toContain("คำขออัปเกรดอยู่ระหว่างดำเนินการ");
     expect(pageSource).toContain("ติดตามคำขออัปเกรด");
   });

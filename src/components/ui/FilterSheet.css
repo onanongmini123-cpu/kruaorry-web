@@ -1,0 +1,126 @@
+/* Phone: a bottom sheet opened from a button. */
+.kru-filter-sheet__toggle {
+  min-height: var(--tap-min, 44px);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.kru-filter-sheet__count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--white);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+}
+
+.kru-filter-sheet__panel {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-height: min(85vh, 640px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: var(--surface-card);
+  color: var(--text-body);
+  box-shadow: var(--shadow-lg);
+  overflow: auto;
+}
+
+.kru-filter-sheet__panel::backdrop {
+  background: rgba(32, 24, 56, 0.45);
+}
+
+.kru-filter-sheet__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--sp-4) var(--sp-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.kru-filter-sheet__close {
+  width: var(--tap-min, 44px);
+  height: var(--tap-min, 44px);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.kru-filter-sheet__body {
+  padding: var(--sp-5);
+  display: grid;
+  gap: var(--sp-4);
+}
+
+/* Tablet and up: the fields sit inline, no button or sheet chrome. */
+@media (min-width: 768px) {
+  .kru-filter-sheet {
+    display: contents;
+  }
+
+  .kru-filter-sheet__toggle,
+  .kru-filter-sheet__header {
+    display: none;
+  }
+
+  .kru-filter-sheet__panel {
+    position: static;
+    inset: auto;
+    display: contents;
+    width: auto;
+    max-height: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .kru-filter-sheet__body {
+    display: contents;
+    padding: 0;
+  }
+}
+
+/* Browsers without popover support: always inline, never hidden. */
+@supports not selector(:popover-open) {
+  .kru-filter-sheet {
+    display: contents;
+  }
+
+  .kru-filter-sheet__toggle,
+  .kru-filter-sheet__header {
+    display: none;
+  }
+
+  .kru-filter-sheet__panel {
+    position: static;
+    inset: auto;
+    display: contents;
+    width: auto;
+    max-height: none;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .kru-filter-sheet__body {
+    display: contents;
+    padding: 0;
+  }
+}

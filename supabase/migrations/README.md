@@ -428,6 +428,69 @@ Storage validates declared MIME, size, ownership, and exact key, but does not
 inspect file magic bytes; stronger content verification would require a
 trusted server-side processing boundary.
 
+Migration `20261006090000_052_revoke_unneeded_write_privileges.sql` is
+**pending** (not applied by this repository) and must run after `051`. It
+revokes INSERT/UPDATE/DELETE/TRUNCATE from `anon` and `authenticated` on the
+four catalogue views and on `subscriptions`, `subscription_events`, `plans`,
+`features`, `plan_features` and `admin_audit_log`. The browser only reads these
+objects; all writes go through SECURITY DEFINER functions, which are not
+affected. SELECT, RLS policies and data are unchanged, and tables that members
+or admins write directly (profiles, favourites, resources, applications) are
+not touched. Its closing assertion block aborts the migration if a needed read
+privilege would be lost or a write privilege remained. Apply to a Preview
+database first and click through sign-in, favourites, profile edit, the
+membership page and the admin console. Rollback is
+`supabase/rollbacks/20261006090000_052_revoke_unneeded_write_privileges.rollback.sql`
+(one `grant`); check the result with `supabase/verification/052-verify.sql`.
+Run `npm run test:privilege-hardening-sql` for the stand-in check and
+`npm run test:migration-chain-sql` for the run against the replayed 001–051
+chain.
+
+Migration `20261006100000_053_resource_slugs.sql` is **pending** (not applied
+by this repository) and is Phase B of a two-stage slug rollout. Phase A is in
+the application and needs no database change: it reads the `slug` column when
+it exists, falls back to the old query when it does not, serves both
+`/resources/{uuid}` and `/resources/{slug}`, and only redirects a UUID address
+to a slug once one is set. Deploy the application first, then apply this
+migration; the site switches its canonical URLs to slugs within about five
+minutes (catalogue cache) and rolls back by itself if slugs are cleared. The
+file adds a nullable, format-checked, unique `resources.slug`, fills it for the
+17 seeded resources **by resource id** (renamed, duplicated or re-typed titles
+cannot change which row is mapped; a slug already set or already taken is left
+alone, and any other published resource keeps its UUID address and is listed in
+a WARNING), and appends `slug` as the last column of `resource_catalog`. The
+file stops before changing anything if the live view is not migration 029's
+(columns, `security_barrier`). Review the English slugs in the file before
+applying. Run `supabase/verification/pre-check.sql` before and
+`053-verify.sql` after; roll back with `update public.resources set slug = null;`
+(link-neutral) or `supabase/rollbacks/20261006100000_053_resource_slugs.rollback.sql`
+(keeps the view with an always-NULL `slug` column; never drop the view by hand,
+two `saved_resources` policies depend on it). Run `npm run test:resource-slug-sql`
+for the stand-in check and `npm run test:migration-chain-sql` for the real chain.
+To give a new resource a slug later: `update public.resources set slug = 'my-slug' where id = '…';`
+(the format check and unique index reject bad or duplicate values).
+
+Migration `20261006110000_054_resource_issue_context.sql` is **pending** (not
+applied by this repository). It widens the problem-report categories from five
+to ten (adds wrong answer, cannot play, no sound, camera not working, mobile
+layout) and lets `submit_resource_issue` take an optional context (app build,
+browser family and version, OS family, screen size; four short keys, nothing
+else is kept). The three-argument call keeps working, the old function
+signature is replaced in the same transaction so there is no ambiguous overload,
+and a readiness marker (`system.resource_issue_context_v1_ready`) lets the
+application offer the new options only after this file is applied. Deploy the
+application first, then apply. The file can be applied twice; roll back with
+`supabase/rollbacks/20261006110000_054_resource_issue_context.rollback.sql`
+(never deletes a report) and check the result with
+`supabase/verification/054-verify.sql`. Verified in the local engine by
+`npm run test:platform-completion-sql` and, against the real 001–051 chain, by
+`npm run test:migration-chain-sql`.
+
+The three pending files above do not depend on each other: every apply order
+gives the same final state. The hand-off report under `docs/` has the rollout
+runbook (prerequisites, pre-check, apply, verification, rollback, post-deploy
+checks).
+
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
 are already applied: `019` contains durable Founder grant history, renewal lock

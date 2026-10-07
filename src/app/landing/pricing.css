@@ -1,0 +1,245 @@
+.kru-pricing {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--sp-11) var(--sp-5) var(--sp-13);
+  scroll-margin-top: 72px;
+}
+
+.kru-pricing > h2 {
+  font-size: var(--fs-30);
+  text-align: center;
+}
+
+.kru-pricing__lead {
+  margin: var(--sp-3) auto 0;
+  max-width: 560px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.kru-pricing__maintenance {
+  margin: var(--sp-4) auto 0;
+  max-width: 560px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+  font-size: var(--fs-14);
+  text-align: center;
+}
+
+.kru-pricing__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kru-pricing__empty {
+  margin-top: var(--sp-8);
+  padding: var(--sp-7);
+  display: grid;
+  gap: var(--sp-4);
+  justify-items: center;
+  text-align: center;
+}
+
+.kru-pricing__grid {
+  margin-top: var(--sp-8);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gap-grid);
+  align-items: stretch;
+}
+
+.kru-pricing__card {
+  min-width: 0;
+  padding: var(--sp-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  box-shadow: var(--shadow-xs);
+}
+
+.kru-pricing__card--pro {
+  border-color: var(--border-brand);
+  box-shadow: var(--shadow-md);
+}
+
+.kru-pricing__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.kru-pricing__card h3 {
+  font-size: var(--fs-20);
+}
+
+.kru-pricing__badge {
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.kru-pricing__tagline,
+.kru-pricing__note {
+  color: var(--text-muted);
+  font-size: var(--fs-14);
+}
+
+.kru-pricing__price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.kru-pricing__price strong {
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: var(--fs-30);
+  line-height: 1.2;
+}
+
+.kru-pricing__price span {
+  color: var(--text-muted);
+  font-size: var(--fs-14);
+}
+
+.kru-pricing__list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-3);
+  list-style: none;
+}
+
+.kru-pricing__list li {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  color: var(--text-body);
+  font-size: var(--fs-14);
+}
+
+.kru-pricing__list li > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--status-success-fg);
+}
+
+.kru-pricing__cta {
+  margin-top: auto;
+  min-height: var(--tap-min, 44px);
+}
+
+.kru-pricing a.kru-btn--primary:hover {
+  color: var(--white);
+  text-decoration: none;
+}
+
+.kru-pricing__founder {
+  margin-top: var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  border-radius: var(--r-md);
+  background: var(--purple-50);
+  color: var(--text-body);
+  font-size: var(--fs-14);
+}
+
+.kru-pricing__founder > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.kru-pricing__founder strong {
+  color: var(--text-strong);
+}
+
+.kru-pricing__compare {
+  margin-top: var(--sp-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-card);
+  background: var(--surface-card);
+  overflow: hidden;
+}
+
+.kru-pricing__compare table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.kru-pricing__compare th,
+.kru-pricing__compare td {
+  padding: var(--sp-4) var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-14);
+  line-height: var(--lh-snug);
+  overflow-wrap: anywhere;
+}
+
+.kru-pricing__compare thead th {
+  border-top: 0;
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  font-weight: var(--fw-semibold);
+  text-align: center;
+}
+
+.kru-pricing__compare thead th:first-child,
+.kru-pricing__compare tbody th {
+  width: 52%;
+  text-align: left;
+}
+
+.kru-pricing__compare tbody th {
+  color: var(--text-body);
+  font-weight: var(--fw-regular);
+}
+
+.kru-pricing__compare td {
+  text-align: center;
+  color: var(--text-strong);
+}
+
+.kru-pricing__compare td svg {
+  vertical-align: middle;
+}
+
+.kru-pricing__yes {
+  color: var(--status-success-fg);
+}
+
+.kru-pricing__no {
+  color: var(--text-muted);
+}
+
+@media (min-width: 768px) {
+  .kru-pricing__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kru-pricing__compare th,
+  .kru-pricing__compare td {
+    padding: var(--sp-4) var(--sp-5);
+  }
+}

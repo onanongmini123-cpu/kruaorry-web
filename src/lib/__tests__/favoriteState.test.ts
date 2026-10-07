@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { persistFavoriteOptimistically } from "../favoriteState";
+import { createFavoriteRefreshGuard, persistFavoriteOptimistically } from "../favoriteState";
 
 function stateHarness(initial: string[]) {
   let state = initial;
@@ -39,5 +39,38 @@ describe("persistFavoriteOptimistically", () => {
 
     await expect(persistFavoriteOptimistically("resource-1", false, harness.apply, persist)).resolves.toBe("Favorite request failed");
     expect(harness.value()).toEqual(["other", "resource-1"]);
+  });
+});
+
+describe("createFavoriteRefreshGuard", () => {
+  it("accepts a refresh when no favourite was written meanwhile", () => {
+    const guard = createFavoriteRefreshGuard();
+    const canApply = guard.beginRefresh();
+    expect(canApply()).toBe(true);
+  });
+
+  it("drops a refresh that began before a heart was pressed and ends after the press", () => {
+    const guard = createFavoriteRefreshGuard();
+    const canApply = guard.beginRefresh();
+    const settle = guard.beginWrite();
+    expect(canApply()).toBe(false);
+    settle();
+    expect(canApply()).toBe(false);
+  });
+
+  it("drops a refresh that arrives while a write is still running", () => {
+    const guard = createFavoriteRefreshGuard();
+    const settle = guard.beginWrite();
+    const canApply = guard.beginRefresh();
+    expect(canApply()).toBe(false);
+    settle();
+    expect(canApply()).toBe(false);
+  });
+
+  it("accepts a refresh that begins after every write has settled", () => {
+    const guard = createFavoriteRefreshGuard();
+    guard.beginWrite()();
+    const canApply = guard.beginRefresh();
+    expect(canApply()).toBe(true);
   });
 });

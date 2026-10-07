@@ -5,9 +5,13 @@ import { ChevronLeft, ChevronRight, Lock, Sparkles, Star } from "lucide-react";
 import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import type { ResourceAffordance } from "@/components/ui";
+import { accessLabel } from "@/lib/resourceAccess";
+import { resourceHref } from "@/lib/resourceUrl";
 
 export type FeaturedCarouselResource = {
   id: string;
+  /** Readable address; the link falls back to the id until one exists. */
+  slug?: string | null;
   title: string;
   meta: string;
   description: string | null;
@@ -45,18 +49,7 @@ export function selectFeaturedResources<T extends RankedResource>(resources: rea
 }
 
 export function featuredAccessLabel(resource: Pick<FeaturedCarouselResource, "accessMode" | "requiredPlanNames">): string {
-  switch (resource.accessMode) {
-    case "public":
-      return "ใช้ได้ฟรี";
-    case "authenticated":
-      return "สำหรับสมาชิก";
-    case "plans":
-      return resource.requiredPlanNames.length > 0
-        ? `สำหรับ ${resource.requiredPlanNames.join(" หรือ ")}`
-        : "สำหรับแพ็กสมาชิก";
-    case "locked":
-      return "ยังไม่เปิดใช้งาน";
-  }
+  return accessLabel(resource.accessMode);
 }
 
 interface FeaturedResourceCarouselProps {
@@ -187,7 +180,7 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
         ref={trackRef}
         id={trackId}
         className="kru-featured-carousel__track"
-        role="list"
+        role="group"
         tabIndex={0}
         aria-label="สื่อแนะนำ เลื่อนด้วยนิ้วหรือปุ่มลูกศร"
         onKeyDown={handleKeyDown}
@@ -197,15 +190,15 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
           const accessLabel = featuredAccessLabel(resource);
           const showReview = resource.reviewCount > 0 && resource.reviewAverage !== null;
           return (
-            <article
+            <div
               key={resource.id}
               ref={(node) => { slideRefs.current[index] = node; }}
               className="kru-featured-carousel__slide"
-              role="listitem"
+              role="group"
               aria-roledescription="slide"
               aria-label={`${index + 1} จาก ${featured.length}: ${resource.title}`}
             >
-              <Link href={`/resources/${resource.id}`} className="kru-featured-carousel__card">
+              <Link href={resourceHref(resource)} className="kru-featured-carousel__card">
                 <div className="kru-featured-carousel__cover">
                   <PublicResourceCover
                     title={resource.title}
@@ -237,7 +230,7 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
                   </div>
                 </div>
               </Link>
-            </article>
+            </div>
           );
         })}
       </div>
@@ -466,16 +459,15 @@ function CarouselStyles() {
       }
 
       .kru-featured-carousel__dots {
-        min-height: 32px;
+        min-height: var(--tap-min, 44px);
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 8px;
       }
 
       .kru-featured-carousel__dots button {
-        width: 32px;
-        height: 32px;
+        width: var(--tap-min, 44px);
+        height: var(--tap-min, 44px);
         padding: 0;
         border: 0;
         border-radius: var(--r-pill);

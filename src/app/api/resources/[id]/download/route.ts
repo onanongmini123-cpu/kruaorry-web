@@ -6,6 +6,7 @@ import { redactSensitive } from "@/lib/redact";
 import { downloadLoginHref } from "@/lib/downloadReturnPath";
 import { parseResourceTarget } from "@/lib/resourceTarget";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
+import { htmlErrorPage } from "@/lib/htmlErrorPage";
 
 export const dynamic = "force-dynamic";
 
@@ -28,29 +29,7 @@ const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 // `Referrer-Policy: no-referrer` on every response (including the
 // redirect) means the destination never learns this page's URL.
 function errorPage(status: number, message: string, action?: { href: string; label: string }): NextResponse {
-  const html = `<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ดาวน์โหลดไม่สำเร็จ — KruAorry</title>
-<style>
-  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; background: #faf9fc; color: #1a1a1a; text-align: center; padding: 24px; }
-  main { max-width: 360px; }
-  h1 { font-size: 20px; margin: 0 0 8px; }
-  p { color: #666; font-size: 14px; line-height: 1.6; }
-  a { color: #7c3aed; }
-</style>
-</head>
-<body>
-  <main>
-    <h1>ดาวน์โหลดไม่สำเร็จ</h1>
-    <p>${message}</p>
-    <p><a href="${action?.href ?? "/app"}">${action?.label ?? "กลับไปที่แอป"}</a></p>
-  </main>
-</body>
-</html>`;
-  return new NextResponse(html, { status, headers: { "content-type": "text/html; charset=utf-8", ...RESPONSE_HEADERS } });
+  return htmlErrorPage(status, "ดาวน์โหลดไม่สำเร็จ", message, action);
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {

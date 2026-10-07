@@ -1,11 +1,18 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Mascot } from "@/components/Mascot";
 import { LINE_OA_URL } from "@/lib/config";
 
+export const metadata: Metadata = {
+  title: "นโยบายความเป็นส่วนตัว",
+  description: "นโยบายความเป็นส่วนตัวของ KruAorry: ข้อมูลที่เราเก็บ การชำระเงิน ผู้ให้บริการที่เราใช้ และสิทธิ์ของคุณ",
+  alternates: { canonical: "/privacy" },
+};
+
 export default function PrivacyPage() {
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
-      <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
+      <Link href="/" style={{ minHeight: "var(--tap-min)", display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
         <Mascot size={32} />
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
       </Link>
@@ -50,6 +57,6 @@ export default function PrivacyPage() {
           <p>หากมีข้อสงสัยเกี่ยวกับนโยบายความเป็นส่วนตัวนี้ ติดต่อทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a></p>
         </section>
       </div>
-    </div>
+    </main>
   );
 }

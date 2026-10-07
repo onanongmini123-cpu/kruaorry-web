@@ -5,9 +5,12 @@ import {
   fetchFounderFirstYearReadiness,
   fetchMembershipLineSlipWorkflowReadiness,
   fetchMembershipSchemaReadiness,
+  fetchResourceIssueContextReadiness,
   FOUNDER_FIRST_YEAR_READINESS_MARKER,
   MEMBERSHIP_LINE_SLIP_WORKFLOW_READINESS_MARKER,
   MEMBERSHIP_SCHEMA_READINESS_MARKER,
+  RESOURCE_ISSUE_CONTEXT_READINESS_MARKER,
+  resetResourceIssueContextReadinessForTests,
 } from "../membershipSchemaReadiness";
 
 function fakeReadinessClient(result: unknown): { client: SupabaseClient; from: ReturnType<typeof vi.fn> } {
@@ -91,5 +94,30 @@ describe("membership schema readiness", () => {
     const result = fetchMembershipSchemaReadiness(client);
     await vi.advanceTimersByTimeAsync(ASYNC_STAGE_TIMEOUT_MS);
     await expect(result).resolves.toBe("unavailable");
+  });
+});
+
+describe("resource issue context readiness (migration 054)", () => {
+  afterEach(() => resetResourceIssueContextReadinessForTests());
+
+  it("asks the database once and remembers a positive answer for the session", async () => {
+    const { client, from } = fakeReadinessClient({ data: { id: RESOURCE_ISSUE_CONTEXT_READINESS_MARKER }, error: null });
+    await expect(fetchResourceIssueContextReadiness(client)).resolves.toBe("ready");
+    await expect(fetchResourceIssueContextReadiness(client)).resolves.toBe("ready");
+    await expect(fetchResourceIssueContextReadiness(client)).resolves.toBe("ready");
+    expect(from).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps asking while the migration is missing or the lookup fails (never caches a no)", async () => {
+    const missing = fakeReadinessClient({ data: null, error: null });
+    await expect(fetchResourceIssueContextReadiness(missing.client)).resolves.toBe("unavailable");
+    await expect(fetchResourceIssueContextReadiness(missing.client)).resolves.toBe("unavailable");
+    expect(missing.from).toHaveBeenCalledTimes(2);
+
+    const failing = fakeReadinessClient({ data: null, error: { message: "permission denied" } });
+    await expect(fetchResourceIssueContextReadiness(failing.client)).resolves.toBe("unavailable");
+
+    const later = fakeReadinessClient({ data: { id: RESOURCE_ISSUE_CONTEXT_READINESS_MARKER }, error: null });
+    await expect(fetchResourceIssueContextReadiness(later.client)).resolves.toBe("ready");
   });
 });

@@ -1,3 +1,4 @@
+import { absoluteUrl } from "@/lib/site";
 export type AdminView = "dash" | "content" | "requests" | "moderation" | "upgrades" | "members" | "benefits" | "audit";
 
 export type ResourceAccessMode = "public" | "authenticated" | "plans" | "locked";
@@ -33,7 +34,7 @@ interface AdminUpgradeSearchRow {
   profiles: { full_name: string | null; email: string } | null;
 }
 
-export const MEMBER_APP_URL = "https://kruaorry.com/app";
+export const MEMBER_APP_URL = absoluteUrl("/app");
 
 export function adminPaymentSuccessMessage(
   payment: { kind: "application" | "renewal"; amountThb: number; referenceCode?: string },
@@ -381,5 +382,10 @@ export const ISSUE_CATEGORY_LABEL: Record<string, string> = {
   broken_link: "ลิงก์เสีย",
   cannot_download: "ดาวน์โหลดไม่ได้",
   wrong_content: "เนื้อหาผิด",
+  wrong_answer: "เฉลยผิด",
+  cannot_play: "เล่นไม่ได้",
+  no_sound: "เสียงไม่ออก",
+  camera_issue: "กล้องไม่ทำงาน",
+  mobile_layout: "มือถือแสดงผลผิด",
   other: "อื่น ๆ",
 };

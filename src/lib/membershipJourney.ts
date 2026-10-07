@@ -3,12 +3,15 @@ import { isMembershipExpired, type MemberSubscription } from "@/lib/memberAccoun
 import type { UpgradeRequest } from "@/lib/data";
 import { safeUpgradeReturnPath } from "@/lib/authReturnPath";
 import { planDisplayName } from "@/lib/planDisplay";
+import { friendlyErrorMessage } from "@/lib/userMessages";
 
 export type MembershipJourneyPlanId = "founder" | "teacher";
 
 /** Keep legacy/server wording from leaking the old customer-facing name. */
 export function membershipDisplayError(error: string | null | undefined, fallback: string): string {
-  const message = error?.trim() || fallback;
+  // Server and network wording never reaches the member: unknown or technical
+  // text becomes the per-action fallback, known rules become specific Thai.
+  const message = friendlyErrorMessage(error?.trim() ? error : null, fallback);
   return message.replace(/\bTeacher\b(?!\s+Pro\b)/g, "Teacher Pro");
 }
 

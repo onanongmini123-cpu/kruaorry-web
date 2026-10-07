@@ -12,6 +12,7 @@ import {
   type AuthEntryMode,
 } from "@/lib/authReturnPath";
 import { LINE_OA_URL } from "@/lib/config";
+import { trackEvent } from "@/lib/analytics";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import {
@@ -57,6 +58,10 @@ function LoginForm() {
   const hasConfirmationError = searchParams.get("error") === "confirmation";
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<AuthEntryMode>(requestedMode);
+  useEffect(() => {
+    // The visitor is looking at the sign-up form (arrived or switched to it).
+    if (mode === "signup") trackEvent("signup_start", { source: "login_page" });
+  }, [mode]);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -66,7 +71,7 @@ function LoginForm() {
   const [passwordConfirmationError, setPasswordConfirmationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
-    hasConfirmationError ? "ลิงก์ยืนยันอีเมลไม่ถูกต้องหรือหมดอายุ กรุณากรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง" : null
+    hasConfirmationError ? "ลิงก์ยืนยันอีเมลนี้เปิดไม่สำเร็จ ถ้าคุณกดลิงก์ในอีเมลแล้ว ลองเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่สมัครไว้ได้เลย หากยังเข้าไม่ได้ ให้กรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง" : null
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -155,6 +160,7 @@ function LoginForm() {
           applySignupFailureTransition(signUpError);
           return;
         }
+        trackEvent("signup_complete", { mode: data.session ? "session" : "email_confirmation" });
         if (!data.session) {
           setNotice(SIGNUP_PENDING_MESSAGE);
           setMode("signin");
@@ -251,13 +257,13 @@ function LoginForm() {
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "1fr" }} className="kru-login-grid">
-      <div className="kru-login-brand" style={{ background: "var(--wash-hero)", padding: "var(--sp-9)", display: "none", flexDirection: "column", justifyContent: "center" }}>
+      <aside className="kru-login-brand" style={{ background: "var(--wash-hero)", padding: "var(--sp-9)", display: "none", flexDirection: "column", justifyContent: "center" }}>
         <BrandLogo href="/" mascotSize={104} layout="stacked" className="kru-login-brand-logo" />
-        <h1 style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-36)" }}>
+        <h2 style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-36)" }}>
           ครูมีงานเยอะพออยู่แล้ว
           <br />
           ให้ครูอรรี่ช่วย
-        </h1>
+        </h2>
         <div style={{ display: "grid", gap: "var(--sp-4)", marginTop: "var(--sp-7)" }}>
           {POINTS.map((p) => (
             <div key={p} style={{ display: "flex", alignItems: "center", gap: "var(--sp-4)", fontSize: "var(--fs-16)" }}>
@@ -266,12 +272,12 @@ function LoginForm() {
             </div>
           ))}
         </div>
-      </div>
+      </aside>
 
-      <div style={{ padding: "var(--sp-7) var(--sp-5)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <main style={{ padding: "var(--sp-7) var(--sp-5)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: 420, margin: "0 auto" }}>
           <BrandLogo href="/" mascotSize={64} className="kru-login-form-brand" />
-          <h2 style={{ fontSize: "var(--fs-30)" }}>{mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิกครู"}</h2>
+          <h1 style={{ fontSize: "var(--fs-30)" }}>{mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิกครู"}</h1>
           <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
             {mode === "signin" ? "ยังไม่มีบัญชี? " : "มีบัญชีอยู่แล้ว? "}
             <button
@@ -370,7 +376,7 @@ function LoginForm() {
                     setError(null);
                     setNotice(null);
                   }}
-                  style={{ color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  style={{ minHeight: "var(--tap-min)", color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
                   ยังไม่ได้ยืนยันอีเมล?
                 </button>
@@ -378,7 +384,7 @@ function LoginForm() {
                   type="button"
                   onClick={handleForgotPassword}
                   disabled={resetting}
-                  style={{ color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  style={{ minHeight: "var(--tap-min)", color: "var(--purple-600)", fontSize: "var(--fs-14)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
                   {resetting ? "กำลังส่ง..." : "ลืมรหัสผ่าน?"}
                 </button>
@@ -415,7 +421,7 @@ function LoginForm() {
             </div>
           )}
         </div>
-      </div>
+      </main>
       <style>{`
         .kru-login-form-brand { margin: 0 auto var(--sp-7); }
         .kru-login-brand-logo .kru-brand-logo__copy strong { font-size: var(--fs-30); }

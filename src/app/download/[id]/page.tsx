@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { triggerBlobDownload, shouldCloseTabAfterDownload, thaiDownloadErrorMessage } from "@/lib/triggerBlobDownload";
 import { AUTO_CLOSE_PARAM } from "@/lib/downloadWindow";
 import { downloadLoginHref } from "@/lib/downloadReturnPath";
+import { trackEvent } from "@/lib/analytics";
 
 // This page only exists so the tab window.open() targets can close itself
 // deterministically once the file is fully downloaded — see
@@ -13,12 +14,17 @@ import { downloadLoginHref } from "@/lib/downloadReturnPath";
 // entitlement, and signing work server-side, and still redirects to the
 // signed URL — fetch() just follows that redirect transparently) and
 // buffers the response as a Blob before triggering the save.
+const RESOURCE_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
 export default function DownloadPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState<"working" | "done" | "error">("working");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  // A mistyped or tampered link must not be turned into a request for some
+  // other same-origin path; only a real resource id is ever fetched.
+  const validId = RESOURCE_ID.test(params.id ?? "");
+  const [status, setStatus] = useState<"working" | "done" | "error">(validId ? "working" : "error");
+  const [errorMessage, setErrorMessage] = useState<string | null>(validId ? null : "ไม่พบไฟล์นี้ หรือรหัสสื่อไม่ถูกต้อง");
+  const [errorStatus, setErrorStatus] = useState<number | null>(validId ? null : 404);
   // Whether this tab should try to close itself once the download finishes
   // — set from the AUTO_CLOSE_PARAM marker downloadWindow.ts adds only to
   // the popup URL (never the same-tab fallback URL), not from
@@ -40,8 +46,10 @@ export default function DownloadPage() {
       // Some browsers make `opener` non-configurable — nothing more to do.
     }
 
+    if (!validId) return;
+
     let cancelled = false;
-    triggerBlobDownload(`/api/resources/${params.id}/download`, fileName, {
+    triggerBlobDownload(`/api/resources/${encodeURIComponent(params.id)}/download`, fileName, {
       fetchImpl: (url, init) => fetch(url, init),
       createObjectUrl: (blob) => URL.createObjectURL(blob),
       revokeObjectUrl: (url) => URL.revokeObjectURL(url),
@@ -59,6 +67,7 @@ export default function DownloadPage() {
           return;
         }
         setStatus("done");
+        trackEvent("download", { resource_id: params.id, stage: "completed" });
         if (shouldCloseTabAfterDownload(openedAsPopup, result)) {
           window.close();
         }
@@ -79,7 +88,7 @@ export default function DownloadPage() {
     return () => {
       cancelled = true;
     };
-  }, [params.id, fileName, openedAsPopup]);
+  }, [params.id, validId, fileName, openedAsPopup]);
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "var(--sp-6)", textAlign: "center" }}>

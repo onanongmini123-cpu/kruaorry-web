@@ -1,5 +1,3 @@
-import { Sparkles, FileSpreadsheet, Gamepad2, ClipboardCheck, FileDown } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import type { ResourceAffordance } from "@/components/ui";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { withTimeout } from "@/lib/asyncTimeout";
@@ -14,6 +12,10 @@ import {
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
 import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
+import { friendlyErrorMessage } from "@/lib/userMessages";
+import { customerBenefitCopy } from "@/lib/benefitCopy";
+import type { IssueContext } from "@/lib/issueContext";
+import type { ResourceIssueCategory } from "@/lib/resourceIssues";
 
 function logError(label: string, error: PostgrestError) {
   // PostgREST details/messages can echo submitted values (for example a
@@ -24,6 +26,8 @@ function logError(label: string, error: PostgrestError) {
 
 export interface Resource {
   id: string;
+  /** Readable URL key when the public catalogue provided one (server-rendered pages). */
+  slug?: string | null;
   title: string;
   meta: string;
   description: string | null;
@@ -92,32 +96,10 @@ export interface Profile {
   avatarPath: string | null;
 }
 
-const ICON_BY_MODE: Record<ResourceAffordance, LucideIcon> = {
-  web_app: Gamepad2,
-  google_template: FileSpreadsheet,
-  google_form: ClipboardCheck,
-  file_download: FileDown,
-};
-
-const TINT_BY_MODE: Record<ResourceAffordance, "purple" | "pink" | "blue"> = {
-  web_app: "pink",
-  google_template: "blue",
-  google_form: "purple",
-  file_download: "blue",
-};
-
 const RESOURCE_ACCESS_MODES = new Set<ResourceAccessMode>(["public", "authenticated", "plans", "locked"]);
 
 function resourceAccessMode(value: unknown): ResourceAccessMode {
   return RESOURCE_ACCESS_MODES.has(value as ResourceAccessMode) ? value as ResourceAccessMode : "locked";
-}
-
-export function resourceIcon(affordance: ResourceAffordance): LucideIcon {
-  return ICON_BY_MODE[affordance] ?? Sparkles;
-}
-
-export function resourceTint(affordance: ResourceAffordance): "purple" | "pink" | "blue" {
-  return TINT_BY_MODE[affordance] ?? "purple";
 }
 
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
@@ -246,16 +228,27 @@ export async function fetchPlans(supabase: SupabaseClient): Promise<Plan[]> {
     note: p.note,
     benefits: benefitRows
       .filter((benefit) => benefit.plan_id === p.id)
-      .map((benefit) => ({
+      .map((benefit) => {
+        const copy = customerBenefitCopy({
+          featureId: benefit.feature_id,
+          name: benefit.feature_name,
+          description: benefit.feature_description,
+        });
+        return {
+          featureId: benefit.feature_id,
+          name: copy.name,
+          description: copy.description,
+          valueType: benefit.value_type as PlanBenefit["valueType"],
+          limitValue: benefit.limit_value === null ? null : Number(benefit.limit_value),
+        };
+      }),
+    features: benefitRows
+      .filter((benefit) => benefit.plan_id === p.id)
+      .map((benefit) => customerBenefitCopy({
         featureId: benefit.feature_id,
         name: benefit.feature_name,
         description: benefit.feature_description,
-        valueType: benefit.value_type as PlanBenefit["valueType"],
-        limitValue: benefit.limit_value === null ? null : Number(benefit.limit_value),
-      })),
-    features: benefitRows
-      .filter((benefit) => benefit.plan_id === p.id)
-      .map((benefit) => benefit.feature_name),
+      }).name),
     billingInterval: p.billing_interval === "year"
       ? "year"
       : p.billing_interval === "one_time"
@@ -345,7 +338,7 @@ export async function submitRequest(supabase: SupabaseClient, title: string): Pr
   const { error } = await supabase.rpc("submit_my_request", { p_title: title.trim() });
   if (error) {
     logError("submitRequest failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "ส่งคำขอไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -726,12 +719,7 @@ export interface MyResourceReview {
   body: string;
 }
 
-export type ResourceIssueCategory =
-  | "cannot_open"
-  | "broken_link"
-  | "cannot_download"
-  | "wrong_content"
-  | "other";
+export type { ResourceIssueCategory } from "@/lib/resourceIssues";
 
 export async function fetchResourceReviews(supabase: SupabaseClient, resourceId: string): Promise<ResourceReview[]> {
   const { data, error } = await supabase
@@ -791,7 +779,7 @@ export async function upsertMyResourceReview(
   });
   if (error) {
     logError("upsertMyResourceReview failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "บันทึกรีวิวไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -800,7 +788,7 @@ export async function deleteMyResourceReview(supabase: SupabaseClient, resourceI
   const { error } = await supabase.rpc("delete_my_resource_review", { p_resource_id: resourceId });
   if (error) {
     logError("deleteMyResourceReview failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "ลบรีวิวไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -810,15 +798,18 @@ export async function submitResourceIssue(
   resourceId: string,
   category: ResourceIssueCategory,
   details: string,
+  /** Only sent when the database has migration 054; older ones take three arguments. */
+  context?: IssueContext,
 ): Promise<string | null> {
   const { error } = await supabase.rpc("submit_resource_issue", {
     p_resource_id: resourceId,
     p_category: category,
     p_details: details.trim(),
+    ...(context ? { p_context: context } : {}),
   });
   if (error) {
     logError("submitResourceIssue failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "ส่งรายงานปัญหาไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }
@@ -837,7 +828,7 @@ export async function updateMyDisplayName(
   const { error } = outcome.value;
   if (error) {
     logError("updateMyDisplayName failed", error);
-    return error.message;
+    return friendlyErrorMessage(error, "บันทึกชื่อที่แสดงไม่สำเร็จ กรุณาลองอีกครั้ง");
   }
   return null;
 }

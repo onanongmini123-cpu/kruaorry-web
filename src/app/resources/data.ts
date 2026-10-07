@@ -1,8 +1,13 @@
+import { unstable_cache } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createAnonClient } from "@/lib/supabase/anon";
 import { withTimeout } from "@/lib/asyncTimeout";
+import { relatedResources } from "@/lib/relatedResources";
+import { isResourceUuid, isValidSlug } from "@/lib/resourceSlug";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
-import { PUBLIC_RESOURCE_SELECT, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
+import { PUBLIC_RESOURCE_SELECT, PUBLIC_RESOURCE_SELECT_WITH_SLUG, resourceHref, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
 import { collectResourcePages } from "./pagination";
 
 type LoadResult = { status: "ready"; resources: PublicResource[] } | { status: "unavailable"; resources: [] };
@@ -39,47 +44,125 @@ function toEntitlements(value: unknown): EntitlementSnapshot {
   };
 }
 
-export async function loadPublicResources(): Promise<LoadResult> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return { status: "unavailable", resources: [] };
-  }
-  try {
-    const client = await createClient();
-    const rows = await collectResourcePages(async (from, to) => {
-      const outcome = await withTimeout(
-        Promise.resolve(client.from("resource_catalog").select(PUBLIC_RESOURCE_SELECT)
-          .order("published_at", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).range(from, to)),
-        "public resource listing",
-      );
-      return outcome.ok ? outcome.value : { data: null, error: outcome.reason };
-    });
-    if (!rows) {
-      console.error("Public resource listing is unavailable");
-      return { status: "unavailable", resources: [] };
+const CATALOG_REVALIDATE_SECONDS = 300;
+
+type CatalogRead = { resources: PublicResource[]; slugsLive: boolean };
+
+function isMissingSlugColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  const text = typeof message === "string" ? message : "";
+  return (code === "42703" || code === "PGRST204" || code === "PGRST200") && /slug/i.test(text);
+}
+
+/** Every published row, newest first. Resolves `{ error }` instead of throwing. */
+async function readCatalogRows(client: SupabaseClient, select: string): Promise<{ rows: unknown[] | null; error: unknown }> {
+  let failure: unknown = null;
+  const rows = await collectResourcePages(async (from, to) => {
+    const outcome = await withTimeout(
+      Promise.resolve(client.from("resource_catalog").select(select)
+        .order("published_at", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).range(from, to)),
+      "public resource listing",
+    );
+    if (!outcome.ok) {
+      failure = outcome.reason;
+      return { data: null, error: outcome.reason };
     }
-    return {
-      status: "ready",
-      resources: rows.map(toPublicResource).filter((item): item is PublicResource => item !== null),
-    };
+    if (outcome.value.error) failure = outcome.value.error;
+    return outcome.value as { data: unknown[] | null; error: unknown };
+  });
+  return { rows, error: rows ? null : failure };
+}
+
+/**
+ * The public catalogue is the same for every visitor (the view is
+ * viewer-independent), so it is read once with the anonymous client and shared
+ * between the list, the detail page, related resources and the sitemap for a
+ * few minutes. Failures throw so they are never cached.
+ *
+ * Deploy-safe slug support: the slug column is requested first; if the database
+ * does not have it yet, the same read is repeated without it and every
+ * resource simply keeps its UUID URL.
+ */
+async function readCatalog(): Promise<CatalogRead> {
+  const client = createAnonClient();
+  if (!client) throw new Error("catalog unavailable: no Supabase configuration");
+
+  let slugsLive = true;
+  let result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT_WITH_SLUG);
+  if (!result.rows && isMissingSlugColumn(result.error)) {
+    slugsLive = false;
+    result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT);
+  }
+  if (!result.rows) throw new Error("catalog unavailable: read failed");
+  return {
+    slugsLive,
+    resources: result.rows.map(toPublicResource).filter((item): item is PublicResource => item !== null),
+  };
+}
+
+const readCatalogCached = unstable_cache(readCatalog, ["public-catalog-v2"], {
+  revalidate: CATALOG_REVALIDATE_SECONDS,
+  tags: ["catalog"],
+});
+
+export async function loadPublicResources(): Promise<LoadResult> {
+  try {
+    const { resources } = await readCatalogCached();
+    return { status: "ready", resources };
   } catch {
-    console.error("Public resource listing failed");
+    console.error("Public resource listing is unavailable");
     return { status: "unavailable", resources: [] };
   }
 }
 
-export async function loadPublicResource(id: string): Promise<PublicResource | null> {
-  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id)) return null;
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return null;
+export type ResourceLookup =
+  | { status: "found"; resource: PublicResource; canonicalPath: string; redirectTo: string | null }
+  | { status: "not_found" }
+  | { status: "unavailable" };
+
+/**
+ * Finds a resource by its URL key, which is either a UUID (every link made
+ * before slugs existed) or a slug. `canonicalPath` is the one URL search
+ * engines should keep; `redirectTo` is set when the request used a different
+ * form of the same address (UUID where a slug exists, or a differently cased
+ * slug) so the page can send a permanent redirect.
+ */
+export async function resolvePublicResource(key: string): Promise<ResourceLookup> {
+  const isUuid = isResourceUuid(key);
+  const lowered = key.toLowerCase();
+  if (!isUuid && !isValidSlug(lowered)) return { status: "not_found" };
+
+  let resources: PublicResource[];
   try {
-    const client = await createClient();
-    const outcome = await withTimeout(
-      Promise.resolve(client.from("resource_catalog").select(PUBLIC_RESOURCE_SELECT).eq("id", id).maybeSingle()),
-      "public resource detail",
-    );
-    return outcome.ok && !outcome.value.error ? toPublicResource(outcome.value.data) : null;
+    ({ resources } = await readCatalogCached());
   } catch {
-    console.error("Public resource detail failed");
-    return null;
+    console.error("Public resource detail is unavailable");
+    return { status: "unavailable" };
+  }
+
+  const resource = isUuid
+    ? resources.find((item) => item.id === lowered)
+    : resources.find((item) => item.slug === lowered);
+  if (!resource) return { status: "not_found" };
+
+  const canonicalPath = resourceHref(resource);
+  const requestedPath = `/resources/${key}`;
+  return {
+    status: "found",
+    resource,
+    canonicalPath,
+    redirectTo: canonicalPath !== requestedPath ? canonicalPath : null,
+  };
+}
+
+/** Nearby published resources, from the same shared catalogue read. */
+export async function loadRelatedResources(resource: PublicResource, limit = 6): Promise<PublicResource[]> {
+  try {
+    const { resources } = await readCatalogCached();
+    return relatedResources(resource, resources.filter((item) => item.accessMode !== "locked"), limit);
+  } catch {
+    return [];
   }
 }
 

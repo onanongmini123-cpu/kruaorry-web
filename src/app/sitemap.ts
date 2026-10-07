@@ -1,13 +1,35 @@
 import type { MetadataRoute } from "next";
+import { absoluteUrl } from "@/lib/site";
+import { resourceHref } from "@/lib/resourceUrl";
+import { loadPublicResources } from "./resources/data";
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const base = "https://kruaorry-web.vercel.app";
-  return [
-    { url: `${base}/`, changeFrequency: "weekly", priority: 1 },
-    { url: `${base}/resources`, changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}/membership`, changeFrequency: "daily", priority: 0.9 },
-    { url: `${base}/login`, changeFrequency: "monthly", priority: 0.5 },
-    { url: `${base}/terms`, changeFrequency: "yearly", priority: 0.2 },
-    { url: `${base}/privacy`, changeFrequency: "yearly", priority: 0.2 },
+// Rebuilt as often as the shared catalogue cache (5 minutes), so newly
+// published resources reach search engines without a deploy and a transient
+// database error never leaves an empty sitemap in place for long.
+export const revalidate = 300;
+
+/**
+ * Public, indexable pages only: the landing page, the library, legal pages and
+ * every resource that is open (or open to members). Member and account pages
+ * (/app, /admin, /login, /membership, downloads) are deliberately absent.
+ */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const pages: MetadataRoute.Sitemap = [
+    { url: absoluteUrl("/"), changeFrequency: "weekly", priority: 1 },
+    { url: absoluteUrl("/resources"), changeFrequency: "daily", priority: 0.9 },
+    { url: absoluteUrl("/terms"), changeFrequency: "yearly", priority: 0.2 },
+    { url: absoluteUrl("/privacy"), changeFrequency: "yearly", priority: 0.2 },
   ];
+
+  const catalog = await loadPublicResources();
+  if (catalog.status !== "ready") return pages;
+
+  const resourcePages: MetadataRoute.Sitemap = catalog.resources
+    .filter((resource) => resource.accessMode !== "locked")
+    .map((resource) => ({
+      url: absoluteUrl(resourceHref(resource)),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    }));
+  return [...pages, ...resourcePages];
 }

@@ -14,13 +14,16 @@
     "test:public-resource-sql": "node scripts/test-public-resource-read-policy.mjs",
     "test:resource-placeholder-sql": "node scripts/test-resource-placeholder-demotion.mjs",
     "test:resource-discovery-sql": "node scripts/test-resource-discovery-metadata.mjs",
-    "test:platform-completion-sql": "node scripts/test-platform-completion-sql.mjs"
+    "test:platform-completion-sql": "node scripts/test-platform-completion-sql.mjs",
+    "test:privilege-hardening-sql": "node scripts/test-privilege-hardening-sql.mjs",
+    "test:resource-slug-sql": "node scripts/test-resource-slug-sql.mjs",
+    "test:migration-chain-sql": "node scripts/test-migration-chain-sql.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "lucide-react": "^1.34.0",
-    "next": "16.3.3",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tus-js-client": "^4.3.1"
@@ -32,7 +35,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.3",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"

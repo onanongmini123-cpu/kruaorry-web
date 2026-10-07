@@ -6,6 +6,8 @@
 // browser, without tus-js-client's real XHR/Blob runtime, and without a
 // live Supabase project.
 
+import { resourceGradeProblem } from "@/lib/resourceGrades";
+
 export const RESOURCE_FILE_MIME_EXTENSIONS: Record<string, string> = {
   "application/pdf": ".pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
@@ -60,6 +62,8 @@ export interface PublishCandidate {
   coverImageUrl: string | null;
   filePath: string | null;
   ctaUrl: string | null;
+  /** When provided, a published resource must have valid grade levels. */
+  gradeLevels?: readonly string[] | null;
 }
 
 // Mirrors the DB CHECK constraints added for this feature (see
@@ -71,6 +75,10 @@ export interface PublishCandidate {
 export function publishValidationError(candidate: PublishCandidate): string | null {
   if (candidate.status !== "published") return null;
   if (!candidate.coverImageUrl) return "ต้องมีรูปปกก่อนเผยแพร่";
+  if (candidate.gradeLevels !== undefined) {
+    const gradeProblem = resourceGradeProblem(candidate.gradeLevels);
+    if (gradeProblem) return `${gradeProblem} กรุณาเลือกระดับชั้นก่อนเผยแพร่`;
+  }
   if (candidate.deliveryMode === "file_download") {
     return candidate.filePath ? null : "โหมดไฟล์ดาวน์โหลดต้องมีไฟล์แนบก่อนเผยแพร่";
   }
