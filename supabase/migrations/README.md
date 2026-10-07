@@ -439,9 +439,12 @@ or admins write directly (profiles, favourites, resources, applications) are
 not touched. Its closing assertion block aborts the migration if a needed read
 privilege would be lost or a write privilege remained. Apply to a Preview
 database first and click through sign-in, favourites, profile edit, the
-membership page and the admin console. Rollback is the single `grant` statement
-in the file header. Run `npm run test:privilege-hardening-sql` for the local
-engine check.
+membership page and the admin console. Rollback is
+`supabase/rollbacks/20261006090000_052_revoke_unneeded_write_privileges.rollback.sql`
+(one `grant`); check the result with `supabase/verification/052-verify.sql`.
+Run `npm run test:privilege-hardening-sql` for the stand-in check and
+`npm run test:migration-chain-sql` for the run against the replayed 001–051
+chain.
 
 Migration `20261006100000_053_resource_slugs.sql` is **pending** (not applied
 by this repository) and is Phase B of a two-stage slug rollout. Phase A is in
@@ -452,12 +455,19 @@ to a slug once one is set. Deploy the application first, then apply this
 migration; the site switches its canonical URLs to slugs within about five
 minutes (catalogue cache) and rolls back by itself if slugs are cleared. The
 file adds a nullable, format-checked, unique `resources.slug`, fills it for the
-17 seeded resources by exact title (ambiguous or renamed rows are skipped and
-keep their UUID address), and appends `slug` as the last column of
-`resource_catalog`. Review the English slugs in the file before applying, and
-compare `pg_get_viewdef('public.resource_catalog')` with migration 029 first.
-Run `npm run test:resource-slug-sql` for the local engine check. To give a new
-resource a slug later: `update public.resources set slug = 'my-slug' where id = '…';`
+17 seeded resources **by resource id** (renamed, duplicated or re-typed titles
+cannot change which row is mapped; a slug already set or already taken is left
+alone, and any other published resource keeps its UUID address and is listed in
+a WARNING), and appends `slug` as the last column of `resource_catalog`. The
+file stops before changing anything if the live view is not migration 029's
+(columns, `security_barrier`). Review the English slugs in the file before
+applying. Run `supabase/verification/pre-check.sql` before and
+`053-verify.sql` after; roll back with `update public.resources set slug = null;`
+(link-neutral) or `supabase/rollbacks/20261006100000_053_resource_slugs.rollback.sql`
+(keeps the view with an always-NULL `slug` column; never drop the view by hand,
+two `saved_resources` policies depend on it). Run `npm run test:resource-slug-sql`
+for the stand-in check and `npm run test:migration-chain-sql` for the real chain.
+To give a new resource a slug later: `update public.resources set slug = 'my-slug' where id = '…';`
 (the format check and unique index reject bad or duplicate values).
 
 Migration `20261006110000_054_resource_issue_context.sql` is **pending** (not
@@ -469,8 +479,16 @@ else is kept). The three-argument call keeps working, the old function
 signature is replaced in the same transaction so there is no ambiguous overload,
 and a readiness marker (`system.resource_issue_context_v1_ready`) lets the
 application offer the new options only after this file is applied. Deploy the
-application first, then apply. Verified in the local engine by
-`npm run test:platform-completion-sql`.
+application first, then apply. The file can be applied twice; roll back with
+`supabase/rollbacks/20261006110000_054_resource_issue_context.rollback.sql`
+(never deletes a report) and check the result with
+`supabase/verification/054-verify.sql`. Verified in the local engine by
+`npm run test:platform-completion-sql` and, against the real 001–051 chain, by
+`npm run test:migration-chain-sql`.
+
+The three pending files above do not depend on each other: every apply order
+gives the same final state. See `docs/pr-27-handoff.md` for the rollout runbook
+(prerequisites, pre-check, apply, verification, rollback, post-deploy checks).
 
 The Phase 1B catalogue preserves the live Plus plan's customer-facing copy
 from `016d` while adding only lifecycle/pricing metadata. Migrations 019–025
