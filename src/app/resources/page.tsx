@@ -72,7 +72,6 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
             event="search"
             properties={{
               source: "library",
-              term: filters.query,
               query_length: filters.query.length,
               filters_count: narrowing,
               results_count: visible.length,
@@ -166,6 +165,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
               <div className="kru-lib-grid">
                 {visible.map((item, index) => (
                   <ResourceCard
+                    headingLevel={2}
                     key={item.id}
                     title={item.title}
                     description={item.description}

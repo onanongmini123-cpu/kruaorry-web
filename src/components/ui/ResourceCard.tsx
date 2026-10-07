@@ -54,6 +54,8 @@ export interface ResourceCardProps {
   onSave?: () => void;
   /** Load the cover eagerly (first row above the fold). */
   priority?: boolean;
+  /** Heading level of the title: 2 when the cards follow the page title directly, otherwise 3. */
+  headingLevel?: 2 | 3;
 }
 
 const DETAIL_CTA = "ดูรายละเอียด";
@@ -76,12 +78,13 @@ export function ResourceCard({
   savePending,
   onSave,
   priority = false,
+  headingLevel = 3,
 }: ResourceCardProps) {
   const gradeText = formatResourceGrades(gradeLevels);
   const highlights = parseResourceMeta(meta).metrics.slice(0, 2);
   const blurb = shortDescription(description, BLURB_MAX_CHARS) || BLURB_FALLBACK;
   const planNames = accessTier === "pro" ? requiredPlanNames.filter(Boolean) : [];
-  const label = `${DETAIL_CTA} ${title}`;
+  const Heading = headingLevel === 2 ? "h2" : "h3";
 
   const cover = (
     <>
@@ -132,9 +135,9 @@ export function ResourceCard({
           </Badge>
         </div>
 
-        <h3 className="kru-resource-card__title">
+        <Heading className="kru-resource-card__title">
           {href ? <Link href={href}>{title}</Link> : <button type="button" onClick={onSelect}>{title}</button>}
-        </h3>
+        </Heading>
         <p className="kru-resource-card__blurb">{blurb}</p>
 
         <div className="kru-resource-card__tags">
@@ -145,11 +148,13 @@ export function ResourceCard({
 
         {highlights.length > 0 && <p className="kru-resource-card__highlights">{highlights.join(" · ")}</p>}
 
+        {/* A second, visible way to the same page for pointer users. The title is
+            the one link for keyboards and screen readers, so this is out of both. */}
         <div className="kru-resource-card__cta">
           {href ? (
-            <Link href={href} className="kru-btn kru-btn--soft kru-btn--sm kru-btn--block" aria-label={label}>{DETAIL_CTA}</Link>
+            <Link href={href} className="kru-btn kru-btn--soft kru-btn--sm kru-btn--block" tabIndex={-1} aria-hidden="true">{DETAIL_CTA}</Link>
           ) : (
-            <button type="button" className="kru-btn kru-btn--soft kru-btn--sm kru-btn--block" onClick={onSelect} aria-label={label}>{DETAIL_CTA}</button>
+            <button type="button" className="kru-btn kru-btn--soft kru-btn--sm kru-btn--block" onClick={onSelect} tabIndex={-1} aria-hidden="true">{DETAIL_CTA}</button>
           )}
         </div>
       </div>

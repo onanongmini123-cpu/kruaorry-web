@@ -152,6 +152,7 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
           <input
             ref={inputRef}
             id="profile-avatar-input"
+            aria-label="เลือกรูปโปรไฟล์"
             className="kru-visually-hidden"
             type="file"
             accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"

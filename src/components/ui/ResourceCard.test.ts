@@ -61,9 +61,20 @@ describe("ResourceCard content contract", () => {
     const html = render();
     const hrefs = html.match(/href="\/resources\/11111111-2222-4333-8444-555555555555"/g) ?? [];
     expect(hrefs.length).toBe(3);
-    // The cover link is a pointer-only duplicate: hidden from assistive tech and the tab order.
-    expect(html).toMatch(/<a[^>]*tabindex="-1"[^>]*aria-hidden="true"|<a[^>]*aria-hidden="true"[^>]*tabindex="-1"/);
-    expect(html).toContain('aria-label="ดูรายละเอียด โรงงานคำไทย"');
+    // The cover and the "ดูรายละเอียด" button are pointer-only duplicates: out of the tab order and
+    // hidden from assistive tech. The title is the one link a keyboard or screen reader meets.
+    const anchors = html.match(/<a\b[^>]*>/g) ?? [];
+    const pointerOnly = anchors.filter((tag) => /tabindex="-1"/.test(tag) && /aria-hidden="true"/.test(tag));
+    expect(pointerOnly).toHaveLength(2);
+    const reachable = anchors.filter((tag) => !/tabindex="-1"/.test(tag));
+    expect(reachable).toHaveLength(1);
+    expect(html).toMatch(/<h3[^>]*class="kru-resource-card__title"[^>]*><a[^>]*>โรงงานคำไทย<\/a><\/h3>/);
+  });
+
+  it("uses a second-level heading when the cards follow the page title directly", () => {
+    const html = render({ headingLevel: 2 });
+    expect(html).toMatch(/<h2[^>]*class="kru-resource-card__title"/);
+    expect(html).not.toContain("<h3");
   });
 
   it("uses an in-app button when there is no detail page to link to", () => {

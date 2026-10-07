@@ -331,6 +331,12 @@ img {
   background: var(--ink-100);
 }
 
+/* A link inside a sentence is told apart by more than its colour. */
+p > a:not(.kru-btn) {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
 /* ------------------------------------------------------------ IconButton */
 .kru-iconbtn {
   display: inline-flex;

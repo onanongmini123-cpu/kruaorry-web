@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-8) var(--sp-5)" }}>
       <Link href="/" style={{ minHeight: "var(--tap-min)", display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
         <Mascot size={32} />
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
@@ -56,6 +56,6 @@ export default function PrivacyPage() {
           <p>หากมีข้อสงสัยเกี่ยวกับนโยบายความเป็นส่วนตัวนี้ ติดต่อทีมงานผ่าน <a href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">LINE Official Account</a></p>
         </section>
       </div>
-    </div>
+    </main>
   );
 }

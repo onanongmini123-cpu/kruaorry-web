@@ -257,13 +257,13 @@ function LoginForm() {
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "1fr" }} className="kru-login-grid">
-      <div className="kru-login-brand" style={{ background: "var(--wash-hero)", padding: "var(--sp-9)", display: "none", flexDirection: "column", justifyContent: "center" }}>
+      <aside className="kru-login-brand" style={{ background: "var(--wash-hero)", padding: "var(--sp-9)", display: "none", flexDirection: "column", justifyContent: "center" }}>
         <BrandLogo href="/" mascotSize={104} layout="stacked" className="kru-login-brand-logo" />
-        <h1 style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-36)" }}>
+        <h2 style={{ marginTop: "var(--sp-4)", fontSize: "var(--fs-36)" }}>
           ครูมีงานเยอะพออยู่แล้ว
           <br />
           ให้ครูอรรี่ช่วย
-        </h1>
+        </h2>
         <div style={{ display: "grid", gap: "var(--sp-4)", marginTop: "var(--sp-7)" }}>
           {POINTS.map((p) => (
             <div key={p} style={{ display: "flex", alignItems: "center", gap: "var(--sp-4)", fontSize: "var(--fs-16)" }}>
@@ -272,12 +272,12 @@ function LoginForm() {
             </div>
           ))}
         </div>
-      </div>
+      </aside>
 
-      <div style={{ padding: "var(--sp-7) var(--sp-5)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <main style={{ padding: "var(--sp-7) var(--sp-5)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: 420, margin: "0 auto" }}>
           <BrandLogo href="/" mascotSize={64} className="kru-login-form-brand" />
-          <h2 style={{ fontSize: "var(--fs-30)" }}>{mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิกครู"}</h2>
+          <h1 style={{ fontSize: "var(--fs-30)" }}>{mode === "signin" ? "เข้าสู่ระบบ" : "สมัครสมาชิกครู"}</h1>
           <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", fontSize: "var(--fs-14)", color: "var(--text-muted)" }}>
             {mode === "signin" ? "ยังไม่มีบัญชี? " : "มีบัญชีอยู่แล้ว? "}
             <button
@@ -421,7 +421,7 @@ function LoginForm() {
             </div>
           )}
         </div>
-      </div>
+      </main>
       <style>{`
         .kru-login-form-brand { margin: 0 auto var(--sp-7); }
         .kru-login-brand-logo .kru-brand-logo__copy strong { font-size: var(--fs-30); }

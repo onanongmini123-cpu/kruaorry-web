@@ -454,10 +454,13 @@ export default function TeacherAppPage() {
     );
   }
 
-  const renderResourceGrid = (items: Resource[]) => (
+  // Cards under a section heading (home) are third level; in the library and
+  // favourites they follow the page title directly, so they are second level.
+  const renderResourceGrid = (items: Resource[], headingLevel: 2 | 3 = 3) => (
     <div className="kru-resource-grid">
       {items.map((resource, index) => (
         <ResourceCard
+          headingLevel={headingLevel}
           key={resource.id}
           title={resource.title}
           description={resource.description}
@@ -528,7 +531,7 @@ export default function TeacherAppPage() {
               </Button>
             )}
             {profile && (
-              <button type="button" className="kru-app-header-account" onClick={() => setView("account")} aria-label="เปิดบัญชีของฉัน">
+              <button type="button" className="kru-app-header-account" onClick={() => setView("account")} title="เปิดบัญชีของฉัน">
                 <ProfileAvatar supabase={supabase} avatarPath={profile.avatarPath} name={profile.fullName || profile.email} size={36} />
                 <span className="kru-app-header-account__copy">
                   <strong>{profile.fullName || profile.email}</strong>
@@ -644,7 +647,7 @@ export default function TeacherAppPage() {
                 <div role="status" style={{ fontSize: "var(--fs-15)", color: "var(--text-muted)", margin: "var(--sp-5) 0" }}>พบ {filtered.length} รายการ</div>
                 {filtered.length === 0 ? (
                   <EmptyState icon={FolderOpen} title="ยังไม่มีไฟล์ตามตัวกรองนี้" description="ลองเปลี่ยนหรือล้างตัวกรอง" />
-                ) : renderResourceGrid(filtered)}
+                ) : renderResourceGrid(filtered, 2)}
               </div>
             )}
 
@@ -666,7 +669,7 @@ export default function TeacherAppPage() {
                   />
                 ) : favoriteResources.length === 0 ? (
                   <EmptyState icon={Heart} title="ไม่พบสื่อโปรดตามตัวกรอง" description="ลองล้างคำค้นหรือตัวกรองเพื่อดูสื่อโปรดทั้งหมด" />
-                ) : renderResourceGrid(favoriteResources)}
+                ) : renderResourceGrid(favoriteResources, 2)}
               </div>
             )}
 
@@ -693,7 +696,7 @@ export default function TeacherAppPage() {
                     />
                     <div style={{ display: "grid", gap: "var(--sp-6)", marginTop: "var(--sp-8)", maxWidth: 640 }}>
                       <div>
-                        <h3 style={{ fontSize: "var(--fs-20)" }}>สื่อนี้คืออะไร</h3>
+                        <h2 style={{ fontSize: "var(--fs-20)" }}>สื่อนี้คืออะไร</h2>
                         <p style={{ fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)", color: "var(--text-body)" }}>{detail.description || "—"}</p>
                       </div>
                     </div>
@@ -723,7 +726,6 @@ export default function TeacherAppPage() {
                         block
                         variant="ghost"
                         loading={savingIds.includes(detail.id)}
-                        aria-label={saved.includes(detail.id) ? "นำออกจากสื่อโปรด" : "เพิ่มเป็นสื่อโปรด"}
                         aria-pressed={saved.includes(detail.id)}
                         onClick={() => toggleSaved(detail.id)}
                         style={{ marginTop: "var(--sp-4)" }}
