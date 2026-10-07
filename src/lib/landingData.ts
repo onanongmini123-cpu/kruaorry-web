@@ -1,5 +1,7 @@
 import { unstable_cache } from "next/cache";
-import { fetchFounderCapacity, fetchPlans, fetchPublishedResources, type Plan, type Resource } from "@/lib/data";
+import { fetchFounderCapacity, fetchPlans, type Plan, type Resource } from "@/lib/data";
+import { loadPublicResources } from "@/app/resources/data";
+import type { PublicResource } from "@/app/resources/catalog";
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import { fetchMembershipSchemaReadiness, type MembershipSchemaReadiness } from "@/lib/membershipSchemaReadiness";
 import { createAnonClient } from "@/lib/supabase/anon";
@@ -29,15 +31,45 @@ export const EMPTY_LANDING_DATA: LandingData = {
 
 export const LANDING_REVALIDATE_SECONDS = 300;
 
+/**
+ * The landing page reads the same cached public catalogue as /resources, so it
+ * links to the same readable address (slug) and the database is asked once
+ * for both instead of twice.
+ */
+export function toLandingResource(item: PublicResource): Resource {
+  return {
+    id: item.id,
+    slug: item.slug,
+    title: item.title,
+    meta: item.meta,
+    description: item.description || null,
+    category: item.category || null,
+    affordance: item.deliveryMode,
+    coverImageUrl: item.coverImageUrl,
+    tags: item.tags,
+    gradeLevels: item.gradeLevels,
+    accessMode: item.accessMode,
+    requiredPlanIds: item.requiredPlanIds,
+    requiredPlanNames: item.requiredPlanNames,
+    free: item.isFree,
+    isNew: item.isNew,
+    fileSize: null,
+    featuredRank: item.featuredRank,
+    reviewAverage: item.reviewAverage,
+    reviewCount: item.reviewCount,
+  };
+}
+
 async function readLandingData(): Promise<LandingData> {
   const supabase = createAnonClient();
   if (!supabase) return EMPTY_LANDING_DATA;
   try {
-    const [plans, resources, readiness] = await Promise.all([
+    const [plans, catalogue, readiness] = await Promise.all([
       fetchPlans(supabase),
-      fetchPublishedResources(supabase),
+      loadPublicResources(),
       fetchMembershipSchemaReadiness(supabase),
     ]);
+    const resources = catalogue.status === "ready" ? catalogue.resources.map(toLandingResource) : [];
     const founderCapacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
     // The data helpers report a failed read as an empty list. Treat "no plans
     // and no resources" as not loaded so a transient outage is retried by the

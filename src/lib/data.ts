@@ -26,6 +26,8 @@ function logError(label: string, error: PostgrestError) {
 
 export interface Resource {
   id: string;
+  /** Readable URL key when the public catalogue provided one (server-rendered pages). */
+  slug?: string | null;
   title: string;
   meta: string;
   description: string | null;

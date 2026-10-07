@@ -3,7 +3,8 @@ import { canAccessResource, type EntitlementSnapshot, type ResourceAccessMode } 
 import { isResourceGrade, type ResourceGrade } from "@/lib/resourceGrades";
 import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { proUpgradeHref } from "@/lib/upgradeFlow";
-export { resourceHref } from "@/lib/resourceUrl";
+import { resourceHref } from "@/lib/resourceUrl";
+export { resourceHref };
 import { planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 import { parseDetailContent, type ResourceDetailContent } from "@/lib/resourceDetail";
@@ -125,7 +126,7 @@ type UpgradeResource = Pick<PublicResource, "id" | "requiredPlanIds">;
 /** Build an intentional paid-upgrade CTA without accepting an arbitrary URL. */
 export function membershipUpgradeHref(
   resource: UpgradeResource,
-  requestedReturnTo: string = `/resources/${resource.id}`,
+  requestedReturnTo: string = resourceHref(resource),
 ): string {
   const preferredPlan = resource.requiredPlanIds.includes("founder")
     ? "founder"
@@ -189,7 +190,7 @@ export function publicResourceAction(resource: PublicResource, viewer: PublicRes
 
   if (resource.accessMode === "locked" && viewer.role !== "admin" && viewer.role !== "owner") {
     return {
-      href: `/resources/${resource.id}`,
+      href: resourceHref(resource),
       label: "ยังไม่เปิดให้ใช้งาน",
       canUse: false,
       locked: true,

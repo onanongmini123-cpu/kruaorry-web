@@ -6,9 +6,12 @@ import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent, type
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import type { ResourceAffordance } from "@/components/ui";
 import { accessLabel } from "@/lib/resourceAccess";
+import { resourceHref } from "@/lib/resourceUrl";
 
 export type FeaturedCarouselResource = {
   id: string;
+  /** Readable address; the link falls back to the id until one exists. */
+  slug?: string | null;
   title: string;
   meta: string;
   description: string | null;
@@ -177,7 +180,7 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
         ref={trackRef}
         id={trackId}
         className="kru-featured-carousel__track"
-        role="list"
+        role="group"
         tabIndex={0}
         aria-label="สื่อแนะนำ เลื่อนด้วยนิ้วหรือปุ่มลูกศร"
         onKeyDown={handleKeyDown}
@@ -187,15 +190,15 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
           const accessLabel = featuredAccessLabel(resource);
           const showReview = resource.reviewCount > 0 && resource.reviewAverage !== null;
           return (
-            <article
+            <div
               key={resource.id}
               ref={(node) => { slideRefs.current[index] = node; }}
               className="kru-featured-carousel__slide"
-              role="listitem"
+              role="group"
               aria-roledescription="slide"
               aria-label={`${index + 1} จาก ${featured.length}: ${resource.title}`}
             >
-              <Link href={`/resources/${resource.id}`} className="kru-featured-carousel__card">
+              <Link href={resourceHref(resource)} className="kru-featured-carousel__card">
                 <div className="kru-featured-carousel__cover">
                   <PublicResourceCover
                     title={resource.title}
@@ -227,7 +230,7 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
                   </div>
                 </div>
               </Link>
-            </article>
+            </div>
           );
         })}
       </div>
