@@ -1,6 +1,6 @@
 # PR #27 — รายงานส่งมอบงาน (Engineering handoff)
 
-> **สถานะ: Draft** — ห้าม merge, ห้าม deploy production, ห้าม apply migration จนกว่ารายการข้อ 3.3 และ Manual QA ข้อ 8 เสร็จ
+> **สถานะ: Ready for Review** (เจ้าของระบบกดเมื่อ 2026-10-07) — **แต่ยังห้าม merge, ห้าม deploy production, ห้าม apply migration** จนกว่ารายการข้อ 3.3 และ Manual QA ข้อ 8 เสร็จ
 > **ขอบเขตการตรวจ:** โค้ดใน repo + ไฟล์ migration เท่านั้น **ไม่ได้เรียกหรือแก้ Supabase production** — SQL ทดสอบบนสำเนาในเครื่อง (PGlite เล่น migration 001–051 จริงซ้ำทั้งสาย), หน้าเว็บทดสอบกับ mock REST ในเครื่อง
 > **อ่านส่วนไหน:** เจ้าของระบบ → ข้อ 0, 1, 3.3, 8, 12, 13 · นักพัฒนาที่จะ rollout โดยไม่ต้องถามเจ้าของ → ข้อ 5, 9, 10, 11 (ทำตามลำดับ มีเงื่อนไขหยุดทุกขั้น)
 
@@ -39,7 +39,7 @@
 | env / secrets ที่ต้องหมุน | **ไม่พบ** secret ใน repo (สแกนทั้ง repo + ผู้ตรวจอิสระ) ไม่มี env ใหม่ที่ต้องตั้ง — โค้ดอ่านเฉพาะ `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_VERSION` (สร้างตอน build จาก `package.json` + `VERCEL_GIT_COMMIT_SHA`) |
 | Manual QA | เช็กลิสต์ข้อ 8 — เป็นของเจ้าของระบบ ทำบน Vercel Preview |
 
-**ข้อสรุป:** เกณฑ์ฝั่งวิศวกรรมผ่านครบ จึงเปลี่ยนเป็น Ready for Review ได้ (เจ้าของเป็นผู้กด) · **ยังห้าม merge / deploy / apply migration** จนกว่ารายการข้อ 3.3 และ Manual QA ข้อ 8 เสร็จ
+**ข้อสรุป:** เกณฑ์ฝั่งวิศวกรรมผ่านครบ จึงเปลี่ยนเป็น Ready for Review แล้ว (เจ้าของกด) · **ยังห้าม merge / deploy / apply migration** จนกว่ารายการข้อ 3.3 และ Manual QA ข้อ 8 เสร็จ — ปุ่ม Merge บน GitHub ใช้งานได้แล้วหลังพ้นสถานะ Draft จึงต้องระวังไม่กดก่อนเวลา
 
 ---
 
