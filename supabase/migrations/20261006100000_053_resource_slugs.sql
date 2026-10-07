@@ -30,32 +30,82 @@
 --   * A new column added last does not disturb `create or replace view`.
 --
 -- COLLISIONS
---   The backfill is an explicit, reviewable list. A row is updated only when
---   its title matches exactly ONE resource, it has no slug yet, and the slug is
---   not already taken; anything else is skipped (stays UUID-only), so this file
---   can not fail on a duplicate. New resources get a slug with the helper
---   rules in src/lib/resourceSlug.ts (first free of base, base-2, base-3 ...).
+--   The backfill is an explicit, reviewable list keyed by resource id (the ids
+--   are fixed by the seed migrations 031-047), so renamed, duplicated or
+--   re-typed titles cannot change which row is mapped. A row is updated only
+--   when it has no slug yet and the slug is not already taken; anything else is
+--   skipped (the row stays UUID-only), so this file cannot fail on a duplicate.
+--   Published rows left without a slug are listed in a WARNING when it finishes.
+--   New resources are NOT given a slug automatically: neither admin_save_resource
+--   nor the admin console sets one yet, so a resource published after this file
+--   keeps its UUID address until a slug is set by hand:
+--     update public.resources set slug = 'my-slug' where id = '...';
+--   (the format check and the unique index reject a bad or duplicate value).
+--
+-- LOCKING
+--   One transaction. ADD COLUMN (nullable, no default), the CHECK and the unique
+--   index hold a short exclusive lock on public.resources (about 15 ms at 50
+--   rows, under a second at 100k rows) and never rewrite the table. lock_timeout
+--   is set so a long-running read makes this file stop and be retried instead of
+--   queueing every other reader behind it.
 --
 -- DATA RISK
 --   Low. Only the new column is written. No row is deleted, no existing column
---   changes. Titles edited in production simply do not match and keep a UUID URL.
+--   changes. A resource whose id is not in the list keeps its UUID URL.
 --
 -- DEPLOYMENT ORDER
 --   1. Deploy the application containing Phase A (no database change needed).
---   2. Check the live view still equals migration 029:
+--   2. Check the live view still equals migration 029 (this file also stops with
+--      a message if the column list or security_barrier differ):
 --        select pg_get_viewdef('public.resource_catalog'::regclass, true);
 --   3. Apply to a Preview database first, open /resources and a detail page.
 --   4. Apply to production. Within ~5 minutes (catalogue cache) URLs switch.
 --
 -- ROLLBACK
---   Safe at any time; the application falls back to UUID URLs by itself:
---     create or replace view public.resource_catalog ... (migration 029 text);
---       -- dropping a column from a view needs drop + recreate, see 029
---     drop index if exists public.resources_slug_key;
---     alter table public.resources drop constraint if exists resources_slug_format;
---     alter table public.resources drop column if exists slug;
---   If you only want the URLs to revert, `update public.resources set slug = null;`
---   is enough.
+--   Link-neutral and always safe (the application falls back to UUID addresses
+--   within about five minutes; slug addresses then answer 404):
+--     update public.resources set slug = null;
+--   Schema rollback: supabase/rollbacks/20261006100000_053_resource_slugs.rollback.sql
+--   (one transaction, tested by `npm run test:migration-chain-sql`). It leaves
+--   resource_catalog with an always-NULL `slug` column, which both application
+--   builds accept. Do NOT drop and recreate resource_catalog by hand: two
+--   saved_resources policies depend on it. Once slug addresses are indexed or
+--   shared, fix a slug forward instead of rolling back.
+
+set local lock_timeout = '5s';
+
+-- Stop, changing nothing, if the live view is not the one this file was written
+-- against (it is replaced as a whole below, so a hand-edited view would be lost).
+do $$
+declare
+  v_expected text[] := array[
+    'id', 'title', 'meta', 'description', 'category', 'delivery_mode',
+    'cover_image_url', 'tags', 'is_free', 'file_size', 'status', 'published_at',
+    'created_at', 'grade_levels', 'required_plan_names', 'is_new', 'access_mode',
+    'required_plan_ids', 'featured_rank', 'review_average', 'review_count'
+  ];
+  v_actual text[];
+  v_barrier boolean;
+begin
+  select array_agg(attribute.attname order by attribute.attnum)
+    into v_actual
+  from pg_attribute attribute
+  where attribute.attrelid = 'public.resource_catalog'::regclass
+    and attribute.attnum > 0
+    and not attribute.attisdropped;
+  if v_actual is distinct from v_expected and v_actual is distinct from v_expected || array['slug'] then
+    raise exception '053: public.resource_catalog has columns % but this file was written against % (migration 029). Compare pg_get_viewdef before applying.',
+      v_actual, v_expected;
+  end if;
+  select coalesce('security_barrier=true' = any (class.reloptions), false)
+    into v_barrier
+  from pg_class class
+  where class.oid = 'public.resource_catalog'::regclass;
+  if not v_barrier then
+    raise exception '053: public.resource_catalog is not a security_barrier view as in migration 029';
+  end if;
+end
+$$;
 
 alter table public.resources
   add column if not exists slug text;
@@ -85,35 +135,48 @@ create unique index if not exists resources_slug_key
   on public.resources (slug)
   where slug is not null;
 
--- Seeded resources only. Review these English slugs before applying; any
--- resource not listed (or renamed in production) keeps its UUID address.
-with mapping(title, slug) as (
+-- Seeded resources only, keyed by id. Review these English slugs before
+-- applying; any resource not listed keeps its UUID address.
+with mapping(id, slug) as (
   values
-    ('กู้ระเบิดคำศัพท์', 'vocabulary-defuse'),
-    ('เปิดหีบสมบัติ', 'treasure-chest'),
-    ('บิงโกหรรษา', 'bingo-fun'),
-    ('จับคู่ภาพกับคำ', 'picture-word-match'),
-    ('วงล้อพิชิตภารกิจ', 'mission-wheel'),
-    ('ตกปลาคำศัพท์', 'vocab-fishing'),
-    ('รถไฟเรียงประโยค', 'sentence-train-basic'),
-    ('ไอศกรีมคิดเลข', 'ice-cream-math'),
-    ('Word Squad — รวมแก๊งคำศัพท์', 'word-squad'),
-    ('Daily Word Detective', 'daily-word-detective'),
-    ('Listening Detective', 'listening-detective'),
-    ('Sentence Train', 'sentence-train'),
-    ('Grammar Boss Battle — ศึกบอสไวยากรณ์', 'grammar-boss-battle'),
-    ('ก้าวคำ — ฟัง อ่าน สะกด เขียน', 'kaokham'),
-    ('AR Phonics Quest — ภารกิจล่าเสียงตัวอักษร', 'ar-phonics-quest'),
-    ('ห้องทดลองวงจรไฟฟ้า', 'electric-circuit-lab'),
-    ('ผู้พิทักษ์ระบบนิเวศ — Ecosystem Guardians', 'ecosystem-guardians')
+    ('6cc12b2d-5ebc-4533-85d0-13038a0dc189'::uuid, 'vocabulary-defuse'),       -- กู้ระเบิดคำศัพท์
+    ('4c1203ce-6e4f-40bd-8dc2-01713e88dcdd'::uuid, 'treasure-chest'),          -- เปิดหีบสมบัติ
+    ('03ae013c-1409-4cb1-aa7c-ce264a94312a'::uuid, 'bingo-fun'),               -- บิงโกหรรษา
+    ('fa15179e-9937-4d25-951c-7af9ab466589'::uuid, 'picture-word-match'),      -- จับคู่ภาพกับคำ
+    ('a7266b9c-3539-423b-9119-dbf019b887cb'::uuid, 'mission-wheel'),           -- วงล้อพิชิตภารกิจ
+    ('2fd4da60-b60a-43ea-b382-5b2065e15241'::uuid, 'vocab-fishing'),           -- ตกปลาคำศัพท์
+    ('427fb64e-34e0-4f8b-be0e-ee5131e78060'::uuid, 'sentence-train-basic'),    -- รถไฟเรียงประโยค
+    ('a6bdbe60-2672-45ba-8773-bab8cd700ef4'::uuid, 'ice-cream-math'),          -- ไอศกรีมคิดเลข
+    ('ace15fc3-a6da-46b6-b3bc-bdfdd8f7b5c8'::uuid, 'word-squad'),              -- Word Squad — รวมแก๊งคำศัพท์
+    ('4136ab94-76c8-43c7-a622-37ed9f41b167'::uuid, 'daily-word-detective'),    -- Daily Word Detective
+    ('df55f95a-b307-4aec-8b42-e6b9a1244a6e'::uuid, 'listening-detective'),     -- Listening Detective
+    ('86afb9c3-20f2-4ab6-9ebc-9a454b36692b'::uuid, 'sentence-train'),          -- Sentence Train
+    ('f14855b7-3a39-4f59-85b9-06dde698d4d4'::uuid, 'grammar-boss-battle'),     -- Grammar Boss Battle — ศึกบอสไวยากรณ์
+    ('18e463f4-0117-4f0e-9fbf-921be97e5c14'::uuid, 'kaokham'),                 -- ก้าวคำ — ฟัง อ่าน สะกด เขียน
+    ('898fa4ab-4db0-4ec0-9c9b-1ba1d4150972'::uuid, 'ar-phonics-quest'),        -- AR Phonics Quest — ภารกิจล่าเสียงตัวอักษร
+    ('c3a21758-8338-4f8f-a77e-42e7a6cf3eca'::uuid, 'electric-circuit-lab'),    -- ห้องทดลองวงจรไฟฟ้า
+    ('a7b13975-7244-4a8a-8b33-efc8f04bca89'::uuid, 'ecosystem-guardians')      -- ผู้พิทักษ์ระบบนิเวศ — Ecosystem Guardians
 )
 update public.resources r
 set slug = m.slug
 from mapping m
-where r.slug is null
-  and r.title = m.title
-  and (select count(*) from public.resources x where x.title = m.title) = 1
+where r.id = m.id
+  and r.slug is null
   and not exists (select 1 from public.resources o where o.slug = m.slug);
+
+do $$
+declare
+  v_unmapped text;
+begin
+  select string_agg(r.title, ', ' order by r.title)
+    into v_unmapped
+  from public.resources r
+  where r.status = 'published' and r.slug is null;
+  if v_unmapped is not null then
+    raise warning '053: published resources without a slug keep their UUID address (set one by hand when wanted): %', v_unmapped;
+  end if;
+end
+$$;
 
 create or replace view public.resource_catalog
 with (security_barrier = true) as

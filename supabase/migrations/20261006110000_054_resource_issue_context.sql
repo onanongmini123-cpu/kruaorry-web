@@ -27,18 +27,32 @@
 --   Low. One nullable column is added; existing rows are untouched; the check
 --   constraint is re-created with a superset of the old values.
 --
+-- LOCKING
+--   The table is small and written only by this function, so the short
+--   exclusive locks (add column, add constraint) are not noticeable. A 5 second
+--   lock_timeout makes the file stop and be retried rather than wait behind a
+--   long-running statement.
+--
 -- DEPLOYMENT ORDER
 --   1. Deploy the application (it probes the marker; it is inert without it).
 --   2. Apply this migration to a Preview database, submit one report of each
 --      new category, then apply to production.
 --
 -- ROLLBACK
---   delete from public.features where id = 'system.resource_issue_context_v1_ready';
---   -- recreate submit_resource_issue(uuid, text, text) exactly as in 029 and
---   -- drop the 4-argument version; then (only if no new-category rows exist)
---   --   alter table public.resource_issue_reports drop constraint resource_issue_reports_category_check;
---   --   alter table ... add constraint ... check (category in (the 5 values of 029));
---   alter table public.resource_issue_reports drop column if exists context;
+--   Run supabase/rollbacks/20261006110000_054_resource_issue_context.rollback.sql
+--   (one transaction; tested by `npm run test:migration-chain-sql`). It removes
+--   the marker, drops the 4-argument function, restores migration 029's
+--   3-argument function and its grants, and puts the five-category CHECK and
+--   drops `context` ONLY when no report uses the newer categories; otherwise it
+--   keeps both so no report is lost, and says so. Browser tabs that are already
+--   open remember that the new categories existed until they are reloaded.
+--
+-- RE-RUNNING
+--   The file can be applied again: the function is `create or replace`, the
+--   category CHECK is rebuilt whatever it was called, and the marker insert
+--   ignores a duplicate.
+
+set local lock_timeout = '5s';
 
 alter table public.resource_issue_reports
   add column if not exists context jsonb;
@@ -60,18 +74,33 @@ begin
 end
 $$;
 
-alter table public.resource_issue_reports
-  drop constraint if exists resource_issue_reports_category_check;
-alter table public.resource_issue_reports
-  add constraint resource_issue_reports_category_check
-  check (category in (
-    'cannot_open', 'broken_link', 'cannot_download', 'wrong_content', 'other',
-    'wrong_answer', 'cannot_play', 'no_sound', 'camera_issue', 'mobile_layout'
-  ));
+-- Drop whichever CHECK guards `category` (its generated name is an assumption
+-- about how migration 029 was applied), then install the widened one.
+do $$
+declare
+  v_constraint record;
+begin
+  for v_constraint in
+    select c.conname
+    from pg_constraint c
+    where c.conrelid = 'public.resource_issue_reports'::regclass
+      and c.contype = 'c'
+      and pg_get_constraintdef(c.oid) ilike '%category%'
+  loop
+    execute format('alter table public.resource_issue_reports drop constraint %I', v_constraint.conname);
+  end loop;
+  alter table public.resource_issue_reports
+    add constraint resource_issue_reports_category_check
+    check (category in (
+      'cannot_open', 'broken_link', 'cannot_download', 'wrong_content', 'other',
+      'wrong_answer', 'cannot_play', 'no_sound', 'camera_issue', 'mobile_layout'
+    ));
+end
+$$;
 
 drop function if exists public.submit_resource_issue(uuid, text, text);
 
-create function public.submit_resource_issue(
+create or replace function public.submit_resource_issue(
   p_resource_id uuid,
   p_category text,
   p_details text,
