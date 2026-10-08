@@ -58,7 +58,7 @@ import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeProblem, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
-import { SLUG_RULE_HELP, isMissingSlugColumn, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
+import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
   ISSUE_CATEGORY_LABEL,
@@ -343,6 +343,8 @@ export default function AdminConsolePage() {
   const [form, setForm] = useState(EMPTY_FORM);
   // The slug the resource had when the form opened ("" = none yet); the field is only sent when it differs.
   const [savedSlug, setSavedSlug] = useState("");
+  // False while the database can not yet be read or written for slugs (migration 055 not applied).
+  const [slugSupported, setSlugSupported] = useState(true);
   // `saving` is the single "an admin mutation is in flight" flag: true for
   // the entire cover-upload + file-upload + row-save + cleanup sequence,
   // and for delete/status changes too. guardAgainstBusyForm(saving) gates
@@ -712,7 +714,11 @@ export default function AdminConsolePage() {
   const loadResourceList = async () => {
     const select = (columns: string) => supabase.from("resources").select(columns).order("created_at", { ascending: false });
     const withSlug = await select(`${RESOURCE_LIST_SELECT}, slug`);
-    if (withSlug.error && isMissingSlugColumn(withSlug.error)) return await select(RESOURCE_LIST_SELECT);
+    if (withSlug.error && isSlugUnavailable(withSlug.error)) {
+      setSlugSupported(false);
+      return await select(RESOURCE_LIST_SELECT);
+    }
+    setSlugSupported(true);
     return withSlug;
   };
 
@@ -996,7 +1002,7 @@ export default function AdminConsolePage() {
     const loadRow = async () => {
       const columns = "title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type";
       const withSlug = await supabase.from("resources").select(`${columns}, slug`).eq("id", id).single();
-      if (withSlug.error && isMissingSlugColumn(withSlug.error)) {
+      if (withSlug.error && isSlugUnavailable(withSlug.error)) {
         return await supabase.from("resources").select(columns).eq("id", id).single();
       }
       return withSlug;
@@ -1254,7 +1260,7 @@ export default function AdminConsolePage() {
       setFormError("กรุณาเลือกอย่างน้อย 1 แพ็กสำหรับสื่อเฉพาะแพ็ก");
       return;
     }
-    const slugState = slugFieldState(form.slug, savedSlug);
+    const slugState = slugFieldState(slugSupported ? form.slug : "", savedSlug);
     if (slugState.kind === "invalid") {
       setFormError(slugState.message);
       return;
@@ -1336,7 +1342,7 @@ export default function AdminConsolePage() {
         ...fileFields,
       };
 
-      const slugParam = slugParamForSave(form.slug, savedSlug);
+      const slugParam = slugSupported ? slugParamForSave(form.slug, savedSlug) : null;
       const result = await commitResourceFileChange({
         // Row fields and access grants commit (or roll back) together inside
         // one SECURITY DEFINER transaction. This prevents a failed access
@@ -2107,6 +2113,16 @@ export default function AdminConsolePage() {
                     const state = slugFieldState(form.slug, savedSlug);
                     const suggestion = suggestSlug(form.title);
                     const preview = state.kind === "empty" ? (state.hasSaved ? savedSlug : "") : form.slug.trim();
+                    if (!slugSupported) {
+                      return (
+                        <div className="kru-field">
+                          <Input label="ที่อยู่ลิงก์ของสื่อ (slug)" value="" disabled readOnly aria-describedby="resource-slug-help" />
+                          <div id="resource-slug-help" role="status" style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
+                            ⚠ {SLUG_UNAVAILABLE_NOTICE}
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div className="kru-field">
                         <Input

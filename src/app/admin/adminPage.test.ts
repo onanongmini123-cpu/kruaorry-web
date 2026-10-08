@@ -216,10 +216,9 @@ describe("responsive admin console contracts", () => {
   });
 });
 
-
 describe("resource slug field in the admin form", () => {
   it("sends p_slug only when the field changed, so other saves still work before migration 055", () => {
-    expect(pageSource).toContain("const slugParam = slugParamForSave(form.slug, savedSlug);");
+    expect(pageSource).toContain("slugParamForSave(form.slug, savedSlug)");
     expect(pageSource).toContain("...(slugParam ? { p_slug: slugParam } : {})");
     expect(pageSource).not.toContain("p_slug: form.slug");
   });
@@ -230,13 +229,28 @@ describe("resource slug field in the admin form", () => {
     expect(pageSource).toContain("thaiSlugSaveError(result.saveError) ?? result.saveError");
   });
 
-  it("falls back to the plain selects until the slug column exists", () => {
-    expect(pageSource).toContain("isMissingSlugColumn(withSlug.error)");
+  it("falls back to the plain selects until the slug column exists and is readable (migrations 053 and 055)", () => {
+    expect(pageSource.match(/isSlugUnavailable\(withSlug\.error\)/g)).toHaveLength(2);
+    expect(pageSource).toContain("setSlugSupported(false)");
+    expect(pageSource).toContain("const slugParam = slugSupported ? slugParamForSave(form.slug, savedSlug) : null;");
+    expect(pageSource).toContain("SLUG_UNAVAILABLE_NOTICE");
     expect(pageSource).toContain("RESOURCE_LIST_SELECT");
   });
 
   it("warns that changing a saved slug breaks the old link", () => {
     expect(pageSource).toContain('state.kind === "changed"');
     expect(pageSource).toContain("ลิงก์เดิม");
+  });
+});
+
+describe("the database test runs the same column lists as the admin console", () => {
+  const script = readFileSync(new URL("../../../scripts/test-admin-save-resource-slug-sql.mjs", import.meta.url), "utf8");
+  it("keeps the list and edit selects identical to page.tsx", () => {
+    const list = pageSource.match(/const RESOURCE_LIST_SELECT = "([^"]+)";/)?.[1];
+    const edit = pageSource.match(/const columns = "(title, meta, description[^"]+)";/)?.[1];
+    expect(list).toBeTruthy();
+    expect(edit).toBeTruthy();
+    expect(script).toContain(`const ADMIN_LIST_COLUMNS = "${list}";`);
+    expect(script).toContain(`const ADMIN_EDIT_COLUMNS = "${edit}";`);
   });
 });

@@ -199,6 +199,51 @@ await check("nothing outside admin_save_resource changes, and re-running 055 is 
   });
 });
 
+// The exact column lists the admin console sends (src/app/admin/page.tsx; a unit test keeps them identical).
+const ADMIN_LIST_COLUMNS = "id, title, meta, status, delivery_mode, access_mode, grade_levels";
+const ADMIN_EDIT_COLUMNS = "title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type";
+
+await check("the admin console's own list and edit queries work as a signed-in admin only once 055 grants the slug column", async () => {
+  await withDb(async (db) => {
+    const admin = await addUser(db, "admin", "admin");
+    const asAdmin = (sql, params = []) => asRole(db, "authenticated", admin, () => db.query(sql, params));
+    const draft = randomUUID();
+    await db.exec(migrationSql("055"));
+    await save(db, admin, { id: draft, title: "Draft with slug", slug: "draft-with-slug" });
+    await db.exec(rollbackSql("055"));
+
+    // Before 055 (what production looks like today): the old columns are readable, slug is not.
+    assert.equal((await asAdmin(`select ${ADMIN_LIST_COLUMNS} from public.resources`)).rows.length > 0, true, "plain list works");
+    await failsWith(asAdmin(`select ${ADMIN_LIST_COLUMNS}, slug from public.resources`), /permission denied for table resources/, "list with slug before 055");
+    await failsWith(asAdmin(`select ${ADMIN_EDIT_COLUMNS}, slug from public.resources where id = $1`, [draft]), /permission denied for table resources/, "edit with slug before 055");
+
+    await db.exec(migrationSql("055"));
+    const list = await asAdmin(`select ${ADMIN_LIST_COLUMNS}, slug from public.resources order by created_at desc`);
+    assert.ok(list.rows.some((row) => row.slug === "draft-with-slug"), "admin sees the draft's slug in the list");
+    const edit = await asAdmin(`select ${ADMIN_EDIT_COLUMNS}, slug from public.resources where id = $1`, [draft]);
+    assert.equal(edit.rows[0].slug, "draft-with-slug");
+  });
+});
+
+await check("slug stays unreadable to signed-out callers, and a member never sees a draft's slug", async () => {
+  await withDb(async (db) => {
+    const admin = await addUser(db, "admin", "admin");
+    const member = await addUser(db, "member");
+    const draft = randomUUID();
+    await save(db, admin, { id: draft, title: "Hidden draft", slug: "hidden-draft" });
+    await failsWith(
+      asRole(db, "anon", null, () => db.query("select slug from public.resources")),
+      /permission denied for table resources/, "signed-out reading slug");
+    const seen = await asRole(db, "authenticated", member, () => db.query("select id, slug from public.resources where id = $1", [draft]));
+    assert.equal(seen.rows.length, 0, "row level security still hides the draft from a member");
+    const own = await asRole(db, "authenticated", admin, () => db.query("select slug from public.resources where id = $1", [draft]));
+    assert.equal(own.rows[0].slug, "hidden-draft");
+    // Published rows: their slug is public anyway (it is in the URL), a member may read it.
+    const published = await asRole(db, "authenticated", member, () => db.query("select slug from public.resources where slug = 'sentence-train'"));
+    assert.equal(published.rows.length, 1);
+  }, { apply: ["055"] });
+});
+
 await check("who may call it: owner and admin yes; member, anonymous guest and signed-out no", async () => {
   await withDb(async (db) => {
     const owner = await addUser(db, "owner", "owner");

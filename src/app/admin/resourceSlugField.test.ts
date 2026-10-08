@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isMissingSlugColumn, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
+import { isMissingSlugColumn, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 
 describe("slugFieldState", () => {
   it("is empty for blank input and remembers whether a slug is already saved", () => {
@@ -19,7 +19,6 @@ describe("slugFieldState", () => {
     expect(slugFieldState("sentence-train-2", "sentence-train")).toEqual({ kind: "changed" });
   });
 });
-
 describe("slugParamForSave", () => {
   it("sends the slug only when it is new or changed, trimmed", () => {
     expect(slugParamForSave(" new-slug ", "")).toBe("new-slug");
@@ -71,5 +70,19 @@ describe("isMissingSlugColumn", () => {
     expect(isMissingSlugColumn({ code: "42501", message: "permission denied for table resources" })).toBe(false);
     expect(isMissingSlugColumn({ code: "42703", message: "column resources.context does not exist" })).toBe(false);
     expect(isMissingSlugColumn(null)).toBe(false);
+  });
+});
+
+describe("isSlugUnavailable", () => {
+  it("also covers a database where the column exists but the signed-in role may not read it yet", () => {
+    expect(isSlugUnavailable({ code: "42501", message: "permission denied for table resources" })).toBe(true);
+    expect(isSlugUnavailable({ code: "42703", message: "column resources.slug does not exist" })).toBe(true);
+    expect(isSlugUnavailable({ code: null, message: "permission denied for table resources" })).toBe(true);
+  });
+
+  it("does not hide unrelated failures", () => {
+    expect(isSlugUnavailable({ code: "PGRST000", message: "mock outage" })).toBe(false);
+    expect(isSlugUnavailable({ code: "57014", message: "canceling statement due to statement timeout" })).toBe(false);
+    expect(isSlugUnavailable(null)).toBe(false);
   });
 });
