@@ -58,6 +58,7 @@ import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, resourceGradeProblem, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
+import { SLUG_RULE_HELP, isMissingSlugColumn, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
   ISSUE_CATEGORY_LABEL,
@@ -102,6 +103,8 @@ interface AdminResource {
   delivery_mode: DeliveryMode;
   access_mode: ResourceAccessMode;
   grade_levels?: string[] | null;
+  /** Absent before migration 053; null while the resource still uses its UUID address. */
+  slug?: string | null;
 }
 
 interface AdminPlanRow extends AdminPlan {
@@ -274,6 +277,8 @@ const ADMIN_REPORT_SELECT_WITH_CONTEXT = `${ADMIN_REPORT_SELECT}, context`;
 const ADMIN_UPGRADE_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
 const ADMIN_UPGRADE_LINE_SLIP_SELECT = "id, user_id, plan_id, status, reference_code, quoted_amount_thb, payment_reported_at, line_slip_received_at, line_slip_received_by, payment_paid_at, payment_confirmed_at, payment_confirmed_by, payment_confirmed_amount_thb, payment_reference, resolution_reason_code, created_at, profiles!upgrade_requests_user_id_fkey(full_name, email)";
 
+const RESOURCE_LIST_SELECT = "id, title, meta, status, delivery_mode, access_mode, grade_levels";
+
 const EMPTY_FORM = {
   title: "",
   meta: "",
@@ -283,6 +288,7 @@ const EMPTY_FORM = {
   delivery_mode: "web_app" as DeliveryMode,
   cta_url: "",
   cover_image_url: "",
+  slug: "",
   access_mode: "locked" as ResourceAccessMode,
   plan_ids: [] as string[],
   file_path: "",
@@ -335,6 +341,8 @@ export default function AdminConsolePage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  // The slug the resource had when the form opened ("" = none yet); the field is only sent when it differs.
+  const [savedSlug, setSavedSlug] = useState("");
   // `saving` is the single "an admin mutation is in flight" flag: true for
   // the entire cover-upload + file-upload + row-save + cleanup sequence,
   // and for delete/status changes too. guardAgainstBusyForm(saving) gates
@@ -700,6 +708,14 @@ export default function AdminConsolePage() {
     return latest;
   };
 
+  // Asked for with the slug first; falls back to the plain list until migration 053 exists.
+  const loadResourceList = async () => {
+    const select = (columns: string) => supabase.from("resources").select(columns).order("created_at", { ascending: false });
+    const withSlug = await select(`${RESOURCE_LIST_SELECT}, slug`);
+    if (withSlug.error && isMissingSlugColumn(withSlug.error)) return await select(RESOURCE_LIST_SELECT);
+    return withSlug;
+  };
+
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
     setMembershipSchemaReadiness("checking");
     setLineSlipWorkflowReadiness("checking");
@@ -708,7 +724,7 @@ export default function AdminConsolePage() {
     // batch below touches 048 columns/RPCs, and it cannot run until the shared
     // readiness marker has been verified.
     const baseDataPromise = Promise.all([
-      supabase.from("resources").select("id, title, meta, status, delivery_mode, access_mode, grade_levels").order("created_at", { ascending: false }),
+      loadResourceList(),
       supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
       supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
@@ -732,7 +748,7 @@ export default function AdminConsolePage() {
 
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
     if (memberError) console.error("Failed to load members:", memberError.message);
-    setResources((resourceRows as AdminResource[]) ?? []);
+    setResources((resourceRows as unknown as AdminResource[] | null) ?? []);
     setMembers((memberRows as AdminMember[]) ?? []);
     if (basePlanError) console.error("Failed to load plans:", basePlanError.message);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
@@ -945,6 +961,7 @@ export default function AdminConsolePage() {
     }
     setEditingId(null);
     setPendingResourceId(crypto.randomUUID());
+    setSavedSlug("");
     setForm(EMPTY_FORM);
     setSelectedFile(null);
     setSelectedCoverFile(null);
@@ -962,6 +979,7 @@ export default function AdminConsolePage() {
     setSelectedFile(null);
     setSelectedCoverFile(null);
     setFileRemoved(false);
+    setSavedSlug("");
     setForm(EMPTY_FORM);
     setEditingId(null);
     setPendingResourceId(null);
@@ -975,12 +993,19 @@ export default function AdminConsolePage() {
       window.alert(guard.message);
       return;
     }
-    const [{ data, error }, { target: resolved, error: targetError }] = await Promise.all([
-      supabase.from("resources")
-        .select("title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type")
-        .eq("id", id).single(),
+    const loadRow = async () => {
+      const columns = "title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type";
+      const withSlug = await supabase.from("resources").select(`${columns}, slug`).eq("id", id).single();
+      if (withSlug.error && isMissingSlugColumn(withSlug.error)) {
+        return await supabase.from("resources").select(columns).eq("id", id).single();
+      }
+      return withSlug;
+    };
+    const [{ data: loaded, error }, { target: resolved, error: targetError }] = await Promise.all([
+      loadRow(),
       loadResourceTarget(supabase, id),
     ]);
+    const data = loaded as (typeof loaded & { slug?: string | null }) | null;
     if (error || !data || targetError || !resolved) {
       window.alert(`โหลดข้อมูลสื่อไม่สำเร็จ: ${error?.message ?? targetError ?? ""}`);
       return;
@@ -990,6 +1015,7 @@ export default function AdminConsolePage() {
     setSelectedFile(null);
     setSelectedCoverFile(null);
     setFileRemoved(false);
+    setSavedSlug(data.slug ?? "");
     setForm({
       title: data.title ?? "",
       meta: data.meta ?? "",
@@ -999,6 +1025,7 @@ export default function AdminConsolePage() {
       delivery_mode: data.delivery_mode,
       cta_url: resolved.cta_url ?? "",
       cover_image_url: data.cover_image_url ?? "",
+      slug: data.slug ?? "",
       access_mode: data.access_mode as ResourceAccessMode,
       plan_ids: resourcePlanAccess.get(id) ?? [],
       file_path: resolved.file_path ?? "",
@@ -1227,6 +1254,11 @@ export default function AdminConsolePage() {
       setFormError("กรุณาเลือกอย่างน้อย 1 แพ็กสำหรับสื่อเฉพาะแพ็ก");
       return;
     }
+    const slugState = slugFieldState(form.slug, savedSlug);
+    if (slugState.kind === "invalid") {
+      setFormError(slugState.message);
+      return;
+    }
 
     // Fail closed on saving an already-published resource into an invalid
     // state (e.g. clearing its only file/link/cover, or switching delivery
@@ -1304,6 +1336,7 @@ export default function AdminConsolePage() {
         ...fileFields,
       };
 
+      const slugParam = slugParamForSave(form.slug, savedSlug);
       const result = await commitResourceFileChange({
         // Row fields and access grants commit (or roll back) together inside
         // one SECURITY DEFINER transaction. This prevents a failed access
@@ -1325,6 +1358,8 @@ export default function AdminConsolePage() {
           p_file_mime_type: payload.file_mime_type,
           p_access_mode: form.access_mode,
           p_plan_ids: form.access_mode === "plans" ? form.plan_ids : [],
+          // Only sent when the field changed, so saving anything else also works before migration 055.
+          ...(slugParam ? { p_slug: slugParam } : {}),
         }),
         pendingUploads,
         obsoleteOnSuccess,
@@ -1338,13 +1373,14 @@ export default function AdminConsolePage() {
       }
 
       if (!result.ok) {
-        setFormError(result.saveError);
+        setFormError(thaiSlugSaveError(result.saveError) ?? result.saveError);
         return;
       }
       if (result.cleanupFailures.length > 0) {
         window.alert("บันทึกสำเร็จ แต่ลบไฟล์เดิมไม่สำเร็จ — ระบบเก็บรายการนี้ไว้ให้ลองใหม่ได้จากแบนเนอร์ด้านบน");
       }
 
+      setSavedSlug("");
       setForm(EMPTY_FORM);
       setEditingId(null);
       setPendingResourceId(null);
@@ -2067,6 +2103,43 @@ export default function AdminConsolePage() {
                     </p>
                   )}
                   <Input label="ชื่อสื่อ" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+                  {(() => {
+                    const state = slugFieldState(form.slug, savedSlug);
+                    const suggestion = suggestSlug(form.title);
+                    const preview = state.kind === "empty" ? (state.hasSaved ? savedSlug : "") : form.slug.trim();
+                    return (
+                      <div className="kru-field">
+                        <Input
+                          label="ที่อยู่ลิงก์ของสื่อ (slug)"
+                          value={form.slug}
+                          onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                          placeholder={savedSlug ? "เว้นว่างไว้ = ใช้ slug เดิม" : "เช่น sentence-train (เว้นว่างได้)"}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          maxLength={80}
+                          aria-invalid={state.kind === "invalid"}
+                          aria-describedby="resource-slug-help"
+                          trailing={!form.slug.trim() && suggestion && suggestion !== savedSlug ? (
+                            <button type="button" className="kru-btn kru-btn--soft kru-btn--sm" onClick={() => setForm({ ...form, slug: suggestion })}>
+                              ใช้ {suggestion}
+                            </button>
+                          ) : undefined}
+                        />
+                        <div id="resource-slug-help" style={{ display: "grid", gap: 4, marginTop: "var(--sp-2)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                          <span>{SLUG_RULE_HELP}</span>
+                          {preview && state.kind !== "invalid" && <span>ลิงก์ของสื่อ: <strong style={{ color: "var(--text-strong)", wordBreak: "break-all" }}>{resourceAddress(preview)}</strong></span>}
+                          {!preview && <span>ถ้าไม่ตั้ง สื่อนี้จะใช้ลิงก์แบบรหัสยาว (UUID) จนกว่าจะตั้ง slug</span>}
+                          {state.kind === "invalid" && <span role="alert" style={{ color: "var(--status-danger-fg)" }}>{state.message}</span>}
+                          {state.kind === "changed" && (
+                            <span role="status" style={{ color: "var(--status-warning-fg)" }}>
+                              ⚠ การเปลี่ยน slug ทำให้ลิงก์เดิม ({resourceAddress(savedSlug)}) ใช้ไม่ได้ ลิงก์ที่แชร์ไว้ไปแล้วจะเปิดไม่ได้ (ลิงก์แบบรหัสยาวยังใช้ได้เสมอ)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <Input label="คำอธิบายสั้น (แสดงใต้ชื่อ)" placeholder="เช่น Google Sheets & Script · ธุรการชั้นเรียน" value={form.meta} onChange={(e) => setForm({ ...form, meta: e.target.value })} />
                   <div className="kru-field">
                     <label className="kru-field__label">รายละเอียด</label>
@@ -2292,6 +2365,13 @@ export default function AdminConsolePage() {
                         <div style={{ flex: 1, minWidth: 180 }}>
                           <div style={{ fontWeight: "var(--fw-semibold)" }}>{item.title}</div>
                           <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{item.meta}</div>
+                          {item.slug ? (
+                            <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", wordBreak: "break-all" }}>/resources/{item.slug}</div>
+                          ) : item.status === "published" && item.slug === null ? (
+                            <div role="status" style={{ fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
+                              ⚠ ยังไม่มี slug (ใช้ลิงก์แบบรหัสยาว) — กดแก้ไขเพื่อตั้ง
+                            </div>
+                          ) : null}
                           {item.status === "published" && resourceGradeProblem(item.grade_levels) && (
                             <div role="status" style={{ fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
                               ⚠ {resourceGradeProblem(item.grade_levels)} (ผู้ใช้จะไม่เห็นระดับชั้นของสื่อนี้)
