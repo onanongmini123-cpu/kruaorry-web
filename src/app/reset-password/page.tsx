@@ -6,6 +6,11 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MIN_LENGTH_HINT,
+  validateNewPasswordLength,
+} from "@/lib/passwordPolicy";
 import { scrubRecoverySecrets, updateRecoveryPassword, verifyRecoveryCredential } from "./recovery";
 
 export const dynamic = "force-dynamic";
@@ -66,8 +71,9 @@ function ResetPasswordForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 6) {
-      setError("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
+    const passwordLengthError = validateNewPasswordLength(password);
+    if (passwordLengthError) {
+      setError(passwordLengthError);
       return;
     }
     if (password !== confirmPassword) {
@@ -97,7 +103,7 @@ function ResetPasswordForm() {
         <h1 style={{ fontSize: "var(--fs-30)", textAlign: "center" }}>ตั้งรหัสผ่านใหม่</h1>
 
         {error && (
-          <p style={{ marginTop: "var(--sp-5)", fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)" }}>
+          <p id="reset-password-error" role="alert" style={{ marginTop: "var(--sp-5)", fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)" }}>
             {error}
           </p>
         )}
@@ -124,8 +130,8 @@ function ResetPasswordForm() {
 
         {stage === "verified" && !done && (
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: "var(--sp-5)", marginTop: "var(--sp-6)" }}>
-            <Input label="รหัสผ่านใหม่" type="password" icon={KeyRound} placeholder="อย่างน้อย 6 ตัวอักษร" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} autoComplete="new-password" required />
-            <Input label="ยืนยันรหัสผ่านใหม่" type="password" icon={KeyRound} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={6} autoComplete="new-password" required />
+            <Input label="รหัสผ่านใหม่" type="password" icon={KeyRound} placeholder={PASSWORD_MIN_LENGTH_HINT} value={password} onChange={(e) => setPassword(e.target.value)} minLength={PASSWORD_MIN_LENGTH} autoComplete="new-password" required aria-invalid={error ? true : undefined} aria-describedby={error ? "reset-password-error" : undefined} />
+            <Input label="ยืนยันรหัสผ่านใหม่" type="password" icon={KeyRound} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={PASSWORD_MIN_LENGTH} autoComplete="new-password" required aria-invalid={error ? true : undefined} aria-describedby={error ? "reset-password-error" : undefined} />
             <Button size="lg" block loading={loading} type="submit">
               บันทึกรหัสผ่านใหม่
             </Button>

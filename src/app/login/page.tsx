@@ -14,6 +14,11 @@ import {
 import { LINE_OA_URL } from "@/lib/config";
 import { trackEvent } from "@/lib/analytics";
 import { validateSignupPasswordConfirmation } from "@/lib/signupConfirmation";
+import {
+  PASSWORD_MIN_LENGTH_HINT,
+  passwordMinLengthForAuthMode,
+  validateAuthEntryPassword,
+} from "@/lib/passwordPolicy";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import {
   buildSignupConfirmationRedirect,
@@ -68,6 +73,7 @@ function LoginForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordLengthError, setPasswordLengthError] = useState<string | null>(null);
   const [passwordConfirmationError, setPasswordConfirmationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
@@ -124,7 +130,13 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setNotice(null);
+    setPasswordLengthError(null);
     setPasswordConfirmationError(null);
+    const lengthError = validateAuthEntryPassword(mode, password);
+    if (lengthError) {
+      setPasswordLengthError(lengthError);
+      return;
+    }
     if (mode === "signup") {
       const confirmationError = validateSignupPasswordConfirmation(password, confirmPassword);
       if (confirmationError) {
@@ -290,6 +302,7 @@ function LoginForm() {
                 setConfirmPassword("");
                 setShowPassword(false);
                 setShowConfirmPassword(false);
+                setPasswordLengthError(null);
                 setPasswordConfirmationError(null);
                 setConfirmationHelpOpen(false);
               }}
@@ -320,21 +333,31 @@ function LoginForm() {
               <Input label="ชื่อ-นามสกุล" icon={User} placeholder="ครูนภา ใจดี" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" required />
             )}
             <Input label="อีเมล" type="email" icon={Mail} placeholder="napha@school.ac.th" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
-            <Input
-              label="รหัสผ่าน"
-              type={showPassword ? "text" : "password"}
-              icon={KeyRound}
-              placeholder="อย่างน้อย 6 ตัวอักษร"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (passwordConfirmationError) setPasswordConfirmationError(null);
-              }}
-              minLength={6}
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              required
-              trailing={<IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"} onClick={() => setShowPassword((v) => !v)} />}
-            />
+            <div>
+              <Input
+                label="รหัสผ่าน"
+                type={showPassword ? "text" : "password"}
+                icon={KeyRound}
+                placeholder={mode === "signup" ? PASSWORD_MIN_LENGTH_HINT : "กรอกรหัสผ่าน"}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (passwordLengthError) setPasswordLengthError(null);
+                  if (passwordConfirmationError) setPasswordConfirmationError(null);
+                }}
+                minLength={passwordMinLengthForAuthMode(mode)}
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                required
+                aria-invalid={passwordLengthError ? true : undefined}
+                aria-describedby={passwordLengthError ? "signup-password-length-error" : undefined}
+                trailing={<IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"} onClick={() => setShowPassword((v) => !v)} />}
+              />
+              {passwordLengthError && (
+                <p id="signup-password-length-error" role="alert" style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-13)", color: "var(--status-danger-fg)" }}>
+                  {passwordLengthError}
+                </p>
+              )}
+            </div>
             {mode === "signup" && (
               <div>
                 <Input
@@ -347,7 +370,7 @@ function LoginForm() {
                     setConfirmPassword(e.target.value);
                     if (passwordConfirmationError) setPasswordConfirmationError(null);
                   }}
-                  minLength={6}
+                  minLength={passwordMinLengthForAuthMode(mode)}
                   autoComplete="new-password"
                   required
                   aria-invalid={passwordConfirmationError ? true : undefined}
