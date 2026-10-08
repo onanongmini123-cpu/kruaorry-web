@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
 import { LayoutDashboard, FolderCog, MessageSquareText, MessageCircle, Users, LogOut, FolderOpen, Plus, Trash2, Pencil, Wallet, Check, X, History, Eye, ShieldCheck, Star, ChevronUp, ChevronDown, EyeOff, Flag, ListChecks, Search, RefreshCw, Clipboard } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, type SideNavGroup } from "@/components/ui";
+import { Button, Input, Select, Badge, StatTile, SideNav, EmptyState, SearchField, type SideNavGroup } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { confirmMembershipPayment, confirmSubscriptionRenewal, fetchFounderCapacity, recordMembershipLineSlipReceived } from "@/lib/data";
 import { loadResourceTarget } from "@/lib/resourceTarget";
@@ -56,8 +56,10 @@ import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
-import { RESOURCE_GRADE_OPTIONS, resourceGradeProblem, type ResourceGrade } from "@/lib/resourceGrades";
+import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
+import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
+import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
 import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
@@ -263,8 +265,6 @@ const BASE_NAV_ITEMS: SideNavGroup["items"] = [
 
 const OWNER_NAV_ITEM = { key: "audit", label: "ประวัติการแก้ไข", icon: History };
 
-const STATUS_LABEL: Record<ResourceStatus, string> = { draft: "ฉบับร่าง", published: "เผยแพร่แล้ว", archived: "เก็บถาวร" };
-const STATUS_TONE: Record<ResourceStatus, "success" | "warning" | "neutral"> = { draft: "warning", published: "success", archived: "neutral" };
 const REQUEST_LABEL: Record<AdminRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
 const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
 const ROLE_LABEL: Record<AdminMember["role"], string> = { member: "สมาชิก", admin: "แอดมิน", owner: "เจ้าของระบบ" };
@@ -339,6 +339,12 @@ export default function AdminConsolePage() {
   const [changingPlanId, setChangingPlanId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
+  // The form as it was when the editor opened, to tell whether there is anything unsaved.
+  const [formBaseline, setFormBaseline] = useState("");
+  const [resourceQuery, setResourceQuery] = useState("");
+  const [resourceFilter, setResourceFilter] = useState<ResourceStatusFilter>("all");
+  const [contentTab, setContentTab] = useState<"list" | "featured">("list");
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   // The slug the resource had when the form opened ("" = none yet); the field is only sent when it differs.
@@ -405,6 +411,12 @@ export default function AdminConsolePage() {
     pendingActionRef.current = null;
     setPendingAction(null);
   };
+
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timer = window.setTimeout(() => setSavedNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [savedNotice]);
 
   useEffect(() => {
     if (!paymentTarget) return;
@@ -969,6 +981,7 @@ export default function AdminConsolePage() {
     setPendingResourceId(crypto.randomUUID());
     setSavedSlug("");
     setForm(EMPTY_FORM);
+    setFormBaseline(JSON.stringify(EMPTY_FORM));
     setSelectedFile(null);
     setSelectedCoverFile(null);
     setFileRemoved(false);
@@ -1022,7 +1035,7 @@ export default function AdminConsolePage() {
     setSelectedCoverFile(null);
     setFileRemoved(false);
     setSavedSlug(data.slug ?? "");
-    setForm({
+    const nextForm = {
       title: data.title ?? "",
       meta: data.meta ?? "",
       description: data.description ?? "",
@@ -1038,7 +1051,9 @@ export default function AdminConsolePage() {
       file_name: resolved.file_name ?? "",
       file_size: data.file_size ?? 0,
       file_mime_type: data.file_mime_type ?? "",
-    });
+    };
+    setForm(nextForm);
+    setFormBaseline(JSON.stringify(nextForm));
     setFormError(null);
     setShowForm(true);
   };
@@ -1068,7 +1083,7 @@ export default function AdminConsolePage() {
     }
     const resourceId = editingId ?? pendingResourceId;
     if (!resourceId) {
-      setFormError("เกิดข้อผิดพลาด กรุณาปิดฟอร์มแล้วเปิดใหม่อีกครั้ง");
+      setFormError("เกิดข้อผิดพลาด กรุณาปิดแผงแก้ไขแล้วเปิดใหม่อีกครั้ง");
       return;
     }
     setFormError(null);
@@ -1293,7 +1308,7 @@ export default function AdminConsolePage() {
     try {
       const resourceId = editingId ?? pendingResourceId;
       if (!resourceId) {
-        setFormError("เกิดข้อผิดพลาด กรุณาปิดฟอร์มแล้วเปิดใหม่อีกครั้ง");
+        setFormError("เกิดข้อผิดพลาด กรุณาปิดแผงแก้ไขแล้วเปิดใหม่อีกครั้ง");
         return;
       }
       const filesStorage = supabase.storage.from("resource-files");
@@ -1311,7 +1326,7 @@ export default function AdminConsolePage() {
       let pendingFile: PendingFile | null = null;
       if (selectedFile) {
         if (!resourceId) {
-          setFormError("เกิดข้อผิดพลาด กรุณาปิดฟอร์มแล้วเปิดใหม่อีกครั้ง");
+          setFormError("เกิดข้อผิดพลาด กรุณาปิดแผงแก้ไขแล้วเปิดใหม่อีกครั้ง");
           return;
         }
         const uploaded = await runFileUpload(selectedFile);
@@ -1386,8 +1401,10 @@ export default function AdminConsolePage() {
         window.alert("บันทึกสำเร็จ แต่ลบไฟล์เดิมไม่สำเร็จ — ระบบเก็บรายการนี้ไว้ให้ลองใหม่ได้จากแบนเนอร์ด้านบน");
       }
 
+      setSavedNotice(`บันทึก “${payload.title}” แล้ว`);
       setSavedSlug("");
       setForm(EMPTY_FORM);
+      setFormBaseline("");
       setEditingId(null);
       setPendingResourceId(null);
       setSelectedFile(null);
@@ -1988,6 +2005,10 @@ export default function AdminConsolePage() {
     );
   };
 
+  const resourceCounts = statusCounts(resources);
+  const visibleResources = filterResources(resources, { query: resourceQuery, status: resourceFilter });
+  const formDirty = showForm && (JSON.stringify(form) !== formBaseline || Boolean(selectedFile) || Boolean(selectedCoverFile) || fileRemoved);
+
   return (
     <div style={{ minHeight: "100vh" }}>
       <AdminMobileNav
@@ -2067,13 +2088,13 @@ export default function AdminConsolePage() {
 
           {view === "content" && (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--sp-4)", flexWrap: "wrap" }}>
+              <div className="kru-res-header">
                 <div>
                   <h1 style={{ fontSize: "var(--fs-30)" }}>จัดการสื่อ</h1>
-                  <p style={{ margin: "var(--sp-3) 0 0", color: "var(--text-muted)" }}>สื่อใหม่เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่</p>
+                  <p>กดชื่อสื่อหรือปุ่ม “แก้ไข” เพื่อเปิดแผงแก้ไขด้านข้าง · สื่อใหม่เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่</p>
                 </div>
-                <Button icon={Plus} onClick={() => (showForm ? closeForm() : openCreateForm())} disabled={mutationBusy}>
-                  {showForm ? "ปิดฟอร์ม" : "เพิ่มสื่อใหม่"}
+                <Button icon={Plus} onClick={openCreateForm} disabled={mutationBusy}>
+                  เพิ่มสื่อใหม่
                 </Button>
               </div>
 
@@ -2100,14 +2121,28 @@ export default function AdminConsolePage() {
                 </div>
               )}
 
-              {showForm && (
-                <form onSubmit={handleSaveResource} className="kru-card" style={{ padding: "var(--sp-6)", marginTop: "var(--sp-6)", display: "grid", gap: "var(--sp-4)" }}>
-                  <h2 style={{ fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>{editingId ? "แก้ไขสื่อ" : "สื่อใหม่"}</h2>
-                  {formError && (
-                    <p style={{ fontSize: "var(--fs-14)", color: "var(--status-danger-fg)", background: "var(--status-danger-bg)", padding: "10px 14px", borderRadius: "var(--r-md)" }}>
-                      {formError}
-                    </p>
-                  )}
+              {savedNotice && (
+                <div className="kru-res-notice" role="status">
+                  <Check size={18} aria-hidden="true" />
+                  <span>{savedNotice}</span>
+                </div>
+              )}
+
+              <ResourceEditorDrawer
+                open={showForm}
+                formId="resource-form"
+                title={editingId ? "แก้ไขสื่อ" : "เพิ่มสื่อใหม่"}
+                subtitle={form.title.trim() || (editingId ? undefined : "เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่")}
+                submitLabel={editingId ? "บันทึกการแก้ไข" : "บันทึกเป็นฉบับร่าง"}
+                saving={saving}
+                submitDisabled={mutationBusy && !saving}
+                dirty={formDirty}
+                error={formError}
+                onClose={closeForm}
+              >
+                <form id="resource-form" onSubmit={handleSaveResource} className="kru-res-form">
+                  <section className="kru-res-section" aria-labelledby="res-sec-basic">
+                    <h3 id="res-sec-basic">ข้อมูลหลัก</h3>
                   <Input label="ชื่อสื่อ" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
                   {(() => {
                     const state = slugFieldState(form.slug, savedSlug);
@@ -2158,9 +2193,12 @@ export default function AdminConsolePage() {
                   })()}
                   <Input label="คำอธิบายสั้น (แสดงใต้ชื่อ)" placeholder="เช่น Google Sheets & Script · ธุรการชั้นเรียน" value={form.meta} onChange={(e) => setForm({ ...form, meta: e.target.value })} />
                   <div className="kru-field">
-                    <label className="kru-field__label">รายละเอียด</label>
-                    <textarea className="kru-input" style={{ minHeight: 96, padding: "var(--sp-4) var(--sp-5)" }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                    <label className="kru-field__label" htmlFor="resource-description">รายละเอียด</label>
+                    <textarea id="resource-description" className="kru-input" style={{ minHeight: 96, padding: "var(--sp-4) var(--sp-5)" }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                   </div>
+                  </section>
+                  <section className="kru-res-section" aria-labelledby="res-sec-class">
+                    <h3 id="res-sec-class">หมวดหมู่และระดับชั้น</h3>
                   <div className="kru-admin-form-grid">
                     <Input label="หมวดหมู่" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
                     <Select
@@ -2215,10 +2253,13 @@ export default function AdminConsolePage() {
                       ))}
                     </div>
                   </fieldset>
+                  </section>
+                  <section className="kru-res-section" aria-labelledby="res-sec-files">
+                    <h3 id="res-sec-files">ลิงก์ ไฟล์ และรูปปก</h3>
                   <Input label="ลิงก์ (URL ปลายทาง)" value={form.cta_url} onChange={(e) => setForm({ ...form, cta_url: e.target.value })} placeholder="https://..." />
 
                   <div className="kru-field">
-                    <label className="kru-field__label">
+                    <label className="kru-field__label" htmlFor="resource-file">
                       ไฟล์สื่อ (PDF, DOCX, PPTX, XLSX, ZIP — ไม่เกิน 50MB{form.delivery_mode === "file_download" ? " จำเป็นสำหรับโหมดไฟล์ดาวน์โหลด" : ""}; ไฟล์เกิน 6MB อัปโหลดแบบ resumable)
                     </label>
                     {renderUploadStatus("file")}
@@ -2251,11 +2292,11 @@ export default function AdminConsolePage() {
                           </div>
                         )
                       ))}
-                    <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.zip" onChange={handleFileSelect} disabled={uploadStatus.phase !== "idle"} />
+                    <input id="resource-file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.zip" onChange={handleFileSelect} disabled={uploadStatus.phase !== "idle"} />
                   </div>
 
                   <div className="kru-field">
-                    <label className="kru-field__label">รูปปก (จำเป็นก่อนเผยแพร่)</label>
+                    <label className="kru-field__label" htmlFor="resource-cover">รูปปก (จำเป็นก่อนเผยแพร่)</label>
                     {renderUploadStatus("cover")}
                     {(coverPreviewUrl || form.cover_image_url) && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -2268,9 +2309,12 @@ export default function AdminConsolePage() {
                     {selectedCoverFile && uploadStatusFor("cover") === null && (
                       <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginBottom: "var(--sp-3)" }}>รูปใหม่ — จะอัปโหลดเมื่อกด &quot;บันทึก&quot;</div>
                     )}
-                    <input type="file" accept="image/*" onChange={handleCoverSelect} disabled={uploadStatus.phase !== "idle"} />
+                    <input id="resource-cover" type="file" accept="image/*" onChange={handleCoverSelect} disabled={uploadStatus.phase !== "idle"} />
                   </div>
 
+                  </section>
+                  <section className="kru-res-section" aria-labelledby="res-sec-access">
+                    <h3 id="res-sec-access">สิทธิ์การเข้าถึง</h3>
                   <fieldset className="kru-admin-access-fieldset">
                     <legend className="kru-field__label">สิทธิ์เข้าถึงสื่อ</legend>
                     <p id="resource-access-help" className="kru-admin-field-help">สถานะเผยแพร่และสิทธิ์เข้าถึงเป็นคนละส่วนกัน ผู้ไม่มีสิทธิ์เห็นได้เฉพาะข้อมูลสาธารณะที่ปลอดภัย</p>
@@ -2316,13 +2360,21 @@ export default function AdminConsolePage() {
                       </div>
                     )}
                   </fieldset>
-                  <Button type="submit" loading={saving} disabled={mutationBusy && !saving}>
-                    {editingId ? "บันทึกการแก้ไข" : "บันทึกเป็นฉบับร่าง"}
-                  </Button>
+                  </section>
                 </form>
-              )}
+              </ResourceEditorDrawer>
 
-              <section className="kru-card kru-admin-featured-panel" aria-labelledby="featured-resources-title">
+              <div className="kru-res-tabs" role="tablist" aria-label="มุมมองจัดการสื่อ">
+                <button id="res-tab-list" type="button" role="tab" aria-selected={contentTab === "list"} aria-controls="res-panel-list" onClick={() => setContentTab("list")}>
+                  สื่อทั้งหมด ({resources.length})
+                </button>
+                <button id="res-tab-featured" type="button" role="tab" aria-selected={contentTab === "featured"} aria-controls="res-panel-featured" onClick={() => setContentTab("featured")}>
+                  สื่อแนะนำใน Hero ({featuredIds.length}/5)
+                </button>
+              </div>
+
+              {contentTab === "featured" && (
+              <section id="res-panel-featured" role="tabpanel" className="kru-card kru-admin-featured-panel" aria-labelledby="featured-resources-title">
                 <div className="kru-admin-section-heading">
                   <div>
                     <h2 id="featured-resources-title" style={{ fontSize: "var(--fs-18)" }}>สื่อแนะนำใน Hero</h2>
@@ -2370,71 +2422,127 @@ export default function AdminConsolePage() {
                   </div>
                 )}
               </section>
+              )}
 
-              <div style={{ marginTop: "var(--sp-6)" }}>
-                {resources.length === 0 ? (
-                  <EmptyState icon={FolderOpen} title="ยังไม่มีสื่อ" description="กด “เพิ่มสื่อใหม่” เพื่อเริ่มสร้างสื่อชิ้นแรก" />
-                ) : (
-                  <div className="kru-card" style={{ overflow: "hidden" }}>
-                    {resources.map((item, i) => (
-                      <div key={item.id} className="kru-admin-resource-row" style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)" }}>
-                        <div style={{ flex: 1, minWidth: 180 }}>
-                          <div style={{ fontWeight: "var(--fw-semibold)" }}>{item.title}</div>
-                          <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{item.meta}</div>
-                          {item.slug ? (
-                            <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", wordBreak: "break-all" }}>/resources/{item.slug}</div>
-                          ) : item.status === "published" && item.slug === null ? (
-                            <div role="status" style={{ fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
-                              ⚠ ยังไม่มี slug (ใช้ลิงก์แบบรหัสยาว) — กดแก้ไขเพื่อตั้ง
-                            </div>
-                          ) : null}
-                          {item.status === "published" && resourceGradeProblem(item.grade_levels) && (
-                            <div role="status" style={{ fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
-                              ⚠ {resourceGradeProblem(item.grade_levels)} (ผู้ใช้จะไม่เห็นระดับชั้นของสื่อนี้)
-                            </div>
-                          )}
-                        </div>
-                        <div className="kru-admin-resource-badges">
-                          <Badge tone={STATUS_TONE[item.status]}>{STATUS_LABEL[item.status]}</Badge>
-                          <Badge tone={item.access_mode === "locked" ? "neutral" : item.access_mode === "public" ? "success" : "brand"}>
-                            {resourceAccessLabel(item.access_mode, (resourcePlanAccess.get(item.id) ?? []).map((id) => planNameById.get(id) ?? id))}
-                          </Badge>
-                        </div>
-                        <select
-                          className="kru-select"
-                          aria-label={`สถานะเผยแพร่ของ ${item.title}`}
-                          style={{ minHeight: 44, width: "auto" }}
-                          value={item.status}
-                          disabled={mutationBusy}
-                          onChange={(e) => handleStatusChange(item.id, e.target.value as ResourceStatus)}
-                        >
-                          <option value="draft">ฉบับร่าง</option>
-                          <option value="published">เผยแพร่</option>
-                          <option value="archived">เก็บถาวร</option>
-                        </select>
+              {contentTab === "list" && (
+                <div id="res-panel-list" role="tabpanel" aria-labelledby="res-tab-list">
+                  <div className="kru-res-toolbar">
+                    <SearchField
+                      className="kru-res-search"
+                      ariaLabel="ค้นหาสื่อ"
+                      placeholder="ค้นหาชื่อสื่อ คำอธิบาย หรือ slug"
+                      value={resourceQuery}
+                      onChange={setResourceQuery}
+                    />
+                    <div className="kru-res-chips" role="group" aria-label="กรองตามสถานะ">
+                      {STATUS_FILTER_ORDER.map((key) => (
                         <button
+                          key={key}
                           type="button"
-                          aria-label="แก้ไขสื่อ"
-                          disabled={mutationBusy}
-                          onClick={() => openEditForm(item.id)}
-                          className="kru-admin-icon-action"
+                          className={`kru-res-chip${key === "attention" ? " kru-res-chip--attention" : ""}`}
+                          aria-pressed={resourceFilter === key}
+                          onClick={() => setResourceFilter(key)}
                         >
-                          <Pencil size={18} />
+                          {STATUS_FILTER_LABEL[key]}
+                          <span className="kru-res-chip__count">{resourceCounts[key]}</span>
                         </button>
-                        <button
-                          type="button"
-                          aria-label="ลบสื่อ"
-                          disabled={mutationBusy}
-                          onClick={() => handleDeleteResource(item.id, item.title)}
-                          className="kru-admin-icon-action kru-admin-icon-action--danger"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    <p className="kru-res-summary" role="status" aria-live="polite">
+                      แสดง {visibleResources.length} จาก {resources.length} รายการ
+                    </p>
                   </div>
-                )}
-              </div>
+
+                  {resources.length === 0 ? (
+                    <div className="kru-res-empty">
+                      <EmptyState icon={FolderOpen} title="ยังไม่มีสื่อ" description="กด “เพิ่มสื่อใหม่” เพื่อเริ่มสร้างสื่อชิ้นแรก" />
+                    </div>
+                  ) : visibleResources.length === 0 ? (
+                    <div className="kru-res-empty">
+                      <EmptyState icon={Search} title="ไม่พบสื่อที่ตรงกับการค้นหา" description="ลองเปลี่ยนคำค้นหา หรือเลือกตัวกรองอื่น" />
+                      <div style={{ display: "flex", justifyContent: "center", marginTop: "var(--sp-4)" }}>
+                        <Button variant="soft" onClick={() => { setResourceQuery(""); setResourceFilter("all"); }}>
+                          ล้างตัวกรอง
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="kru-card kru-res-list">
+                      <table className={`kru-res-table${slugSupported ? "" : " kru-res-table--no-slug"}`}>
+                        <thead>
+                          <tr>
+                            <th scope="col">ชื่อสื่อ</th>
+                            <th scope="col">สถานะ</th>
+                            <th scope="col">สิทธิ์เข้าถึง</th>
+                            <th scope="col" className="kru-res-cell--slug">ลิงก์</th>
+                            <th scope="col"><span className="kru-res-sr">จัดการ</span></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleResources.map((item) => {
+                            const flags = resourceAttention(item);
+                            return (
+                              <tr key={item.id}>
+                                <td className="kru-res-cell--main">
+                                  <button type="button" className="kru-res-title" disabled={mutationBusy} onClick={() => openEditForm(item.id)}>
+                                    {item.title}
+                                  </button>
+                                  {item.meta ? <div className="kru-res-meta">{item.meta}</div> : null}
+                                  {flags.length > 0 && (
+                                    <div className="kru-res-flags">
+                                      {flags.map((flag) => (
+                                        <span key={flag} className="kru-res-flag">⚠ {ATTENTION_LABEL[flag]}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td data-label="สถานะ">
+                                  <select
+                                    className="kru-select kru-res-status-select"
+                                    data-status={item.status}
+                                    aria-label={`สถานะเผยแพร่ของ ${item.title}`}
+                                    value={item.status}
+                                    disabled={mutationBusy}
+                                    onChange={(e) => handleStatusChange(item.id, e.target.value as ResourceStatus)}
+                                  >
+                                    <option value="draft">ฉบับร่าง</option>
+                                    <option value="published">เผยแพร่แล้ว</option>
+                                    <option value="archived">เก็บถาวร</option>
+                                  </select>
+                                </td>
+                                <td data-label="สิทธิ์เข้าถึง">
+                                  <Badge tone={item.access_mode === "locked" ? "neutral" : item.access_mode === "public" ? "success" : "brand"}>
+                                    {resourceAccessLabel(item.access_mode, (resourcePlanAccess.get(item.id) ?? []).map((id) => planNameById.get(id) ?? id))}
+                                  </Badge>
+                                </td>
+                                <td data-label="ลิงก์" className="kru-res-cell--slug">
+                                  <span className="kru-res-slug" title={item.slug ? `/resources/${item.slug}` : undefined}>{item.slug ? `/resources/${item.slug}` : "—"}</span>
+                                </td>
+                                <td className="kru-res-cell--actions">
+                                  <div className="kru-res-actions">
+                                    <Button size="sm" variant="secondary" icon={Pencil} disabled={mutationBusy} onClick={() => openEditForm(item.id)} aria-label={`แก้ไข ${item.title}`}>
+                                      แก้ไข
+                                    </Button>
+                                    <button
+                                      type="button"
+                                      aria-label={`ลบ ${item.title}`}
+                                      disabled={mutationBusy}
+                                      onClick={() => handleDeleteResource(item.id, item.title)}
+                                      className="kru-admin-icon-action kru-admin-icon-action--danger"
+                                    >
+                                      <Trash2 size={18} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
