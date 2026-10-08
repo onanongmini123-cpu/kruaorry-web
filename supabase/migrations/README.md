@@ -486,7 +486,28 @@ application first, then apply. The file can be applied twice; roll back with
 `npm run test:platform-completion-sql` and, against the real 001–051 chain, by
 `npm run test:migration-chain-sql`.
 
-The three pending files above do not depend on each other: every apply order
+Migration `20261008090000_055_admin_save_resource_slug.sql` is **pending** (not
+applied by this repository) and **requires 053**. It gives
+`public.admin_save_resource` (SECURITY DEFINER) an optional last parameter
+`p_slug` so the admin form can set a resource's readable address: null or blank
+keeps the current slug, a value must pass the same rules as the column (3–80
+lowercase letters, digits and single hyphens, never UUID-shaped) and must not be
+used by another resource (refusals: `Resource slug is invalid` 22023,
+`Resource slug is already in use` 23505). Adding a parameter makes a new
+signature, so the old 16-argument function is dropped in the same transaction
+(two overloads would make PostgREST calls ambiguous); callers that omit
+`p_slug` keep working through the default, and privileges stay exactly 028's
+(EXECUTE for `authenticated` only, admin check first). The file stops before
+changing anything if `resources.slug` is missing or the live function is not the
+one it expects. Apply it **before** deploying an admin console that sends
+`p_slug` (the console only sends it when the field changed). Roll back with
+`supabase/rollbacks/20261008090000_055_admin_save_resource_slug.rollback.sql`
+(028's function byte for byte; saved slugs are untouched) and check the result
+with `supabase/verification/055-verify.sql`. Verified against the real 001–054
+chain by `npm run test:admin-save-slug-sql`. Because it replaces a SECURITY
+DEFINER function, review the diff against migration 028 before applying.
+
+The pending files 052–054 above do not depend on each other: every apply order
 gives the same final state. The hand-off report under `docs/` has the rollout
 runbook (prerequisites, pre-check, apply, verification, rollback, post-deploy
 checks).

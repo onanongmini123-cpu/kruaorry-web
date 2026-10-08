@@ -215,3 +215,28 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain("if (pendingActionRef.current) return");
   });
 });
+
+describe("resource slug field in the admin form", () => {
+  it("sends p_slug only when the field changed, so other saves still work before migration 055", () => {
+    expect(pageSource).toContain("const slugParam = slugParamForSave(form.slug, savedSlug);");
+    expect(pageSource).toContain("...(slugParam ? { p_slug: slugParam } : {})");
+    expect(pageSource).not.toContain("p_slug: form.slug");
+  });
+
+  it("blocks an invalid slug before any upload starts and explains refusals in Thai", () => {
+    expect(pageSource).toContain('slugState.kind === "invalid"');
+    expect(pageSource.indexOf('slugState.kind === "invalid"')).toBeLessThan(pageSource.indexOf("runCoverUpload(selectedCoverFile)"));
+    expect(pageSource).toContain("thaiSlugSaveError(result.saveError) ?? result.saveError");
+  });
+
+  it("falls back to the plain selects until the slug column exists", () => {
+    expect(pageSource).toContain("isMissingSlugColumn(withSlug.error)");
+    expect(pageSource).toContain("RESOURCE_LIST_SELECT");
+  });
+
+  it("warns that changing a saved slug breaks the old link", () => {
+    expect(pageSource).toContain('state.kind === "changed"');
+    expect(pageSource).toContain("ลิงก์เดิม");
+  });
+});
+
