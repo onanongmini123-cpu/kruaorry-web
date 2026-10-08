@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Camera, LogOut, Trash2, UserRound } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { AvatarCropper } from "@/components/AvatarCropper";
+import { ChangePasswordCard } from "@/components/ChangePasswordCard";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import type { Profile } from "@/lib/data";
 import { updateMyDisplayName } from "@/lib/data";
@@ -25,10 +26,11 @@ type Props = {
   onUpdated: (profile: Profile) => void;
   onSignOut: () => void;
   signingOut: boolean;
+  passwordAuthEmail: string | null;
   membershipSummary?: ReactNode;
 };
 
-export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signingOut, membershipSummary }: Props) {
+export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signingOut, passwordAuthEmail, membershipSummary }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const operationRef = useRef(false);
   const [fullName, setFullName] = useState(profile.fullName ?? "");
@@ -199,6 +201,9 @@ export function ProfileSettings({ supabase, profile, onUpdated, onSignOut, signi
           บันทึกชื่อที่แสดง
         </Button>
       </div>
+      {passwordAuthEmail && (
+        <ChangePasswordCard supabase={supabase} email={passwordAuthEmail} disabled={busy || signingOut || Boolean(cropFile)} />
+      )}
       {error && <p role="alert" aria-live="assertive" className="kru-profile-settings__error">{error}</p>}
       {message && <p role="status" aria-live="polite" className="kru-profile-settings__success">{message}</p>}
 
