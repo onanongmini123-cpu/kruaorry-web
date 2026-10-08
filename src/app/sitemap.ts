@@ -3,10 +3,13 @@ import { absoluteUrl } from "@/lib/site";
 import { resourceHref } from "@/lib/resourceUrl";
 import { loadPublicResources } from "./resources/data";
 
-// Rebuilt as often as the shared catalogue cache (5 minutes), so newly
-// published resources reach search engines without a deploy and a transient
-// database error never leaves an empty sitemap in place for long.
-export const revalidate = 300;
+// Built on every request, on purpose. A route-level cache (`revalidate`) did not
+// refresh this file on the host: the cached copy stayed in place for hours
+// (age 5579 s, x-vercel-cache: HIT) after the catalogue changed, so new and
+// renamed resources never reached search engines without a redeploy. Freshness
+// now comes from the shared catalogue cache (5 minutes, see resources/data.ts),
+// which does refresh, and a transient database error is never kept around.
+export const dynamic = "force-dynamic";
 
 /**
  * Public, indexable pages only: the landing page, the library, legal pages and
