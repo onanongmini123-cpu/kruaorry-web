@@ -139,7 +139,7 @@
 
 1. **Supabase Storage:** ยังต้องตรวจ policy จริงของ bucket ไฟล์สื่อ (private, ไม่มี public read) และ TTL ของ signed URL; ดูความเสี่ยง R2/R3 ข้อ 12.
 2. **Supabase Auth:** ตรวจแบบ read-only แล้ว (2026-10-07) ยังไม่ได้เปลี่ยนค่าใด — รายละเอียดอยู่ในบันทึกส่วนตัวของเจ้าของระบบ. ยังเหลือ: ทบทวนนโยบายรหัสผ่านและทดสอบ flow อีเมลบน staging ก่อนเปลี่ยนค่าใด.
-3. **Migration 052–054:** schema production ผ่าน verification แล้ว แต่ ledger ยังหยุดที่ 051; ต้อง repair ledger metadata หลังอนุมัติและก่อน migration ใหม่.
+3. **Migration 052–054:** production ledger ตรวจแล้วเมื่อ 2026-10-08 มีครบ 001–055 ไม่ต้อง repair; 055 apply บน production แล้ว และ `055-verify.sql` ผ่าน 8/8.
 4. **Vercel:** `kruaorry.com` เป็นโดเมนหลัก; ยืนยันแล้วว่า Preview ใช้ Supabase production ตัวเดียวกัน. Firewall: ตั้งค่าตามแผนแล้ว รายละเอียดอยู่ในบันทึกส่วนตัว.
 5. Repo เป็น public (ยืนยัน 2026-10-07) — ห้ามใส่ค่าตั้งค่าความปลอดภัยหรือรายละเอียดความเสี่ยงที่ยังไม่แก้ใน repo; ใช้บันทึกส่วนตัวของเจ้าของระบบ.
 6. `X-Frame-Options: SAMEORIGIN` จะกันการฝังหน้าเว็บนี้ใน iframe ของเว็บอื่น — ถ้ามีพาร์ตเนอร์ฝังอยู่ต้องแจ้งก่อน.
@@ -385,7 +385,7 @@ supabase db push                                 # apply ตามลำดั�
 **ขั้น 4 — 053** (slug) — ทำสุดท้ายเพราะผู้ใช้/บอทเห็นผล
 1. `053-verify.sql` ผ่านทั้งหมด (แถว info: N slug, รายชื่อสื่อที่เผยแพร่แล้วยังไม่มี slug).
 2. รอราว 5–6 นาที (หลังหมดอายุให้เปิดหน้ารายการสองครั้ง) หรือ redeploy แล้วรันข้อ 10 (curl) ทั้งชุด.
-3. ตั้ง slug ให้สื่อที่เผยแพร่แล้วแต่ยังไม่มี (R11) ถ้าต้องการ: `update public.resources set slug = 'my-slug' where id = '…';` (รูปแบบ/ซ้ำถูกปฏิเสธโดย DB).
+3. ตั้ง slug ให้สื่อที่เผยแพร่แล้วแต่ยังไม่มี (R11) ในหน้าแอดมิน: **จัดการสื่อ → แก้ไข → ช่อง slug** (ดู `docs/ops/set-resource-slug.md`). ใช้ SQL เฉพาะเป็นวิธีสำรองเมื่อหน้าแอดมินใช้งานไม่ได้: `update public.resources set slug = 'my-slug' where id = '…' and slug is null;` (รูปแบบ/ซ้ำถูกปฏิเสธโดย DB).
 4. ส่ง sitemap ใหม่ใน Search Console.
 5. **หยุด** ถ้ามีหน้าสื่อใด 404/500 → `update public.resources set slug = null;` (ไม่แตะ schema).
 
