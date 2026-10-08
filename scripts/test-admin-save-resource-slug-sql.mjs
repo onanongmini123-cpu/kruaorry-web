@@ -99,7 +99,8 @@ async function fingerprint(db) {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname <> 'admin_save_resource' order by 1`),
     relations: await rows(db, `
-      select c.relname, c.relkind, c.reloptions::text as options, c.relacl::text as acl
+      select c.relname, c.relkind, c.reloptions::text as options,
+        case when c.relname = 'resources' then null else c.relacl::text end as acl
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p') order by 1`),
     columns: await rows(db, `
@@ -119,6 +120,15 @@ async function fingerprint(db) {
     data: await rows(db, "select id::text, title, slug, status from public.resources order by id"),
   };
 }
+
+const resourceSlugAcl = (db) => rows(db, `
+  select a.attacl::text as acl,
+    has_column_privilege('authenticated', 'public.resources', 'slug', 'SELECT') as authenticated_select,
+    has_column_privilege('anon', 'public.resources', 'slug', 'SELECT') as anon_select
+  from pg_attribute a
+  where a.attrelid = 'public.resources'::regclass
+    and a.attname = 'slug'
+    and not a.attisdropped`);
 
 const saveFunction = (db) => rows(db, `
   select p.oid::regprocedure::text as sig, p.prosecdef, p.proconfig::text as config, md5(p.prosrc) as src,
@@ -145,7 +155,7 @@ const slugOf = async (db, id) => (await rows(db, "select slug from public.resour
 
 // ----------------------------------------------------------------- checks
 
-await check("forward: one 17-argument SECURITY DEFINER function, grants as in 028, 055-verify all true", async () => {
+await check("forward: one 17-argument SECURITY DEFINER function, narrow grants, 055-verify all true", async () => {
   await withDb(async (db) => {
     const before = await saveFunction(db);
     assert.equal(before.length, 1);
@@ -163,6 +173,9 @@ await check("forward: one 17-argument SECURITY DEFINER function, grants as in 02
     assert.ok(after[0].acl.includes("authenticated:EXECUTE"));
     // Privileges are exactly the ones migration 028 left behind.
     assert.deepEqual(after[0].acl, before[0].acl, "same grants as the 16-argument function");
+    const slugAcl = await resourceSlugAcl(db);
+    assert.equal(slugAcl[0].authenticated_select, true, "authenticated can list the slug field");
+    assert.equal(slugAcl[0].anon_select, false, "signed-out callers cannot read resources.slug directly");
     assert.deepEqual(notOk(await runVerification(db)), []);
   });
 });
@@ -170,14 +183,65 @@ await check("forward: one 17-argument SECURITY DEFINER function, grants as in 02
 await check("nothing outside admin_save_resource changes, and re-running 055 is a no-op", async () => {
   await withDb(async (db) => {
     const baseline = await fingerprint(db);
+    const baselineSlugAcl = await resourceSlugAcl(db);
     await db.exec(migrationSql("055"));
     const once = await fingerprint(db);
     assert.deepEqual(once, baseline, "everything except admin_save_resource is untouched");
+    const onceSlugAcl = await resourceSlugAcl(db);
+    assert.equal(onceSlugAcl[0].authenticated_select, true);
+    assert.equal(onceSlugAcl[0].anon_select, false);
     const functionOnce = await saveFunction(db);
     await db.exec(migrationSql("055"));
     assert.deepEqual(await saveFunction(db), functionOnce, "second run changes nothing");
     assert.deepEqual(await fingerprint(db), baseline);
+    assert.deepEqual(await resourceSlugAcl(db), onceSlugAcl, "second run leaves the narrow column ACL unchanged");
+    assert.equal(baselineSlugAcl[0].authenticated_select, false, "baseline did not already grant the new access");
   });
+});
+
+// The exact column lists the admin console sends (src/app/admin/page.tsx; a unit test keeps them identical).
+const ADMIN_LIST_COLUMNS = "id, title, meta, status, delivery_mode, access_mode, grade_levels";
+const ADMIN_EDIT_COLUMNS = "title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type";
+
+await check("the admin console's own list and edit queries work as a signed-in admin only once 055 grants the slug column", async () => {
+  await withDb(async (db) => {
+    const admin = await addUser(db, "admin", "admin");
+    const asAdmin = (sql, params = []) => asRole(db, "authenticated", admin, () => db.query(sql, params));
+    const draft = randomUUID();
+    await db.exec(migrationSql("055"));
+    await save(db, admin, { id: draft, title: "Draft with slug", slug: "draft-with-slug" });
+    await db.exec(rollbackSql("055"));
+
+    // Before 055 (what production looks like today): the old columns are readable, slug is not.
+    assert.equal((await asAdmin(`select ${ADMIN_LIST_COLUMNS} from public.resources`)).rows.length > 0, true, "plain list works");
+    await failsWith(asAdmin(`select ${ADMIN_LIST_COLUMNS}, slug from public.resources`), /permission denied for table resources/, "list with slug before 055");
+    await failsWith(asAdmin(`select ${ADMIN_EDIT_COLUMNS}, slug from public.resources where id = $1`, [draft]), /permission denied for table resources/, "edit with slug before 055");
+
+    await db.exec(migrationSql("055"));
+    const list = await asAdmin(`select ${ADMIN_LIST_COLUMNS}, slug from public.resources order by created_at desc`);
+    assert.ok(list.rows.some((row) => row.slug === "draft-with-slug"), "admin sees the draft's slug in the list");
+    const edit = await asAdmin(`select ${ADMIN_EDIT_COLUMNS}, slug from public.resources where id = $1`, [draft]);
+    assert.equal(edit.rows[0].slug, "draft-with-slug");
+  });
+});
+
+await check("slug stays unreadable to signed-out callers, and a member never sees a draft's slug", async () => {
+  await withDb(async (db) => {
+    const admin = await addUser(db, "admin", "admin");
+    const member = await addUser(db, "member");
+    const draft = randomUUID();
+    await save(db, admin, { id: draft, title: "Hidden draft", slug: "hidden-draft" });
+    await failsWith(
+      asRole(db, "anon", null, () => db.query("select slug from public.resources")),
+      /permission denied for table resources/, "signed-out reading slug");
+    const seen = await asRole(db, "authenticated", member, () => db.query("select id, slug from public.resources where id = $1", [draft]));
+    assert.equal(seen.rows.length, 0, "row level security still hides the draft from a member");
+    const own = await asRole(db, "authenticated", admin, () => db.query("select slug from public.resources where id = $1", [draft]));
+    assert.equal(own.rows[0].slug, "hidden-draft");
+    // Published rows: their slug is public anyway (it is in the URL), a member may read it.
+    const published = await asRole(db, "authenticated", member, () => db.query("select slug from public.resources where slug = 'sentence-train'"));
+    assert.equal(published.rows.length, 1);
+  }, { apply: ["055"] });
 });
 
 await check("who may call it: owner and admin yes; member, anonymous guest and signed-out no", async () => {
@@ -349,12 +413,14 @@ await check("guards: stops with a clear message, writing nothing, on a database 
 await check("rollback restores migration 028's function byte for byte (grants too) and keeps saved slugs", async () => {
   await withDb(async (db) => {
     const original = await saveFunction(db);
+    const originalSlugAcl = await resourceSlugAcl(db);
     const admin = await addUser(db, "admin", "admin");
     await db.exec(migrationSql("055"));
     const id = randomUUID();
     await save(db, admin, { id, title: "Keeps slug", slug: "survives-rollback" });
     await db.exec(rollbackSql("055"));
     assert.deepEqual(await saveFunction(db), original, "identical source, config and grants as before 055");
+    assert.deepEqual(await resourceSlugAcl(db), originalSlugAcl, "slug column ACL restored exactly");
     assert.equal(await slugOf(db, id), "survives-rollback", "saved slug untouched");
     assert.ok(notOk(await runVerification(db)).length > 0, "verification fails again after rollback");
     // The old console still works, and the new argument is refused until 055 is applied again.
@@ -370,8 +436,10 @@ await check("rollback restores migration 028's function byte for byte (grants to
 await check("the rollback is harmless on a database that never had 055", async () => {
   await withDb(async (db) => {
     const before = await saveFunction(db);
+    const beforeSlugAcl = await resourceSlugAcl(db);
     await db.exec(rollbackSql("055"));
     assert.deepEqual(await saveFunction(db), before);
+    assert.deepEqual(await resourceSlugAcl(db), beforeSlugAcl);
   });
 });
 

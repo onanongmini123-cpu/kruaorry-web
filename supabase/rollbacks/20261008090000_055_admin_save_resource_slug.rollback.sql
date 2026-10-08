@@ -5,7 +5,9 @@
 -- that was already saved is touched; the unique index and format check from 053
 -- stay. Stop editing the slug field in the admin console (or roll the console
 -- back) first: with this file applied the database refuses a p_slug argument.
--- Re-applying migration 055 afterwards works.
+-- The authenticated role's slug-column SELECT grant added by 055 is removed,
+-- restoring the pre-055 relation ACL. Re-applying migration 055 afterwards
+-- works.
 begin;
 set local lock_timeout = '5s';
 
@@ -106,5 +108,7 @@ grant execute on function public.admin_save_resource(
   uuid, boolean, text, text, text, text, text[], text, text, text,
   text, text, bigint, text, text, text[]
 ) to authenticated;
+
+revoke select (slug) on public.resources from authenticated;
 
 commit;

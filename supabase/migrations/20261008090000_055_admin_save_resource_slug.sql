@@ -29,6 +29,11 @@
 --   * Privileges are exactly 028's: EXECUTE for authenticated only (revoked
 --     from PUBLIC and anon), and the first statement is the is_admin() check,
 --     so a signed-in non-admin is refused with 42501 before anything is read.
+--   * Authenticated callers gain SELECT on the non-sensitive slug column only.
+--     The admin console already has column-level SELECT on the other list
+--     fields; without this matching grant PostgreSQL rejects the whole list
+--     query before RLS can admit the admin row. PUBLIC and anon keep no slug
+--     access on resources (public pages read it from resource_catalog).
 --   * The slug format and the unique index from 053 remain the last line of
 --     defence; the checks here only give a readable error first.
 --
@@ -48,7 +53,8 @@
 --   stops and can be retried instead of waiting behind a long transaction.
 --
 -- DATA RISK
---   None. No row is read or written. Only the function definition changes.
+--   None. No row is read or written. Only the function definition and the
+--   authenticated role's column-level SELECT ACL for resources.slug change.
 --
 -- DEPLOYMENT ORDER
 --   1. Migration 053 must already be applied (this file stops otherwise).
@@ -226,3 +232,10 @@ grant execute on function public.admin_save_resource(
   uuid, boolean, text, text, text, text, text[], text, text, text,
   text, text, bigint, text, text, text[], text
 ) to authenticated;
+
+-- Migration 023 intentionally replaced table-wide SELECT with safe
+-- column-level grants. Migration 053 added slug later, so it did not inherit
+-- those grants. Keep the public roles closed and expose only the address field
+-- needed by the authenticated admin list.
+revoke select (slug) on public.resources from public, anon;
+grant select (slug) on public.resources to authenticated;

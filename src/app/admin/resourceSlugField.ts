@@ -9,6 +9,9 @@ import { isValidSlug, slugify, SLUG_MAX_LENGTH, SLUG_MIN_LENGTH } from "@/lib/re
  * early, readable answer and decides what the form sends.
  */
 
+export const SLUG_UNAVAILABLE_NOTICE =
+  "ยังตั้งหรือดู slug จากหน้านี้ไม่ได้ เพราะฐานข้อมูลยังไม่ได้ติดตั้ง migration 055 — บันทึกสื่อด้วยช่องอื่นได้ตามปกติ";
+
 export const SLUG_RULE_HELP =
   `ใช้ตัวพิมพ์เล็กภาษาอังกฤษ ตัวเลข และขีดกลาง (-) ยาว ${SLUG_MIN_LENGTH}–${SLUG_MAX_LENGTH} ตัวอักษร เช่น sentence-train`;
 
@@ -58,6 +61,17 @@ export function thaiSlugSaveError(message: string | null | undefined): string | 
     return "ฐานข้อมูลยังไม่รองรับการตั้ง slug ในหน้านี้ (ต้องติดตั้ง migration 055 ก่อน) — บันทึกสื่อโดยไม่แก้ช่อง slug ได้ตามปกติ";
   }
   return null;
+}
+
+/**
+ * True when reading the slug column failed because the database is not ready for it: the column
+ * does not exist yet (before migration 053) or the signed-in role may not read it yet (053 added
+ * the column without the column-level grant that migration 055 adds). The admin console then
+ * retries without the column instead of losing the whole resource list.
+ */
+export function isSlugUnavailable(error: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  if (!error) return false;
+  return isMissingSlugColumn(error) || error.code === "42501" || /permission denied/i.test(error.message ?? "");
 }
 
 /** True when a select failed only because the slug column does not exist yet (before migration 053). */
