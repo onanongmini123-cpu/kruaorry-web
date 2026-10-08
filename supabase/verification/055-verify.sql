@@ -67,7 +67,19 @@ from (
     ''
 
   union all
-  select 7, 'info: published resources still on their UUID address (set a slug in the admin console)', true,
+  select 7, 'authenticated can read resources.slug while signed-out callers cannot',
+    has_column_privilege('authenticated', 'public.resources', 'slug', 'SELECT')
+      and not has_column_privilege('anon', 'public.resources', 'slug', 'SELECT'),
+    coalesce((
+      select a.attacl::text
+      from pg_attribute a
+      where a.attrelid = 'public.resources'::regclass
+        and a.attname = 'slug'
+        and not a.attisdropped
+    ), 'no explicit column ACL')
+
+  union all
+  select 8, 'info: published resources still on their UUID address (set a slug in the admin console)', true,
     coalesce(string_agg(r.title, ', ' order by r.title), 'none')
   from public.resources r
   where r.status = 'published' and to_jsonb(r) ->> 'slug' is null

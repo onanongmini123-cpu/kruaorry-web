@@ -99,7 +99,8 @@ async function fingerprint(db) {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname <> 'admin_save_resource' order by 1`),
     relations: await rows(db, `
-      select c.relname, c.relkind, c.reloptions::text as options, c.relacl::text as acl
+      select c.relname, c.relkind, c.reloptions::text as options,
+        case when c.relname = 'resources' then null else c.relacl::text end as acl
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p') order by 1`),
     columns: await rows(db, `
@@ -119,6 +120,15 @@ async function fingerprint(db) {
     data: await rows(db, "select id::text, title, slug, status from public.resources order by id"),
   };
 }
+
+const resourceSlugAcl = (db) => rows(db, `
+  select a.attacl::text as acl,
+    has_column_privilege('authenticated', 'public.resources', 'slug', 'SELECT') as authenticated_select,
+    has_column_privilege('anon', 'public.resources', 'slug', 'SELECT') as anon_select
+  from pg_attribute a
+  where a.attrelid = 'public.resources'::regclass
+    and a.attname = 'slug'
+    and not a.attisdropped`);
 
 const saveFunction = (db) => rows(db, `
   select p.oid::regprocedure::text as sig, p.prosecdef, p.proconfig::text as config, md5(p.prosrc) as src,
@@ -145,7 +155,7 @@ const slugOf = async (db, id) => (await rows(db, "select slug from public.resour
 
 // ----------------------------------------------------------------- checks
 
-await check("forward: one 17-argument SECURITY DEFINER function, grants as in 028, 055-verify all true", async () => {
+await check("forward: one 17-argument SECURITY DEFINER function, narrow grants, 055-verify all true", async () => {
   await withDb(async (db) => {
     const before = await saveFunction(db);
     assert.equal(before.length, 1);
@@ -163,6 +173,9 @@ await check("forward: one 17-argument SECURITY DEFINER function, grants as in 02
     assert.ok(after[0].acl.includes("authenticated:EXECUTE"));
     // Privileges are exactly the ones migration 028 left behind.
     assert.deepEqual(after[0].acl, before[0].acl, "same grants as the 16-argument function");
+    const slugAcl = await resourceSlugAcl(db);
+    assert.equal(slugAcl[0].authenticated_select, true, "authenticated can list the slug field");
+    assert.equal(slugAcl[0].anon_select, false, "signed-out callers cannot read resources.slug directly");
     assert.deepEqual(notOk(await runVerification(db)), []);
   });
 });
@@ -170,13 +183,19 @@ await check("forward: one 17-argument SECURITY DEFINER function, grants as in 02
 await check("nothing outside admin_save_resource changes, and re-running 055 is a no-op", async () => {
   await withDb(async (db) => {
     const baseline = await fingerprint(db);
+    const baselineSlugAcl = await resourceSlugAcl(db);
     await db.exec(migrationSql("055"));
     const once = await fingerprint(db);
     assert.deepEqual(once, baseline, "everything except admin_save_resource is untouched");
+    const onceSlugAcl = await resourceSlugAcl(db);
+    assert.equal(onceSlugAcl[0].authenticated_select, true);
+    assert.equal(onceSlugAcl[0].anon_select, false);
     const functionOnce = await saveFunction(db);
     await db.exec(migrationSql("055"));
     assert.deepEqual(await saveFunction(db), functionOnce, "second run changes nothing");
     assert.deepEqual(await fingerprint(db), baseline);
+    assert.deepEqual(await resourceSlugAcl(db), onceSlugAcl, "second run leaves the narrow column ACL unchanged");
+    assert.equal(baselineSlugAcl[0].authenticated_select, false, "baseline did not already grant the new access");
   });
 });
 
@@ -349,12 +368,14 @@ await check("guards: stops with a clear message, writing nothing, on a database 
 await check("rollback restores migration 028's function byte for byte (grants too) and keeps saved slugs", async () => {
   await withDb(async (db) => {
     const original = await saveFunction(db);
+    const originalSlugAcl = await resourceSlugAcl(db);
     const admin = await addUser(db, "admin", "admin");
     await db.exec(migrationSql("055"));
     const id = randomUUID();
     await save(db, admin, { id, title: "Keeps slug", slug: "survives-rollback" });
     await db.exec(rollbackSql("055"));
     assert.deepEqual(await saveFunction(db), original, "identical source, config and grants as before 055");
+    assert.deepEqual(await resourceSlugAcl(db), originalSlugAcl, "slug column ACL restored exactly");
     assert.equal(await slugOf(db, id), "survives-rollback", "saved slug untouched");
     assert.ok(notOk(await runVerification(db)).length > 0, "verification fails again after rollback");
     // The old console still works, and the new argument is refused until 055 is applied again.
@@ -370,8 +391,10 @@ await check("rollback restores migration 028's function byte for byte (grants to
 await check("the rollback is harmless on a database that never had 055", async () => {
   await withDb(async (db) => {
     const before = await saveFunction(db);
+    const beforeSlugAcl = await resourceSlugAcl(db);
     await db.exec(rollbackSql("055"));
     assert.deepEqual(await saveFunction(db), before);
+    assert.deepEqual(await resourceSlugAcl(db), beforeSlugAcl);
   });
 });
 

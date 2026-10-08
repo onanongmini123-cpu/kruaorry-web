@@ -46,13 +46,13 @@ describe("migration 055 admin_save_resource slug", () => {
     }
   });
 
-  it("only replaces the function: no table, column, index, policy or data statements outside its body", () => {
+  it("only replaces the function and grants authenticated read access to slug; no schema or data changes", () => {
     const outside = withoutBodies(executable);
     expect(outside).not.toMatch(/\b(alter\s+table|create\s+table|drop\s+table|drop\s+column|create\s+index|drop\s+index|create\s+policy|drop\s+policy|truncate|delete\s+from|insert\s+into|update\s+public)\b/i);
     expect(outside).toMatch(/set local lock_timeout = '5s'/);
     const statements = outside.split(";").map((statement) => statement.trim()).filter(Boolean);
     for (const statement of statements) {
-      expect(statement, statement.slice(0, 60)).toMatch(/^(set local|do\s+\$\$|drop function if exists public\.admin_save_resource|create or replace function public\.admin_save_resource|revoke all on function public\.admin_save_resource|grant execute on function public\.admin_save_resource|\$\$)/);
+      expect(statement, statement.slice(0, 60)).toMatch(/^(set local|do\s+\$\$|drop function if exists public\.admin_save_resource|create or replace function public\.admin_save_resource|revoke all on function public\.admin_save_resource|grant execute on function public\.admin_save_resource|revoke select \(slug\) on public\.resources|grant select \(slug\) on public\.resources|\$\$)/);
     }
   });
 
@@ -73,12 +73,13 @@ describe("migration 055 admin_save_resource slug", () => {
     expect(body).not.toMatch(/\b(from|into|update|join)\s+(?!public\.|\(|pg_temp|unnest)[a-z_]+\b(?<!\bselect)/i);
   });
 
-  it("grants EXECUTE to authenticated only, exactly as migration 028 did", () => {
+  it("grants function EXECUTE and slug SELECT only to authenticated", () => {
     const args = String.raw`\(\s*uuid, boolean, text, text, text, text, text\[\], text, text, text,\s*text, text, bigint, text, text, text\[\], text\s*\)`;
     expect(executable).toMatch(new RegExp(`revoke all on function public\\.admin_save_resource${args}\\s+from public, anon;`));
     expect(executable).toMatch(new RegExp(`grant execute on function public\\.admin_save_resource${args}\\s+to authenticated;`));
-    expect(executable).not.toMatch(/\bto\s+(anon|public)\b/i);
-    expect(executable.match(/\bgrant\b/gi)).toHaveLength(1);
+    expect(executable).toMatch(/revoke select \(slug\) on public\.resources from public, anon;/);
+    expect(executable).toMatch(/grant select \(slug\) on public\.resources to authenticated;/);
+    expect(executable.match(/\bgrant\b/gi)).toHaveLength(2);
   });
 
   it("guards the target database before writing anything", () => {
@@ -126,16 +127,23 @@ describe("rollback for migration 055", () => {
     expect(rollbackSql).toMatch(/^begin;/m);
     expect(rollbackSql.trim().endsWith("commit;")).toBe(true);
     expect(saveFunction(rollbackSql)).toBe(saveFunction(migration028));
-    const grants = (text: string) => text.slice(text.indexOf("revoke all on function public.admin_save_resource("));
-    const restored = grants(rollbackSql).replace(/\n\ncommit;\s*$/, "\n");
-    const original = grants(migration028).slice(0, restored.length);
-    expect(restored).toBe(original);
+    const grants = (text: string) => {
+      const start = text.indexOf("revoke all on function public.admin_save_resource(");
+      const tail = text.slice(start);
+      const endMarker = ") to authenticated;";
+      const end = tail.indexOf(endMarker) + endMarker.length;
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(endMarker.length - 1);
+      return tail.slice(0, end);
+    };
+    expect(grants(rollbackSql)).toBe(grants(migration028));
   });
 
   it("drops the 17-argument function before restoring the old one and touches no data", () => {
     const executable = withoutComments(rollbackSql);
     expect(executable.indexOf("drop function if exists public.admin_save_resource(")).toBeLessThan(executable.indexOf("create or replace function"));
     expect(withoutBodies(executable)).not.toMatch(/\b(alter\s+table|drop\s+table|delete\s+from|truncate|update\s+public|insert\s+into)\b/i);
+    expect(executable).toContain("revoke select (slug) on public.resources from authenticated;");
   });
 });
 
@@ -143,7 +151,7 @@ describe("verification for migration 055", () => {
   const verify = read(VERIFY);
   it("is read-only and reports every property the migration promises", () => {
     expect(withoutComments(verify)).not.toMatch(/\b(insert|update|delete|drop|alter|create|grant|revoke|truncate)\b/i);
-    for (const topic of ["no overload", "17 arguments", "SECURITY DEFINER", "EXECUTE", "admin gate", "053"]) {
+    for (const topic of ["no overload", "17 arguments", "SECURITY DEFINER", "EXECUTE", "admin gate", "053", "resources.slug"]) {
       expect(verify, topic).toContain(topic);
     }
   });
