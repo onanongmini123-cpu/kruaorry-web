@@ -62,6 +62,7 @@ import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { accessTier } from "@/lib/resourceAccess";
 import { trackEvent } from "@/lib/analytics";
 import { proUpgradeHref, type UpgradePlanId } from "@/lib/upgradeFlow";
+import { passwordEmailForUser } from "@/lib/accountPassword";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,7 @@ export default function TeacherAppPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [passwordAuthEmail, setPasswordAuthEmail] = useState<string | null>(null);
   const entitlements = entitlementState.entitlements;
 
   useEffect(() => {
@@ -166,6 +168,7 @@ export default function TeacherAppPage() {
         return;
       }
       setUserId(user.id);
+      setPasswordAuthEmail(passwordEmailForUser(user));
       setProfile(profileData);
       setResources(resourceData);
       setPlans(planData);
@@ -386,6 +389,7 @@ export default function TeacherAppPage() {
     accountRefreshController.dispose();
     setProfile(null);
     setUserId(null);
+    setPasswordAuthEmail(null);
     setResources([]);
     setPlans([]);
     setRequests([]);
@@ -851,6 +855,7 @@ export default function TeacherAppPage() {
                 onUpdated={setProfile}
                 onSignOut={() => void handleSignOut()}
                 signingOut={signingOut}
+                passwordAuthEmail={passwordAuthEmail}
                 membershipSummary={(
                   <MemberAccountStatus
                     currentPlanId={currentPlanId}
