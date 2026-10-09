@@ -685,3 +685,77 @@ p > a:not(.kru-btn) {
 .kru-spin {
   animation: kru-spin 0.9s linear infinite;
 }
+
+/* ----------------------------------------------- Admin business insights */
+.kru-admin-insights { margin-top: var(--sp-9); }
+.kru-admin-insights-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-5);
+}
+.kru-admin-insights-heading h2 { margin: 0; font-size: var(--fs-24); }
+.kru-admin-insights-heading p,
+.kru-admin-insights-heading > span { margin: 4px 0 0; color: var(--text-muted); font-size: var(--fs-13); }
+.kru-admin-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-grid);
+}
+.kru-admin-insight-card { min-width: 0; padding: var(--sp-5); }
+.kru-admin-insight-card--wide { grid-column: span 2; }
+.kru-admin-insight-card > header { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); }
+.kru-admin-insight-card > header > span {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-link);
+  background: var(--brand-soft);
+}
+.kru-admin-insight-card h3 { margin: 0; font-size: var(--fs-16); }
+.kru-admin-insight-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+.kru-admin-insight-metric { min-width: 0; padding: var(--sp-3); border-radius: var(--r-sm); background: var(--surface-sunken); }
+.kru-admin-insight-metric strong { display: block; overflow-wrap: anywhere; font-size: var(--fs-22); color: var(--text-strong); }
+.kru-admin-insight-metric span { display: block; margin-top: 3px; color: var(--text-muted); font-size: var(--fs-12); }
+.kru-admin-insight-help,
+.kru-admin-insight-caveat,
+.kru-admin-insight-empty { margin: var(--sp-3) 0 0; font-size: var(--fs-13); color: var(--text-muted); }
+.kru-admin-insight-caveat { color: var(--status-warning-fg); }
+.kru-admin-insight-founder { display: flex; align-items: baseline; gap: var(--sp-2); }
+.kru-admin-insight-founder strong { font-size: var(--fs-30); color: var(--text-strong); }
+.kru-admin-insight-founder span { color: var(--text-muted); }
+.kru-admin-insight-funnel { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+.kru-admin-insight-funnel li { position: relative; min-width: 0; padding: var(--sp-4); border-radius: var(--r-sm); background: var(--surface-sunken); }
+.kru-admin-insight-funnel li:not(:last-child)::after { content: "→"; position: absolute; right: calc(var(--sp-3) * -1); top: 50%; translate: 50% -50%; color: var(--text-faint); }
+.kru-admin-insight-funnel strong,
+.kru-admin-insight-funnel span { display: block; }
+.kru-admin-insight-funnel strong { font-size: var(--fs-22); color: var(--text-strong); }
+.kru-admin-insight-funnel span { margin-top: 3px; font-size: var(--fs-12); color: var(--text-muted); }
+.kru-admin-insight-ranked { margin: 0; padding-left: var(--sp-6); }
+.kru-admin-insight-ranked li { padding: 7px 0 7px 4px; border-bottom: 1px solid var(--border-subtle); }
+.kru-admin-insight-ranked li:last-child { border-bottom: 0; }
+.kru-admin-insight-ranked span,
+.kru-admin-insight-ranked strong { display: block; overflow-wrap: anywhere; }
+.kru-admin-insight-ranked strong { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-12); }
+.kru-admin-insight-table [role="row"] { display: grid; grid-template-columns: minmax(74px, .7fr) minmax(0, 1.4fr) minmax(48px, .4fr); gap: var(--sp-3); padding: 9px 4px; border-bottom: 1px solid var(--border-subtle); }
+.kru-admin-insight-table [role="cell"],
+.kru-admin-insight-table [role="columnheader"] { min-width: 0; overflow-wrap: anywhere; }
+.kru-admin-insight-table [role="cell"]:last-child,
+.kru-admin-insight-table [role="columnheader"]:last-child { text-align: right; }
+.kru-admin-insight-table__head { color: var(--text-muted); font-size: var(--fs-12); font-weight: var(--fw-semibold); }
+.kru-admin-insight-notice { margin: var(--sp-4) 0; padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); color: var(--text-muted); background: var(--surface-sunken); }
+
+@media (max-width: 1100px) {
+  .kru-admin-insights-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .kru-admin-insights-heading { align-items: start; flex-direction: column; }
+  .kru-admin-insights-grid { grid-template-columns: minmax(0, 1fr); }
+  .kru-admin-insight-card--wide { grid-column: auto; }
+  .kru-admin-insight-funnel { grid-template-columns: minmax(0, 1fr); }
+  .kru-admin-insight-funnel li:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: calc(var(--sp-3) * -1); translate: 50% 50%; }
+}
