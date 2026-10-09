@@ -507,6 +507,23 @@ with `supabase/verification/055-verify.sql`. Verified against the real 001–054
 chain by `npm run test:admin-save-slug-sql`. Because it replaces a SECURITY
 DEFINER function, review the diff against migration 028 before applying.
 
+Migration `20261009090000_056_admin_overview_insights.sql` is **pending** (not
+applied by this repository). It adds one read-only aggregate RPC for the admin
+overview. The RPC checks `is_admin()` before reading business tables, uses an
+empty `search_path`, grants EXECUTE only to `authenticated`, and never returns
+member identity, email, payment references, or row-level payment data. Revenue
+uses only immutable admin-confirmed amounts recorded since the first available
+confirmation; because the current audit has no refund/void status, the response
+marks refunds as unsupported instead of inferring them. Calendar-month and
+7/30-day windows start at local midnight in `Asia/Bangkok`. Favourite rankings
+include published resources only, and review rankings require at least three
+visible reviews. Apply to a Preview database first; roll back with
+`supabase/rollbacks/20261009090000_056_admin_overview_insights.rollback.sql`
+and verify with `supabase/verification/056-verify.sql`. Run
+`npm run test:admin-overview-sql` for the real-chain permission, boundary,
+aggregate, no-PII, no-write, rollback, and re-apply checks. The frontend fails
+softly while the RPC is absent, leaving every existing admin tool available.
+
 The pending files 052–054 above do not depend on each other: every apply order
 gives the same final state. The hand-off report under `docs/` has the rollout
 runbook (prerequisites, pre-check, apply, verification, rollback, post-deploy

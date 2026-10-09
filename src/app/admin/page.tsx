@@ -57,7 +57,9 @@ import { signOutCurrentSession } from "@/lib/currentSessionLogout";
 import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
+import { fetchAdminOverviewInsights, type AdminOverviewInsights as AdminOverviewInsightsData } from "@/lib/adminOverview";
 import { AdminMobileNav } from "./AdminMobileNav";
+import { AdminOverviewInsights } from "./AdminOverviewInsights";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
@@ -337,6 +339,9 @@ export default function AdminConsolePage() {
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
   const [founderSeatsUsed, setFounderSeatsUsed] = useState<number | null>(null);
   const [founderCapacityRefreshing, setFounderCapacityRefreshing] = useState(false);
+  const [overviewInsights, setOverviewInsights] = useState<AdminOverviewInsightsData | null>(null);
+  const [overviewInsightsLoading, setOverviewInsightsLoading] = useState(true);
+  const [overviewInsightsMessage, setOverviewInsightsMessage] = useState<string | null>(null);
   const [changingPlanId, setChangingPlanId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -743,6 +748,7 @@ export default function AdminConsolePage() {
   const reloadAdminData = async (nextReviewPage = reviewPage, nextReportPage = reportPage) => {
     setMembershipSchemaReadiness("checking");
     setLineSlipWorkflowReadiness("checking");
+    setOverviewInsightsLoading(true);
     // Keep the content, moderation and member-directory tools available while
     // the payment-confirmation schema is being rolled out. Only the second
     // batch below touches 048 columns/RPCs, and it cannot run until the shared
@@ -759,6 +765,7 @@ export default function AdminConsolePage() {
     ]);
     const readinessPromise = fetchMembershipSchemaReadiness(supabase);
     const lineSlipReadinessPromise = fetchMembershipLineSlipWorkflowReadiness(supabase);
+    const overviewInsightsPromise = fetchAdminOverviewInsights(supabase);
 
     const [
       { data: resourceRows, error: resourceError },
@@ -790,6 +797,11 @@ export default function AdminConsolePage() {
     const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
       .map((plan) => ({ ...plan, name: planDisplayName(plan.id, plan.name), renewal_price_amount_thb: null }));
     setPlans(basePlanError ? [] : basePlans);
+
+    const overviewResult = await overviewInsightsPromise;
+    setOverviewInsights((current) => overviewResult.data ?? (overviewResult.unavailable ? null : current));
+    setOverviewInsightsMessage(overviewResult.message);
+    setOverviewInsightsLoading(false);
 
     const [readiness, lineSlipReadiness] = await Promise.all([
       readinessPromise,
@@ -2103,6 +2115,7 @@ export default function AdminConsolePage() {
                 <StatTile value={actionCounts.moderation ?? "—"} label="รีวิว/รายงานที่ต้องจัดการ" icon={ShieldCheck} tone="warning" />
                 <StatTile value={membershipMutationsReady ? actionCounts.upgrades ?? "—" : "—"} label="แจ้งชำระที่ต้องตรวจ" icon={Wallet} tone="warning" />
               </div>
+              <AdminOverviewInsights data={overviewInsights} loading={overviewInsightsLoading} message={overviewInsightsMessage} />
             </div>
           )}
 
