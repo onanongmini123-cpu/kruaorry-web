@@ -18,6 +18,7 @@ describe("friendlyErrorMessage", () => {
     expect(friendlyErrorMessage({ message: "Published entitled resource required" })).toContain("ยังไม่มีสิทธิ์ใช้สื่อนี้");
     expect(friendlyErrorMessage("Display name must contain 2 to 80 characters")).toBe("ชื่อที่แสดงต้องมี 2–80 ตัวอักษร");
     expect(friendlyErrorMessage({ message: "Membership application is no longer pending" })).toContain("ถูกดำเนินการไปแล้ว");
+    expect(friendlyErrorMessage({ message: "Cannot demote the last remaining owner" })).toContain("เจ้าของระบบคนสุดท้าย");
   });
 
   it("does not hard-code a favourites limit that comes from plan configuration", () => {
