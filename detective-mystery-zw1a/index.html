@@ -1,0 +1,1749 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>นักสืบไขคดี — Detective Mystery</title>
+<style>
+:root{
+  --ink:#1b2540;--ink2:#46506b;--bg:#f4eee0;--card:#fffdf7;--line:#d9cfb8;
+  --navy:#16284a;--navy2:#22407a;--amber:#f2a516;--amber-d:#8a5a00;--teal:#0f766e;--ok:#15803d;--soft:#b45309;--soft-bg:#fff4dc;--ok-bg:#e3f6e8;
+  --focus:#1d4ed8;--r:14px;--shadow:0 6px 18px rgba(22,40,74,.14);
+  --font:"Noto Sans Thai","Sarabun","Leelawadee UI","Tahoma","Thonburi",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{font-family:var(--font);color:var(--ink);background:var(--bg);font-size:17px;line-height:1.5;overflow-wrap:anywhere}
+h1,h2,h3{line-height:1.25;margin:.2em 0 .4em}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.skip{position:absolute;left:-999px;top:0;background:#fff;padding:8px 12px;z-index:100}
+.skip:focus{left:8px;top:8px}
+[hidden]{display:none!important}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:8px 18px;border-radius:12px;border:2px solid var(--navy);background:#fff;color:var(--navy);font-weight:700;cursor:pointer;text-decoration:none;box-shadow:0 2px 0 rgba(22,40,74,.25)}
+.btn:hover{background:#eef2fb}
+.btn:active{transform:translateY(1px);box-shadow:none}
+.btn.primary{background:var(--navy);color:#fff}
+.btn.primary:hover{background:var(--navy2)}
+.btn.amber{background:var(--amber);border-color:#7a4b00;color:#2b1b00}
+.btn.amber:hover{background:#ffb92e}
+.btn.danger{border-color:#9b1c1c;color:#9b1c1c}
+.btn.sm{min-height:44px;padding:4px 12px;font-size:15px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.icon{padding:8px 12px}
+.screen{min-height:100vh}
+.wrap{max-width:1180px;margin:0 auto;padding:16px}
+.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:var(--navy);color:#fff}
+.topbar h1{font-size:22px;margin:0;flex:1;min-width:160px}
+.topbar .btn{background:#fff}
+.card{background:var(--card);border:2px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow)}
+.muted{color:var(--ink2)}
+.small{font-size:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;background:#e8eefc;border:1px solid #b9c6ea;font-size:14px;font-weight:600}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+#banner{background:var(--soft-bg);color:#6b3a00;border-bottom:2px solid var(--amber);padding:8px 16px;font-weight:600}
+
+/* home */
+.home{display:grid;place-items:center;min-height:100vh;padding:20px;background:
+  radial-gradient(circle at 15% 20%,#fff6d6 0,transparent 40%),radial-gradient(circle at 85% 80%,#d8e6ff 0,transparent 45%),var(--bg)}
+.home .box{max-width:760px;width:100%;text-align:center}
+.home h1{font-size:clamp(34px,6vw,60px);color:var(--navy);margin:8px 0 0;letter-spacing:.5px}
+.home .en{font-size:clamp(16px,2.4vw,22px);color:var(--amber-d);font-weight:700;letter-spacing:3px;text-transform:uppercase}
+.home .lead{font-size:clamp(16px,2vw,20px);margin:10px auto 22px;max-width:560px;color:var(--ink2)}
+.menu{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:8px}
+.menu .btn{min-height:58px;font-size:19px}
+.home svg{width:min(210px,50vw);height:auto}
+.homefoot{margin-top:18px;font-size:14px;color:var(--ink2)}
+
+/* forms */
+.field{display:flex;flex-direction:column;gap:4px;margin:10px 0}
+.field>label,.lbl{font-weight:700;font-size:15px}
+input[type=text],input[type=number],select,textarea{width:100%;min-height:44px;padding:8px 10px;border:2px solid #9aa6c4;border-radius:10px;background:#fff}
+textarea{resize:vertical;min-height:80px;line-height:1.5}
+input[type=checkbox],input[type=radio]{width:22px;height:22px;accent-color:var(--navy);flex:none}
+.chk{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:6px 0;cursor:pointer}
+.hint{font-size:14px;color:var(--ink2)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+
+/* studio */
+.studio{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+.caselist{display:flex;flex-direction:column;gap:8px}
+.caseitem{width:100%;text-align:left;padding:10px 12px;border:2px solid var(--line);background:#fff;border-radius:12px;cursor:pointer;min-height:44px}
+.caseitem[aria-current=true]{border-color:var(--navy);background:#e8eefc}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tab{min-height:44px;padding:6px 14px;border-radius:99px;border:2px solid var(--navy);background:#fff;font-weight:700;cursor:pointer;color:var(--navy)}
+.tab[aria-selected=true]{background:var(--navy);color:#fff}
+.badge{display:inline-block;min-width:22px;padding:0 6px;border-radius:99px;background:#b91c1c;color:#fff;font-size:13px;margin-left:6px;text-align:center}
+.badge.ok{background:var(--ok)}
+.listrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px;border:2px solid var(--line);border-radius:12px;background:#fff;margin:6px 0}
+.listrow.sel{border-color:var(--navy);background:#eef2fb}
+.evgrid{display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:start}
+.vitem{display:flex;gap:8px;align-items:flex-start;padding:6px 10px;border-radius:10px;margin:4px 0}
+.vitem.err{background:#fde8e8;border-left:6px solid #b91c1c}
+.vitem.warn{background:var(--soft-bg);border-left:6px solid var(--amber)}
+.vitem.okk{background:var(--ok-bg);border-left:6px solid var(--ok)}
+.thumb{max-width:160px;max-height:120px;border-radius:8px;border:2px solid var(--line)}
+
+/* game */
+.game{display:flex;flex-direction:column;height:100vh;height:100dvh;background:#e9e1cc}
+.hud{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 10px;background:var(--navy);color:#fff}
+.hud .ttl{font-weight:800;font-size:18px;margin-right:6px;max-width:28ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud .btn{min-height:44px;padding:4px 12px;font-size:15px;background:#fff}
+.teams{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.tchip{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;padding:3px 12px;border-radius:99px;background:#fff;color:var(--ink);font-weight:700;border:3px solid transparent;font-size:15px;min-height:36px}
+.tchip.cur{border-color:var(--amber);box-shadow:0 0 0 3px rgba(242,165,22,.55)}
+.tchip b{font-size:18px}
+.gtabs{display:none;gap:6px;padding:6px 10px;background:#101d38}
+.gtabs .tab{flex:1;background:#fff}
+.gtabs .tab[aria-selected=true]{background:var(--amber);color:#2b1b00;border-color:#7a4b00}
+.gbody{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:8px;padding:8px}
+.pmap,.pboard{min-height:0;display:flex;flex-direction:column;gap:8px}
+.pmap,.pboard{overflow:auto}
+.mapwrap{position:relative;width:100%;aspect-ratio:16/9;border-radius:var(--r);overflow:hidden;border:3px solid var(--navy);background:#222;box-shadow:var(--shadow);flex:none}
+#cv{position:absolute;inset:0;width:100%;height:100%;cursor:none;touch-action:none}
+.spots{display:flex;flex-wrap:wrap;gap:6px}
+.spot{min-height:44px;padding:4px 12px;border-radius:12px;border:2px solid var(--navy);background:#fff;font-weight:700;cursor:pointer;font-size:15px}
+.spot.done{background:var(--ok-bg);border-color:var(--ok);color:#0d4f25}
+.spot.lock{background:#e5e7eb;border-color:#9ca3af;color:#4b5563}
+.panelcard{background:var(--card);border:2px solid var(--line);border-radius:var(--r);padding:8px 10px}
+.pboard{background:var(--card);border:3px solid var(--navy);border-radius:var(--r);padding:8px}
+.boardhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.boardhd h2{font-size:18px;margin:0;flex:1}
+.board{position:relative;flex:1 0 340px;border-radius:12px;overflow:hidden;background:
+  repeating-linear-gradient(0deg,rgba(0,0,0,.05) 0 2px,transparent 2px 28px),repeating-linear-gradient(90deg,rgba(0,0,0,.05) 0 2px,transparent 2px 28px),#b98a54;border:6px solid #6b4423;box-shadow:inset 0 0 30px rgba(0,0,0,.35);touch-action:none}
+.board svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.board svg .badgeg{pointer-events:all;cursor:pointer}
+.note{position:absolute;transform:translate(-50%,-50%);border:0;cursor:grab;touch-action:none;text-align:left;font-weight:700;color:#2b2200;padding:8px 10px 8px 12px;box-shadow:3px 5px 10px rgba(0,0,0,.4);max-width:150px;min-width:92px;font-size:14px;line-height:1.25;user-select:none}
+.note.ev{background:#fff176;transform:translate(-50%,-50%) rotate(-1.5deg);border-top:10px solid #f5d90a}
+.note.ev:nth-of-type(even){transform:translate(-50%,-50%) rotate(1.5deg)}
+.note.pe{background:#9fd8ff;border-radius:99px;text-align:center;padding:8px 14px;min-width:80px;border:3px solid #1d6fa5}
+.note.ti{background:#c8f2c2;border-radius:8px;text-align:center;padding:5px 10px;min-width:64px;border:3px dashed #2f7d32;font-size:13px}
+.note.sel{outline:4px solid var(--focus);outline-offset:3px;z-index:3}
+.note.flash{animation:flash 1.2s 2}
+.note small{display:block;font-weight:500;font-size:12px;opacity:.85}
+.note img{width:100%;max-height:50px;object-fit:cover;border-radius:4px;display:block;margin-bottom:3px}
+@keyframes flash{50%{box-shadow:0 0 0 8px rgba(242,165,22,.9)}}
+.linklist{max-height:150px;overflow:auto;font-size:14px}
+.linkitem{display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px dashed var(--line)}
+.lnum{flex:none;width:26px;height:26px;border-radius:50%;color:#fff;text-align:center;font-weight:800;font-size:14px;line-height:26px;border:2px solid #fff;box-shadow:0 0 0 1px #000}
+.statusbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* dialogs */
+dialog{border:0;padding:0;background:transparent;max-width:100vw;max-height:100dvh;color:var(--ink)}
+dialog::backdrop{background:rgba(10,18,38,.62)}
+.dlgbox{background:var(--card);border:3px solid var(--navy);border-radius:18px;width:min(720px,94vw);max-height:92dvh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+.dlgbox.wide{width:min(980px,96vw)}
+.dlgbox>header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--navy);color:#fff;border-radius:14px 14px 0 0}
+.dlgbox>header h2{margin:0;font-size:20px;flex:1}
+.dlgbox .x{min-width:44px;min-height:44px;border-radius:10px;border:0;background:#fff;color:var(--navy);font-size:24px;font-weight:700;cursor:pointer;line-height:1}
+.dlgbody{padding:14px 16px;overflow:auto;flex:1}
+.dlgbox>footer{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding:10px 14px;border-top:2px solid var(--line);background:#f8f3e6;border-radius:0 0 14px 14px}
+.qprompt{font-size:clamp(19px,2.6vw,26px);font-weight:700;margin:6px 0 12px;white-space:pre-wrap}
+.opts{display:grid;gap:8px}
+.opt{display:flex;gap:10px;align-items:center;text-align:left;min-height:52px;padding:8px 12px;border-radius:12px;border:3px solid #9aa6c4;background:#fff;cursor:pointer;font-size:clamp(17px,2.2vw,22px);font-weight:600;width:100%}
+.opt:hover:not([disabled]){background:#eef2fb}
+.opt[aria-checked=true]{border-color:var(--navy);background:#dfe8ff}
+.opt .let{flex:none;width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800}
+.opt.tried{border-color:var(--amber);background:var(--soft-bg);color:#6b3a00}
+.opt[disabled]{cursor:not-allowed;opacity:.75}
+.fb{padding:10px 12px;border-radius:12px;margin-top:10px;font-weight:600}
+.fb.soft{background:var(--soft-bg);border:2px solid var(--amber);color:#5a3200}
+.fb.good{background:var(--ok-bg);border:2px solid var(--ok);color:#0d4f25}
+.fb.info{background:#e8eefc;border:2px solid #9bb0e8}
+.tbar{height:12px;border-radius:99px;background:#ddd;overflow:hidden;margin:6px 0}
+.tbar>i{display:block;height:100%;background:var(--teal);transition:width .25s linear}
+.tbar.low>i{background:var(--soft)}
+.reveal{position:relative;overflow:hidden;border-radius:14px;background:linear-gradient(135deg,#fff8e1,#fff);border:3px solid var(--amber);padding:14px}
+.reveal.anim{animation:spot 1s ease-out both}
+@keyframes spot{from{clip-path:circle(0% at 50% 40%)}to{clip-path:circle(150% at 50% 40%)}}
+.reveal h3{font-size:24px;margin:0 0 6px;color:var(--navy)}
+.reveal .lensdeco{position:absolute;right:-18px;top:-18px;width:96px;height:96px;opacity:.15}
+.reveal img.ei{max-width:100%;max-height:220px;border-radius:10px;border:2px solid var(--line);margin:6px 0}
+.meta{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.pausebox{text-align:center;padding:26px}
+.pausebox .big{font-size:42px;font-weight:800;color:var(--navy)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#101d38;color:#fff;padding:10px 18px;border-radius:12px;font-weight:600;z-index:1000;max-width:92vw;opacity:0;pointer-events:none;transition:opacity .25s;box-shadow:var(--shadow)}
+#toast.on{opacity:1}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:2000;width:100vw;height:100vh}
+
+/* report + help */
+.rep h2{margin-top:22px;border-bottom:3px solid var(--amber);padding-bottom:4px}
+.tbl{width:100%;border-collapse:collapse;font-size:16px}
+.tbl th,.tbl td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.tbl th{background:#eef2fb}
+.step3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.step3 .card{text-align:center}
+.step3 .n{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--amber);font-weight:800;font-size:22px;border:2px solid #7a4b00}
+kbd{background:#fff;border:2px solid var(--line);border-bottom-width:4px;border-radius:6px;padding:0 6px;font-family:inherit;font-weight:700}
+.revealbox{border:3px solid var(--ok);background:var(--ok-bg);border-radius:14px;padding:12px 14px;margin:10px 0}
+.pager{display:flex;gap:6px;justify-content:center;margin-top:8px}
+.pager i{width:10px;height:10px;border-radius:50%;background:#bbb}
+.pager i.on{background:var(--navy)}
+
+@media (max-width:960px){
+  .studio,.evgrid{grid-template-columns:1fr}
+  .gtabs{display:flex}
+  .gbody{grid-template-columns:1fr;overflow:auto;grid-auto-rows:auto}
+  .pmap,.pboard{overflow:visible}
+  .board{flex:0 0 420px}
+  .hud .ttl{flex:1 1 100%;max-width:none}
+  .teams{flex:1 1 100%}
+  .game[data-view=map] .pboard,.game[data-view=board] .pmap{display:none}
+  .hud .ttl{max-width:16ch}
+}
+@media (max-width:480px){
+  body{font-size:16px}
+  .hud .btn{padding:4px 8px;font-size:14px}
+  .gtabs .tab{padding:6px 6px;font-size:15px}
+  .wrap{padding:10px}
+  .note{max-width:112px;font-size:12.5px;min-width:70px}
+  .dlgbody{padding:10px 12px}
+  .btn{padding:8px 12px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
+}
+body.calm *{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
+body.calm .reveal.anim{animation:none}
+@media print{
+  body{background:#fff;font-size:12pt}
+  .screen:not(#scrReport),dialog,#toast,#banner,.noprint{display:none!important}
+  #scrReport{display:block!important}
+  .card{box-shadow:none;border:1px solid #888}
+  .revealbox{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">ข้ามไปที่เนื้อหา</a>
+<div id="banner" hidden role="status"></div>
+<main id="main">
+
+<section id="scrHome" class="screen">
+  <div class="home"><div class="box">
+    <svg viewBox="0 0 220 160" role="img" aria-label="ภาพแว่นขยายนักสืบ">
+      <defs><radialGradient id="gl" cx="40%" cy="35%"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#bfe3ff" stop-opacity=".45"/></radialGradient></defs>
+      <ellipse cx="110" cy="146" rx="80" ry="8" fill="#000" opacity=".12"/>
+      <rect x="40" y="40" width="96" height="84" rx="8" fill="#fff176" stroke="#c9a900" stroke-width="3" transform="rotate(-6 88 82)"/>
+      <path d="M58 70h60M58 86h44M58 102h52" stroke="#a88f00" stroke-width="5" stroke-linecap="round" transform="rotate(-6 88 82)"/>
+      <circle cx="132" cy="70" r="38" fill="url(#gl)" stroke="#16284a" stroke-width="8"/>
+      <path d="M160 98l34 38" stroke="#7a4b00" stroke-width="14" stroke-linecap="round"/>
+      <path d="M160 98l-6-6" stroke="#16284a" stroke-width="10" stroke-linecap="round"/>
+      <text x="132" y="84" text-anchor="middle" font-size="44" font-weight="800" fill="#d97706" font-family="sans-serif">?</text>
+    </svg>
+    <div class="en">Detective Mystery</div>
+    <h1>นักสืบไขคดี</h1>
+    <p class="lead">สืบเบาะแส เก็บหลักฐาน เชื่อมเหตุผล แล้วไขคดีของหายด้วยกันทั้งห้อง — ไม่มีความรุนแรง ใช้ได้ทุกวิชา</p>
+    <div class="menu">
+      <button class="btn primary" id="hmStart">เริ่มเล่น</button>
+      <button class="btn amber" id="hmResume" hidden>เล่นต่อจากที่บันทึกไว้</button>
+      <button class="btn" id="hmStudio">จัดการเนื้อหา</button>
+      <button class="btn" id="hmSettings">ตั้งค่า</button>
+      <button class="btn" id="hmHow">วิธีเล่น</button>
+      <button class="btn" id="hmDemo">ทดลองเล่น</button>
+    </div>
+    <div class="homefoot" id="homeFoot"></div>
+  </div></div>
+</section>
+
+<section id="scrHow" class="screen" hidden></section>
+<section id="scrSettings" class="screen" hidden></section>
+<section id="scrStudio" class="screen" hidden></section>
+<section id="scrGame" class="screen" hidden></section>
+<section id="scrReport" class="screen" hidden></section>
+
+</main>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlgbox" id="dlgBox">
+    <header><h2 id="dlgTitle"></h2><button class="x" id="dlgX" aria-label="ปิดหน้าต่าง (Esc)">×</button></header>
+    <div class="dlgbody" id="dlgBody"></div>
+    <footer id="dlgFoot"></footer>
+  </div>
+</dialog>
+<dialog id="dlgC" aria-labelledby="dlgCT">
+  <div class="dlgbox">
+    <header><h2 id="dlgCT">ยืนยัน</h2></header>
+    <div class="dlgbody" id="dlgCB"></div>
+    <footer id="dlgCF"></footer>
+  </div>
+</dialog>
+<dialog id="dlgP" aria-labelledby="dlgPT">
+  <div class="dlgbox">
+    <header><h2 id="dlgPT">พักเกม</h2></header>
+    <div class="pausebox"><div class="big">พักเกมอยู่</div><p>เวลาและกระดานถูกพักไว้ กด <kbd>Space</kbd> หรือปุ่มด้านล่างเพื่อเล่นต่อ</p>
+      <button class="btn primary" id="pauseResume">เล่นต่อ</button></div>
+  </div>
+</dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<canvas id="confetti" hidden aria-hidden="true"></canvas>
+<script>
+(()=>{'use strict';
+/* =====================================================================
+ * นักสืบไขคดี — Detective Mystery  (static, no network, no external libs)
+ *
+ * Data model (schemaVersion 1) — one "case":
+ * { schemaVersion, id, title, subject, grade, story,
+ *   rooms:[{id,name}] x4,
+ *   characters:[{id,name,role,desc}] (3–5),
+ *   evidence:[{id,title,desc,room:0-3,time,characterIds:[],supports:hypId|'',
+ *              mandatory:bool,order:int,hint,image:dataURL|''}] (5–8),
+ *   questions:[{id,type:'single-choice'|'true-false'|'short-answer',evidenceId,
+ *               prompt,options:[{id,text}] (single-choice only),
+ *               answer: optionId (single-choice) | true/false (true-false) | model answer text (short-answer, judged by teacher),
+ *               explanation,topic,difficulty:1-3}],
+ *   hypotheses:[{id,text,feedback}] (3–5),
+ *   solution:{answer:hypId,explanation,steps:[string],keyEvidence:[evidenceId]},
+ *   links:[{id,a,b,reason}]   // node ids: "e:<evidenceId>" | "c:<characterId>" | "t:<time text>"
+ *   gameConfig:{difficulty:1-3,enforceOrder,requireMandatory,hintsPerGame,questionSeconds,discussion:[string]} }
+ * ===================================================================== */
+const SAMPLE={"schemaVersion": 1, "id": "case_trophy", "title": "ถ้วยรางวัลหายจากห้องสมุด", "subject": "บูรณาการ (ไทย/คณิต/วิทย์/สังคม/อังกฤษ)", "grade": "ป.4–ป.6", "story": "เช้าวันจันทร์ ถ้วยรางวัลการอ่านดีเด่นที่ตั้งโชว์ในห้องสมุดหายไป ทั้งที่จะมีพิธีมอบรางวัลตอน 10:30 น. ครูมะลิเป็นห่วงมาก ช่วยกันสืบหาว่าถ้วยไปอยู่ที่ไหน โดยดูจากเวลาและที่อยู่ของแต่ละคน (คดีนี้ไม่มีใครทำร้ายใคร เป็นเรื่องของหายที่ต้องใช้เหตุผลและหลักฐาน)", "rooms": [{"id": "r0", "name": "ห้องสมุด"}, {"id": "r1", "name": "โรงอาหาร"}, {"id": "r2", "name": "ห้องเรียน ป.6"}, {"id": "r3", "name": "สวนการ์ตูน"}], "characters": [{"id": "c1", "name": "ครูมะลิ", "role": "บรรณารักษ์", "desc": "ดูแลห้องสมุดและถ้วยรางวัล"}, {"id": "c2", "name": "น้องต้น", "role": "นักเรียน ป.4 อาสาจัดชั้นหนังสือ", "desc": "ชอบช่วยงานโรงเรียน"}, {"id": "c3", "name": "พี่แพร", "role": "ประธานนักเรียน ป.6", "desc": "รับผิดชอบพิธีมอบรางวัลการอ่าน"}, {"id": "c4", "name": "ลุงสมชาย", "role": "ภารโรง", "desc": "ซ่อมแซมของใช้ในโรงเรียน"}, {"id": "c5", "name": "น้องฟ้า", "role": "ชมรมถ่ายภาพ ป.5", "desc": "ถ่ายภาพกิจกรรมของโรงเรียน"}], "evidence": [{"id": "e1", "title": "สมุดบันทึกห้องสมุด", "desc": "สมุดบันทึกประจำวันของครูมะลิเขียนว่า \"08:15 ถ้วยรางวัลการอ่านยังวางอยู่บนชั้นโชว์ครบถ้วน\" และมีป้ายแขวนว่า \"09:30–10:30 ครูไปประชุม\" ห้องสมุดจึงไม่มีคนเฝ้าในช่วงนั้น", "room": 0, "time": "08:15", "characterIds": ["c1"], "supports": "", "mandatory": false, "order": 1, "hint": "เริ่มจาก 08:00 แล้วบวกเพิ่มอีก 15 นาที", "image": ""}, {"id": "e2", "title": "โน้ตแผนงานพิธี", "desc": "กระดาษโน้ตตกอยู่ใกล้ชั้นโชว์ เป็นลายมือพี่แพร เขียนว่า \"09:50 รับถ้วยจากห้องสมุด → ไปห้อง ป.6 → จัดโต๊ะรับรางวัล\"", "room": 0, "time": "09:45", "characterIds": ["c3"], "supports": "h3", "mandatory": false, "order": 2, "hint": "พิธี คือ งานที่จัดอย่างเป็นแบบแผน", "image": ""}, {"id": "e3", "title": "ใบแจ้งซ่อมก๊อกน้ำ", "desc": "ใบแจ้งซ่อมของโรงอาหารระบุว่าลุงสมชายซ่อมก๊อกน้ำที่โรงอาหารตั้งแต่ 09:00 และแม่ค้าลงชื่อยืนยันว่าลุงไม่ได้ออกไปไหนจนถึง 10:30", "room": 1, "time": "09:00", "characterIds": ["c4"], "supports": "", "mandatory": false, "order": 1, "hint": "นึกถึงตอนต้มน้ำ มีควันสีขาวลอยขึ้นมา", "image": ""}, {"id": "e4", "title": "สมุดยอดขายโรงอาหาร", "desc": "สมุดยอดขายมีลายมือน้องต้นช่วยทอนเงินให้เพื่อน ๆ ตั้งแต่ 09:30 ถึง 10:30 แม่ค้าบอกว่าน้องต้นไม่ได้ไปไหนเลย", "room": 1, "time": "09:30", "characterIds": ["c2"], "supports": "", "mandatory": false, "order": 2, "hint": "เอา 20 ลบ 12", "image": ""}, {"id": "e5", "title": "ภาพถ่ายของน้องฟ้า", "desc": "ภาพถ่ายของชมรมถ่ายภาพ เวลา 09:52 ติดภาพพี่แพรกำลังเข็นรถเข็นที่คลุมผ้าสีแดงเดินไปทางตึกเรียน ส่วนน้องฟ้ากับเพื่อนในชมรมอยู่ในสวนตลอดเวลาที่ถ่ายภาพ", "room": 3, "time": "09:52", "characterIds": ["c3", "c5"], "supports": "h3", "mandatory": true, "order": 3, "hint": "ของส่วนรวม ต้องให้คนดูแลรู้ว่าเราเอาไปใช้", "image": ""}, {"id": "e6", "title": "รอยล้อรถเข็นบนทางเดิน", "desc": "รอยล้อรถเข็นเล็กบนทางเดินดินชื้น เริ่มจากหน้าห้องสมุดไปสุดที่หน้าตึกเรียน ป.6 ไม่มีรอยล้อเข้าสวนหรือโรงอาหารเลย", "room": 3, "time": "09:55", "characterIds": [], "supports": "h3", "mandatory": false, "order": 3, "hint": "ดินชื้นนุ่มกว่าดินแห้ง", "image": ""}, {"id": "e7", "title": "ตารางงานบนกระดาน", "desc": "กระดานห้อง ป.6 เขียนว่า \"10:30 พิธีมอบรางวัลการอ่าน ผู้รับผิดชอบ: พี่แพร (ประธานนักเรียน)\"", "room": 2, "time": "10:30", "characterIds": ["c3"], "supports": "h3", "mandatory": false, "order": 4, "hint": "คิดว่าถ้าไม่บอก ผู้ดูแลจะเข้าใจอย่างไร", "image": ""}, {"id": "e8", "title": "ถ้วยใต้ผ้าคลุมสีแดง", "desc": "บนโต๊ะครูมีของคลุมด้วยผ้าสีแดง เมื่อเปิดดูพบถ้วยรางวัลการอ่านวางอยู่ พร้อมป้ายชื่อรางวัลที่เตรียมไว้ในห้อง", "room": 2, "time": "10:05", "characterIds": [], "supports": "h3", "mandatory": true, "order": 4, "hint": "Trophy ขึ้นต้นด้วยตัว T", "image": ""}], "questions": [{"id": "q1", "type": "single-choice", "evidenceId": "e1", "prompt": "ถ้าเริ่มสำรวจห้องสมุดตอน 8 โมงเช้า แล้วผ่านไป 15 นาที จะเป็นเวลาเท่าใด?", "options": [{"id": "a", "text": "08:50"}, {"id": "b", "text": "08:15"}, {"id": "c", "text": "09:15"}, {"id": "d", "text": "08:05"}], "answer": "b", "explanation": "8 โมงเช้า คือ 08:00 บวกอีก 15 นาที เป็น 08:15", "topic": "คณิตศาสตร์: เวลา", "difficulty": 1}, {"id": "q2", "type": "single-choice", "evidenceId": "e2", "prompt": "คำว่า \"พิธี\" ในประโยค \"พิธีมอบรางวัล\" มีความหมายตรงกับข้อใด?", "options": [{"id": "a", "text": "การแข่งวิ่งเร็ว"}, {"id": "b", "text": "ห้องเก็บของรางวัล"}, {"id": "c", "text": "งานที่จัดอย่างเป็นแบบแผนเพื่อทำกิจกรรมสำคัญ"}, {"id": "d", "text": "ขนมหวานประจำโรงเรียน"}], "answer": "c", "explanation": "พิธี คือ งานที่จัดขึ้นอย่างเป็นแบบแผน เช่น พิธีเปิดงาน พิธีมอบรางวัล", "topic": "ภาษาไทย: ความหมายของคำ", "difficulty": 1}, {"id": "q3", "type": "single-choice", "evidenceId": "e3", "prompt": "เมื่อต้มน้ำจนเดือด น้ำบางส่วนจะเปลี่ยนเป็นอะไร?", "options": [{"id": "a", "text": "น้ำแข็ง"}, {"id": "b", "text": "ไอน้ำ"}, {"id": "c", "text": "น้ำมัน"}, {"id": "d", "text": "ควันไฟ"}], "answer": "b", "explanation": "น้ำที่ได้รับความร้อนมากจะระเหยกลายเป็นไอน้ำ", "topic": "วิทยาศาสตร์: การเปลี่ยนแปลงของน้ำ", "difficulty": 1}, {"id": "q4", "type": "single-choice", "evidenceId": "e4", "prompt": "ซื้อขนม 12 บาท จ่ายเงิน 20 บาท ต้องทอนเงินกี่บาท?", "options": [{"id": "a", "text": "6 บาท"}, {"id": "b", "text": "10 บาท"}, {"id": "c", "text": "32 บาท"}, {"id": "d", "text": "8 บาท"}], "answer": "d", "explanation": "20 − 12 = 8 บาท", "topic": "คณิตศาสตร์: การลบและเงิน", "difficulty": 1}, {"id": "q5", "type": "single-choice", "evidenceId": "e5", "prompt": "ข้อใดเป็นการปฏิบัติที่เหมาะสมเมื่อต้องนำของส่วนรวมไปใช้?", "options": [{"id": "a", "text": "ถือไปเลยโดยไม่บอกใคร"}, {"id": "b", "text": "ซ่อนไว้ไม่ให้ใครเห็น"}, {"id": "c", "text": "บอกผู้ดูแลก่อน แล้วนำไปคืนตามกำหนด"}, {"id": "d", "text": "ให้เพื่อนเอาไปเล่นแทน"}], "answer": "c", "explanation": "ของส่วนรวมเป็นของทุกคน ควรแจ้งผู้ดูแลและคืนตามกำหนด", "topic": "สังคมศึกษา: หน้าที่พลเมือง", "difficulty": 2}, {"id": "q6", "type": "true-false", "evidenceId": "e6", "prompt": "จริงหรือเท็จ: พื้นดินที่ชื้นจะเก็บรอยล้อรถได้ชัดกว่าพื้นที่แห้งแข็ง", "options": [], "answer": true, "explanation": "ดินชื้นนุ่มกว่า จึงเกิดรอยและคงรอยไว้ได้ชัดเจน", "topic": "วิทยาศาสตร์: ดิน", "difficulty": 1}, {"id": "q7", "type": "short-answer", "evidenceId": "e7", "prompt": "พูดหรือเขียนสั้น ๆ: ทำไมเราควรแจ้งผู้ดูแลก่อนย้ายของในห้องสมุด? (ครูเป็นผู้ตัดสินว่าตอบถูกหรือยัง)", "options": [], "answer": "เพื่อให้ผู้ดูแลรู้ว่าของอยู่ที่ไหน จะได้ไม่เข้าใจผิดว่าของหาย", "explanation": "การแจ้งก่อนย้ายของช่วยให้ทุกคนรู้ตำแหน่งของ และป้องกันความเข้าใจผิด", "topic": "ภาษาไทย: การแสดงความคิดเห็น", "difficulty": 2}, {"id": "q8", "type": "single-choice", "evidenceId": "e8", "prompt": "Which word means ถ้วยรางวัล?", "options": [{"id": "a", "text": "Table"}, {"id": "b", "text": "Window"}, {"id": "c", "text": "Pencil"}, {"id": "d", "text": "Trophy"}], "answer": "d", "explanation": "Trophy แปลว่า ถ้วยรางวัล", "topic": "English: Vocabulary", "difficulty": 1}], "hypotheses": [{"id": "h1", "text": "ลุงสมชายนำถ้วยไปขัดเงาที่โรงอาหาร", "feedback": "ลองดูว่าลุงสมชายอยู่ที่ไหนในช่วงเวลาที่ถ้วยหายไป"}, {"id": "h2", "text": "น้องต้นหยิบถ้วยไปเล่นที่สวน", "feedback": "ลองตรวจสอบว่าน้องต้นอยู่ที่ไหนตอนเกือบ 10:00 น."}, {"id": "h3", "text": "พี่แพรย้ายถ้วยไปเตรียมพิธีที่ห้องเรียน ป.6", "feedback": ""}, {"id": "h4", "text": "ครูมะลิล็อกถ้วยเก็บไว้ในตู้ห้องสมุด", "feedback": "ลองดูว่าครูมะลิอยู่ที่ไหนตอน 09:30–10:30 และถ้วยอยู่ในตู้จริงหรือไม่"}, {"id": "h5", "text": "น้องฟ้าหยิบถ้วยไปถ่ายรูปที่สวน", "feedback": "ภาพถ่ายของน้องฟ้าอาจบอกอะไรได้มากกว่าที่คิด"}], "solution": {"answer": "h3", "explanation": "ถ้วยรางวัลไม่ได้ถูกใครเอาไปในทางไม่ดี พี่แพรเอาไปเตรียมพิธีมอบรางวัลที่ห้องเรียน ป.6 ตอนประมาณ 09:50 โดยที่ครูมะลิกำลังประชุมจึงไม่ได้รับแจ้ง", "steps": ["ลำดับเวลา: 08:15 ถ้วยยังอยู่บนชั้น → 09:30 ครูมะลิไปประชุม ห้องสมุดไม่มีคนเฝ้า → 09:45 พี่แพรเขียนแผนว่าจะไปรับถ้วย → 09:52 ภาพถ่ายเห็นพี่แพรเข็นรถเข็นคลุมผ้าแดง → 10:05 พบถ้วยในห้อง ป.6", "คนอื่นมีที่อยู่ชัดเจน: ลุงสมชายและน้องต้นอยู่ที่โรงอาหาร น้องฟ้าอยู่ในสวนกับชมรมถ่ายภาพ ครูมะลิอยู่ที่ประชุม", "บทเรียน: ก่อนย้ายของส่วนรวมควรแจ้งผู้ดูแลก่อน และเวลาสรุปคดีต้องตัดสินจากหลักฐาน ไม่ใช่การเดา"], "keyEvidence": ["e2", "e5", "e8"]}, "links": [{"id": "l1", "a": "e:e1", "b": "t:08:15", "reason": "สมุดบันทึกบอกว่า 08:15 ถ้วยยังอยู่ครบ"}, {"id": "l2", "a": "e:e2", "b": "c:c3", "reason": "โน้ตแผนงานเป็นลายมือพี่แพร บอกว่าจะไปรับถ้วย"}, {"id": "l3", "a": "e:e5", "b": "c:c3", "reason": "ภาพถ่ายเห็นพี่แพรเข็นรถเข็นคลุมผ้าแดง"}, {"id": "l4", "a": "e:e5", "b": "t:09:52", "reason": "ภาพถ่ายนี้ถ่ายตอน 09:52 ใกล้กับเวลาที่ถ้วยหาย"}, {"id": "l5", "a": "e:e2", "b": "e:e8", "reason": "แผนบอกให้เอาถ้วยไปห้อง ป.6 และพบถ้วยในห้อง ป.6 จริง"}, {"id": "l6", "a": "e:e6", "b": "e:e8", "reason": "รอยล้อรถเข็นไปสุดที่ตึกเรียน ตรงกับที่พบถ้วย"}, {"id": "l7", "a": "e:e7", "b": "c:c3", "reason": "กระดานบอกว่าพี่แพรเป็นผู้รับผิดชอบพิธี"}, {"id": "l8", "a": "e:e3", "b": "c:c4", "reason": "ลุงสมชายซ่อมก๊อกน้ำที่โรงอาหารตลอด จึงไม่ได้เอาถ้วยไป"}, {"id": "l9", "a": "e:e4", "b": "c:c2", "reason": "น้องต้นช่วยแม่ค้าที่โรงอาหารตลอด จึงไม่ได้เอาถ้วยไป"}], "gameConfig": {"difficulty": 2, "enforceOrder": false, "requireMandatory": true, "hintsPerGame": 4, "questionSeconds": 0, "discussion": ["หลักฐานชิ้นไหนบอกเวลา และเวลานั้นสำคัญกับคดีอย่างไร?", "ใครมีที่อยู่ชัดเจนในช่วงที่ถ้วยหายไป เรารู้ได้อย่างไร?", "หลักฐานชิ้นไหนที่ยังไม่พอ หรืออาจตีความได้หลายแบบ?", "ถ้าขอหลักฐานเพิ่มได้ 1 ชิ้น เราอยากได้อะไร เพราะอะไร?"]}};
+const SCHEMA=1, KEY='dm_zw1a';
+const ROOM_DEF=['ห้องสมุด','โรงอาหาร','ห้องเรียน ป.6','สวนการ์ตูน'];
+const COLORS=['#c2410c','#1d4ed8','#15803d','#7e22ce','#a16207','#0e7490','#be185d','#475569'];
+const LINKCOL=['#e11d48','#2563eb','#16a34a','#9333ea','#ea580c','#0891b2','#ca8a04','#db2777'];
+const LET=['ก','ข','ค','ง','จ','ฉ'];
+
+/* ---------- utils ---------- */
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+function h(tag,attrs,...kids){
+  const e=document.createElement(tag);
+  if(attrs)for(const[k,v]of Object.entries(attrs)){
+    if(v==null||v===false)continue;
+    if(k==='class')e.className=v;
+    else if(k==='text')e.textContent=v;
+    else if(k.startsWith('on')&&typeof v==='function')e.addEventListener(k.slice(2),v);
+    else if(k==='for')e.htmlFor=v;
+    else if(k.startsWith('aria-')||k==='role'||k==='data-id'||k==='tabindex'||k==='list')e.setAttribute(k,v===true?'':v);
+    else if(k in e)e[k]=v;
+    else e.setAttribute(k,v===true?'':v);
+  }
+  for(const c of kids.flat(3)){if(c==null||c===false)continue;e.append(c.nodeType?c:document.createTextNode(String(c)));}
+  return e;
+}
+const uid=p=>p+Math.random().toString(36).slice(2,8);
+const clone=o=>JSON.parse(JSON.stringify(o));
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function toast(msg,ms=2600){const t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),ms);}
+function str(v,max,def=''){return typeof v==='string'?v.slice(0,max):(typeof v==='number'&&isFinite(v)?String(v).slice(0,max):def);}
+function int(v,a,b,def){v=Math.round(Number(v));return isFinite(v)?clamp(v,a,b):def;}
+const reducedMotion=()=>document.body.classList.contains('calm')||matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- storage (localStorage only, never network) ---------- */
+let storageOK=true;
+function lsGet(k){try{const v=localStorage.getItem(KEY+':'+k);return v==null?null:JSON.parse(v);}catch(e){storageOK=false;return null;}}
+function lsSet(k,v){try{localStorage.setItem(KEY+':'+k,JSON.stringify(v));return true;}catch(e){
+  storageOK=false;showBanner('เบราว์เซอร์ไม่อนุญาตให้บันทึกข้อมูล หรือพื้นที่เก็บเต็ม — ยังเล่นได้ แต่ข้อมูลจะไม่ถูกเก็บไว้ (ลองส่งออกไฟล์ JSON สำรองไว้)');return false;}}
+function lsDel(k){try{localStorage.removeItem(KEY+':'+k);}catch(e){}}
+function clearAllData(){try{Object.keys(localStorage).filter(k=>k.startsWith(KEY+':')).forEach(k=>localStorage.removeItem(k));}catch(e){}}
+function showBanner(m){const b=$('#banner');b.textContent=m;b.hidden=false;}
+function storageUsageKB(){try{let n=0;Object.keys(localStorage).filter(k=>k.startsWith(KEY+':')).forEach(k=>n+=(localStorage.getItem(k)||'').length*2);return Math.round(n/1024);}catch(e){return 0;}}
+function probeStorage(){try{localStorage.setItem(KEY+':probe','1');localStorage.removeItem(KEY+':probe');}catch(e){storageOK=false;showBanner('เบราว์เซอร์ปิดการเก็บข้อมูล — ยังเล่นได้ตามปกติ แต่คดีที่แก้ไขและความคืบหน้าจะไม่ถูกบันทึกเมื่อปิดหน้า (ใช้ปุ่มส่งออก JSON เพื่อสำรอง)');}}
+
+/* ---------- settings ---------- */
+function defSettings(){return{mode:'teams',teamCount:2,teams:COLORS.map((c,i)=>({name:'ทีม '+(i+1),color:c})),
+  scoreAnswer:10,scoreLink:10,scoreConclusion:20,timerEnabled:false,shuffle:true,sound:true,music:false,reduceMotion:false,tutorialSeen:false};}
+function loadSettings(){
+  const d=defSettings(),s=lsGet('settings');if(!s||typeof s!=='object')return d;
+  d.mode=['teams','coop','solo'].includes(s.mode)?s.mode:d.mode;
+  d.teamCount=int(s.teamCount,2,8,2);
+  if(Array.isArray(s.teams))s.teams.slice(0,8).forEach((t,i)=>{if(t&&typeof t==='object'){d.teams[i].name=str(t.name,24,d.teams[i].name)||d.teams[i].name;if(/^#[0-9a-f]{6}$/i.test(t.color||''))d.teams[i].color=t.color;}});
+  d.scoreAnswer=int(s.scoreAnswer,0,100,10);d.scoreLink=int(s.scoreLink,0,100,10);d.scoreConclusion=int(s.scoreConclusion,0,200,20);
+  for(const k of['timerEnabled','shuffle','sound','music','reduceMotion','tutorialSeen'])d[k]=typeof s[k]==='boolean'?s[k]:d[k];
+  return d;
+}
+
+/* ---------- case normalisation (structure only) ---------- */
+function normalizeCase(raw){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('ไฟล์นี้ไม่ใช่ข้อมูลคดี (ต้องเป็นออบเจ็กต์ JSON)');
+  if(typeof raw.schemaVersion!=='number')throw new Error('ไม่พบ schemaVersion ในไฟล์');
+  if(raw.schemaVersion>SCHEMA)throw new Error('ไฟล์นี้สร้างจากเวอร์ชันที่ใหม่กว่า (schemaVersion '+raw.schemaVersion+') กรุณาอัปเดตเกมก่อน');
+  const arr=(v,n)=>Array.isArray(v)?v.slice(0,n):[];
+  const c={schemaVersion:SCHEMA,id:str(raw.id,40)||uid('case_'),title:str(raw.title,80),subject:str(raw.subject,60),grade:str(raw.grade,20),story:str(raw.story,700)};
+  const rooms=arr(raw.rooms,4).map((r,i)=>({id:str(r&&r.id,20)||'r'+i,name:str(r&&r.name,30)}));
+  while(rooms.length<4)rooms.push({id:'r'+rooms.length,name:ROOM_DEF[rooms.length]});
+  c.rooms=rooms;
+  c.characters=arr(raw.characters,10).map(x=>({id:str(x&&x.id,20)||uid('c'),name:str(x&&x.name,30),role:str(x&&x.role,60),desc:str(x&&x.desc,200)}));
+  c.evidence=arr(raw.evidence,20).map(x=>({id:str(x&&x.id,20)||uid('e'),title:str(x&&x.title,60),desc:str(x&&x.desc,500),
+    room:int(x&&x.room,0,3,0),time:str(x&&x.time,20),characterIds:arr(x&&x.characterIds,10).filter(s=>typeof s==='string'),
+    supports:str(x&&x.supports,20),mandatory:!!(x&&x.mandatory),order:int(x&&x.order,1,99,1),hint:str(x&&x.hint,200),
+    image:(x&&typeof x.image==='string'&&/^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]*$/.test(x.image)&&x.image.length<600000)?x.image:''}));
+  c.questions=arr(raw.questions,30).map(x=>{
+    const type=['single-choice','true-false','short-answer'].includes(x&&x.type)?x.type:'single-choice';
+    const q={id:str(x&&x.id,20)||uid('q'),type,evidenceId:str(x&&x.evidenceId,20),prompt:str(x&&x.prompt,240),
+      options:type==='single-choice'?arr(x&&x.options,8).map(o=>({id:str(o&&o.id,10)||uid('o'),text:str(o&&o.text,100)})):[],
+      answer:type==='true-false'?(x.answer===true||x.answer==='true'):str(x&&x.answer,type==='short-answer'?240:10),
+      explanation:str(x&&x.explanation,300),topic:str(x&&x.topic,60),difficulty:int(x&&x.difficulty,1,3,1)};
+    return q;});
+  c.hypotheses=arr(raw.hypotheses,10).map(x=>({id:str(x&&x.id,20)||uid('h'),text:str(x&&x.text,120),feedback:str(x&&x.feedback,200)}));
+  const s=raw.solution&&typeof raw.solution==='object'?raw.solution:{};
+  c.solution={answer:str(s.answer,20),explanation:str(s.explanation,600),steps:arr(s.steps,8).map(t=>str(t,400)),keyEvidence:arr(s.keyEvidence,20).filter(t=>typeof t==='string')};
+  c.links=arr(raw.links,60).map(x=>({id:str(x&&x.id,20)||uid('l'),a:str(x&&x.a,40),b:str(x&&x.b,40),reason:str(x&&x.reason,200)}));
+  const g=raw.gameConfig&&typeof raw.gameConfig==='object'?raw.gameConfig:{};
+  c.gameConfig={difficulty:int(g.difficulty,1,3,2),enforceOrder:!!g.enforceOrder,requireMandatory:g.requireMandatory!==false,
+    hintsPerGame:int(g.hintsPerGame,0,20,3),questionSeconds:int(g.questionSeconds,0,300,0),discussion:arr(g.discussion,8).map(t=>str(t,200)).filter(Boolean)};
+  return c;
+}
+function blankCase(){
+  const ids=['c1','c2','c3'];
+  return normalizeCase({schemaVersion:1,title:'คดีใหม่ (ยังไม่ตั้งชื่อ)',story:'',rooms:ROOM_DEF.map((n,i)=>({id:'r'+i,name:n})),
+    characters:ids.map((id,i)=>({id,name:'ตัวละคร '+(i+1),role:'',desc:''})),evidence:[],questions:[],
+    hypotheses:[{id:'h1',text:'ทางเลือก 1',feedback:''},{id:'h2',text:'ทางเลือก 2',feedback:''},{id:'h3',text:'ทางเลือก 3',feedback:''}],
+    solution:{answer:'h1',explanation:'',steps:[],keyEvidence:[]},links:[],gameConfig:{}});
+}
+function newEvidence(c){
+  const eid=uid('e'),qid=uid('q');
+  const used=c.evidence.map(e=>e.order),order=used.length?Math.max(...used)+1:1;
+  c.evidence.push({id:eid,title:'หลักฐานชิ้นใหม่',desc:'',room:0,time:'',characterIds:[],supports:'',mandatory:false,order:Math.min(order,99),hint:'',image:''});
+  c.questions.push({id:qid,type:'single-choice',evidenceId:eid,prompt:'',options:['a','b','c','d'].map(x=>({id:x,text:''})),answer:'a',explanation:'',topic:'',difficulty:1});
+  return eid;
+}
+
+/* ---------- validation (before play + editor) ---------- */
+const evOf=(c,id)=>c.evidence.find(e=>e.id===id);
+const qOf=(c,evId)=>c.questions.find(q=>q.evidenceId===evId);
+function nodeLabel(c,n){
+  if(n.startsWith('e:')){const e=evOf(c,n.slice(2));return e?'หลักฐาน: '+(e.title||'(ไม่มีชื่อ)'):null;}
+  if(n.startsWith('c:')){const x=c.characters.find(k=>k.id===n.slice(2));return x?'ผู้เกี่ยวข้อง: '+(x.name||'(ไม่มีชื่อ)'):null;}
+  if(n.startsWith('t:')){const t=n.slice(2);return c.evidence.some(e=>e.time===t&&t)?'เวลา '+t:null;}
+  return null;
+}
+function validateCase(c){
+  const E=[],W=[],err=(m,w)=>E.push({m,w}),warn=(m,w)=>W.push({m,w});
+  if(!c.title.trim())err('ยังไม่ได้ตั้งชื่อคดี','info');
+  if(c.story.trim().length<10)err('เรื่องราวของคดีสั้นเกินไป (ต้องมีอย่างน้อย 10 ตัวอักษร)','info');
+  const rn=c.rooms.map(r=>r.name.trim());
+  if(rn.some(n=>!n))err('ชื่อห้องทั้ง 4 ห้องต้องไม่ว่าง','info');
+  else if(new Set(rn).size<4)warn('มีชื่อห้องซ้ำกัน อาจทำให้สับสน','info');
+  const nc=c.characters.length;
+  if(nc<3||nc>5)err(`ต้องมีผู้เกี่ยวข้อง 3–5 คน (ตอนนี้ ${nc} คน)`,'chars');
+  c.characters.forEach((x,i)=>{if(!x.name.trim())err(`ผู้เกี่ยวข้องคนที่ ${i+1} ยังไม่มีชื่อ`,'chars');});
+  if(new Set(c.characters.map(x=>x.name.trim())).size<nc)warn('มีชื่อผู้เกี่ยวข้องซ้ำกัน','chars');
+  const ne=c.evidence.length;
+  if(ne<5||ne>8)err(`ต้องมีหลักฐาน 5–8 ชิ้น (ตอนนี้ ${ne} ชิ้น) — ถ้าไม่พอให้กด "เพิ่มหลักฐาน" หรือ "ทำสำเนา" ชิ้นเดิมแล้วแก้ไข ถ้าเกินให้ลบชิ้นที่ไม่จำเป็น`,'evidence');
+  const hid=new Set(c.hypotheses.map(x=>x.id)),ans=c.hypotheses.find(x=>x.id===c.solution.answer);
+  const evIds=new Set(c.evidence.map(e=>e.id)),chIds=new Set(c.characters.map(x=>x.id));
+  const seenE=new Set();
+  c.evidence.forEach((e,i)=>{
+    const w='evidence:'+e.id,nm=`หลักฐาน #${i+1} "${e.title||'ไม่มีชื่อ'}"`;
+    if(seenE.has(e.id))err(nm+': รหัสซ้ำ',w);seenE.add(e.id);
+    if(!e.title.trim())err(nm+': ยังไม่มีชื่อหลักฐาน',w);
+    if(e.desc.trim().length<5)err(nm+': ยังไม่มีคำอธิบายหลักฐาน (รายละเอียดที่จะเปิดเมื่อตอบถูก)',w);
+    if(e.characterIds.some(id=>!chIds.has(id)))err(nm+': อ้างถึงผู้เกี่ยวข้องที่ไม่มีอยู่',w);
+    if(e.supports&&!hid.has(e.supports))err(nm+': ระบุทางเลือกที่ชี้ไปไม่ถูกต้อง',w);
+    const q=qOf(c,e.id);
+    if(!q){err(nm+': ยังไม่มีคำถามผูกกับหลักฐานนี้',w);return;}
+    if(!q.prompt.trim())err(nm+': โจทย์คำถามว่าง',w);
+    if(q.type==='single-choice'){
+      if(q.options.length<2)err(nm+': ต้องมีตัวเลือกอย่างน้อย 2 ข้อ (แนะนำ 4)',w);
+      if(q.options.some(o=>!o.text.trim()))err(nm+': มีตัวเลือกที่ว่างอยู่',w);
+      const tx=q.options.map(o=>o.text.trim().toLowerCase());
+      if(new Set(tx).size<tx.length)err(nm+': มีตัวเลือกซ้ำกัน',w);
+      if(!q.options.some(o=>o.id===q.answer))err(nm+': ยังไม่ได้เลือกคำตอบที่ถูก',w);
+      if(q.options.length<4)warn(nm+': แนะนำให้มี 4 ตัวเลือก',w);
+    }else if(q.type==='short-answer'){
+      if(!q.answer.trim())err(nm+': คำตอบสั้นต้องมีแนวคำตอบให้ครูใช้ตัดสิน',w);
+    }
+    if(!q.explanation.trim())warn(nm+': ยังไม่มีคำอธิบายคำตอบ',w);
+  });
+  const nh=c.hypotheses.length;
+  if(nh<3||nh>5)err(`ต้องมีทางเลือกสมมติฐาน 3–5 ข้อ (ตอนนี้ ${nh} ข้อ)`,'solution');
+  c.hypotheses.forEach((x,i)=>{if(!x.text.trim())err(`ทางเลือกที่ ${i+1} ยังว่าง`,'solution');});
+  const ht=c.hypotheses.map(x=>x.text.trim());
+  if(new Set(ht).size<ht.length)err('มีทางเลือกสมมติฐานซ้ำกัน','solution');
+  if(!ans)err('ยังไม่ได้เลือกทางเลือกที่เป็นเฉลย','solution');
+  if(!c.solution.explanation.trim())err('ต้องกรอกคำอธิบายเฉลยก่อนเริ่มเล่น','solution');
+  if(!c.solution.keyEvidence.length)err('ต้องเลือกหลักฐานหลักที่ใช้ยืนยันเฉลยอย่างน้อย 1 ชิ้น','solution');
+  if(c.solution.keyEvidence.some(id=>!evIds.has(id)))err('หลักฐานหลักบางชิ้นไม่มีอยู่จริง','solution');
+  if(!c.solution.steps.length)warn('ยังไม่มีขั้นตอนเฉลยทีละขั้น (จะแสดงเฉพาะคำอธิบายรวม)','solution');
+  c.solution.steps.forEach((s,i)=>{if(!s.trim())err(`ขั้นเฉลยที่ ${i+1} ว่าง`,'solution');});
+  /* consistency: clue must not contradict the answer */
+  if(ans){
+    c.solution.keyEvidence.forEach(id=>{const e=evOf(c,id);if(e&&e.supports&&e.supports!==ans.id)err(`หลักฐานหลัก "${e.title}" ถูกตั้งให้ชี้ไปทางเลือกอื่น ขัดกับเฉลย`,'evidence:'+id);});
+    const keyE=c.solution.keyEvidence.map(id=>evOf(c,id)).filter(Boolean);
+    if(keyE.length&&keyE.every(e=>!e.supports))warn('หลักฐานหลักยังไม่ได้ระบุว่า "ชี้ไปทางเลือกใด" — ระบุไว้จะช่วยตรวจความสอดคล้องกับเฉลย','evidence');
+    const cnt={};c.evidence.forEach(e=>{if(e.supports)cnt[e.supports]=(cnt[e.supports]||0)+1;});
+    c.hypotheses.forEach(x=>{if(x.id!==ans.id&&(cnt[x.id]||0)>=(cnt[ans.id]||0)&&cnt[x.id])warn(`หลักฐานที่ชี้ไปที่ "${x.text}" มีไม่น้อยกว่าที่ชี้ไปยังเฉลย อาจตีความได้หลายแบบ`,'evidence');});
+    const secret=ans.text.trim();
+    if(secret.length>=6){
+      c.evidence.forEach(e=>{
+        const q=qOf(c,e.id),texts=[e.title,e.desc,e.hint];
+        if(q){texts.push(q.prompt);q.options.forEach(o=>texts.push(o.text));}
+        if(texts.some(t=>t&&t.includes(secret)))err(`เฉลยหลุด: ข้อความของหลักฐาน "${e.title}" มีข้อความเดียวกับทางเลือกที่เป็นเฉลย`,'evidence:'+e.id);
+        if(q&&q.explanation.includes(secret))warn(`คำอธิบายของ "${e.title}" มีข้อความเดียวกับเฉลย`,'evidence:'+e.id);
+      });
+      c.hypotheses.forEach(x=>{if(x.id!==ans.id&&x.feedback.includes(secret))err(`ข้อความแนะนำของทางเลือก "${x.text}" เฉลยหลุด`,'solution');});
+    }
+  }
+  /* link rules */
+  if(!c.links.length)err('ต้องกำหนดความเชื่อมโยงที่สมเหตุสมผลอย่างน้อย 1 คู่ (แท็บ "เส้นเชื่อม") ไว้ให้ระบบให้คะแนน','links');
+  const seenL=new Set();
+  c.links.forEach((l,i)=>{
+    const nm=`ความเชื่อมโยง #${i+1}`;
+    if(!nodeLabel(c,l.a)||!nodeLabel(c,l.b))err(nm+': อ้างถึงหลักฐาน/บุคคล/เวลาที่ไม่มีอยู่','links');
+    else if(l.a===l.b)err(nm+': เชื่อมกับตัวเอง','links');
+    if(!l.reason.trim())err(nm+': ยังไม่มีเหตุผลอธิบาย','links');
+    const k=[l.a,l.b].sort().join('|');if(seenL.has(k))warn(nm+': ซ้ำกับคู่อื่น','links');seenL.add(k);
+  });
+  const g=c.gameConfig;
+  if(g.enforceOrder&&c.evidence.length&&!c.evidence.some(e=>e.order===Math.min(...c.evidence.map(x=>x.order))))err('ลำดับเผยหลักฐานผิดพลาด','evidence');
+  return{errors:E,warnings:W};
+}
+
+/* ---------- import / export ---------- */
+function download(name,text,mime){
+  const url=URL.createObjectURL(new Blob([text],{type:mime+';charset=utf-8'}));
+  const a=h('a',{href:url,download:name});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+const stamp=()=>new Date().toISOString().slice(0,10);
+function csvCell(v){let s=String(v==null?'':v);if(/^[=+\-@\t\r]/.test(s))s="'"+s;if(/[",\n\r]/.test(s))s='"'+s.replace(/"/g,'""')+'"';return s;}
+function toCSV(rows){return '﻿'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n');}
+function parseCSV(text){
+  text=text.replace(/^﻿/,'');const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
+    else if(ch==='"')q=true;
+    else if(ch===','){row.push(cur);cur='';}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cur);cur='';if(row.some(x=>x!==''))rows.push(row);row=[];}
+    else cur+=ch;}
+  row.push(cur);if(row.some(x=>x!==''))rows.push(row);
+  return rows.map(r=>r.map(x=>/^'[=+\-@]/.test(x)?x.slice(1):x));
+}
+const CSV_HEAD=['prompt','optionA','optionB','optionC','optionD','answer','explanation','topic','difficulty','evidence'];
+function questionsCSV(c){
+  const rows=[CSV_HEAD];let skipped=0;
+  c.evidence.forEach(e=>{const q=qOf(c,e.id);if(!q)return;
+    if(q.type!=='single-choice'||q.options.length>4){skipped++;return;}
+    const o=q.options.map(x=>x.text);while(o.length<4)o.push('');
+    const idx=q.options.findIndex(x=>x.id===q.answer);
+    rows.push([q.prompt,...o,'ABCD'[idx]||'',q.explanation,q.topic,q.difficulty,e.title]);});
+  return{text:toCSV(rows),skipped};
+}
+/* CSV → extra single-choice questions, each attached to a NEW draft evidence the teacher must complete */
+function importQuestionsCSV(c,text){
+  const rows=parseCSV(text);if(rows.length<2)throw new Error('ไม่พบข้อมูลในไฟล์ CSV (ต้องมีหัวตารางและอย่างน้อย 1 แถว)');
+  const head=rows[0].map(x=>x.trim().toLowerCase()),ix=n=>head.indexOf(n.toLowerCase());
+  const need=['prompt','optionA','optionB','optionC','optionD','answer'];
+  for(const n of need)if(ix(n)<0)throw new Error('หัวตาราง CSV ขาดคอลัมน์ "'+n+'" (ต้องมี: '+CSV_HEAD.join(', ')+')');
+  let added=0,bad=0,full=false;
+  for(const r of rows.slice(1)){
+    if(c.evidence.length>=8){full=true;break;}
+    const g=n=>(r[ix(n)]||'').trim();const opts=['optionA','optionB','optionC','optionD'].map(g);
+    const letter=g('answer').toUpperCase(),ai='ABCD'.indexOf(letter);
+    if(!g('prompt')||opts.filter(Boolean).length<2||ai<0||!opts[ai]){bad++;continue;}
+    const eid=newEvidence(c),q=qOf(c,eid),e=evOf(c,eid);
+    q.prompt=g('prompt').slice(0,240);q.options=opts.map((t,i)=>({id:'abcd'[i],text:t.slice(0,100)}));q.answer='abcd'[ai];
+    q.explanation=g('explanation').slice(0,300);q.topic=g('topic').slice(0,60);q.difficulty=int(g('difficulty'),1,3,1);
+    e.title=(g('evidence')||('หลักฐานจาก CSV #'+(added+1))).slice(0,60);
+    added++;
+  }
+  return{added,bad,full};
+}
+function resizeImage(file,maxPx=560){
+  return new Promise((res,rej)=>{
+    if(!file||!/^image\/(jpeg|png|webp|gif)$/.test(file.type))return rej(new Error('รองรับเฉพาะไฟล์ภาพ JPG/PNG/WEBP/GIF'));
+    if(file.size>4*1024*1024)return rej(new Error('ไฟล์ภาพใหญ่เกิน 4 MB'));
+    const img=new Image(),url=URL.createObjectURL(file);
+    img.onload=()=>{URL.revokeObjectURL(url);let w=img.width,hh=img.height,s=Math.min(1,maxPx/Math.max(w,hh));w=Math.max(1,Math.round(w*s));hh=Math.max(1,Math.round(hh*s));
+      const cv=document.createElement('canvas');cv.width=w;cv.height=hh;const x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,hh);x.drawImage(img,0,0,w,hh);
+      let out=cv.toDataURL('image/jpeg',.8);if(out.length>180000)out=cv.toDataURL('image/jpeg',.55);
+      if(out.length>250000)return rej(new Error('ภาพยังใหญ่เกินไปหลังย่อ ลองใช้ภาพที่เล็กลง'));res(out);};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('เปิดไฟล์ภาพไม่ได้'));};img.src=url;
+  });
+}
+function pickFile(accept){
+  return new Promise(res=>{const i=h('input',{type:'file',accept,style:'display:none'});document.body.append(i);
+    i.addEventListener('change',()=>{const f=i.files&&i.files[0];i.remove();res(f||null);});
+    i.addEventListener('cancel',()=>{i.remove();res(null);});i.click();});
+}
+const readText=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>rej(new Error('อ่านไฟล์ไม่สำเร็จ'));r.readAsText(f,'utf-8');});
+
+/* ---------- dialogs ---------- */
+const dlg=$('#dlg');let dlgState=null;
+function openDlg({title,cls='',onClose}={}){
+  $('#dlgBox').className='dlgbox '+cls;$('#dlgTitle').textContent=title||'';
+  dlgState={onClose};$('#dlgBody').replaceChildren();$('#dlgFoot').replaceChildren();
+  if(!dlg.open)dlg.showModal();
+}
+function setDlgBody(...n){$('#dlgBody').replaceChildren(...n.flat().filter(Boolean));}
+function setDlgActions(list){
+  $('#dlgFoot').replaceChildren(...list.filter(Boolean).map(a=>h('button',{class:'btn '+(a.cls||''),type:'button',disabled:!!a.disabled,id:a.id,onclick:a.fn,'data-id':a.key||null},a.label)));
+  $('#dlgFoot').hidden=!list.filter(Boolean).length;
+}
+function closeDlg(){const s=dlgState;dlgState=null;if(dlg.open)dlg.close();if(s&&s.onClose)s.onClose();}
+dlg.addEventListener('close',()=>{if(dlg.open)return;const s=dlgState;dlgState=null;if(s&&s.onClose)s.onClose();});
+$('#dlgX').addEventListener('click',closeDlg);
+dlg.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'||e.shiftKey)return;
+  const t=e.target,selOpt=t.classList&&t.classList.contains('opt')&&t.getAttribute('aria-checked')==='true';
+  if(['TEXTAREA','SELECT','A'].includes(t.tagName)||(t.tagName==='BUTTON'&&!selOpt))return;
+  const p=$('#dlgFoot .btn.primary:not([disabled]),#dlgFoot .btn.amber:not([disabled])');if(p){e.preventDefault();p.click();}
+});
+const dlgC=$('#dlgC');
+function confirmDlg(msg,{ok='ตกลง',cancel='ยกเลิก',danger=false,title='ยืนยัน'}={}){
+  return new Promise(res=>{
+    $('#dlgCT').textContent=title;$('#dlgCB').replaceChildren(h('p',{text:msg,style:'font-size:19px;white-space:pre-wrap'}));
+    let done=false;const fin=v=>{if(done)return;done=true;dlgC.close();res(v);};
+    const okb=h('button',{class:'btn '+(danger?'danger':'primary'),type:'button',onclick:()=>fin(true)},ok);
+    $('#dlgCF').replaceChildren(h('button',{class:'btn',type:'button',onclick:()=>fin(false)},cancel),okb);
+    dlgC.onclose=()=>fin(false);dlgC.showModal();(danger?$('#dlgCF .btn'):okb).focus();
+  });
+}
+function infoDlg(title,...nodes){openDlg({title});setDlgBody(nodes);setDlgActions([{label:'ปิด',cls:'primary',fn:closeDlg}]);}
+
+/* ---------- global store ---------- */
+const store={cases:[],activeId:null,settings:defSettings()};
+function loadStore(){
+  store.settings=loadSettings();
+  let cs=lsGet('cases');
+  if(Array.isArray(cs)){cs=cs.map(x=>{try{return normalizeCase(x);}catch(e){return null;}}).filter(Boolean);}else cs=[];
+  if(!cs.length)cs=[normalizeCase(clone(SAMPLE))];
+  store.cases=cs;
+  const a=lsGet('active');store.activeId=cs.some(c=>c.id===a)?a:cs[0].id;
+}
+let persistT=null;
+function persist(now){
+  if(now){clearTimeout(persistT);persistT=null;lsSet('cases',store.cases);lsSet('active',store.activeId);lsSet('settings',store.settings);return;}
+  clearTimeout(persistT);persistT=setTimeout(()=>{persistT=null;lsSet('cases',store.cases);lsSet('active',store.activeId);lsSet('settings',store.settings);},250);
+}
+const activeCase=()=>store.cases.find(c=>c.id===store.activeId)||store.cases[0];
+
+/* ---------- screens ---------- */
+const SCREENS=['scrHome','scrHow','scrSettings','scrStudio','scrGame','scrReport'];
+let onLeaveGame=null;
+function showScreen(id){
+  if(id!=='scrGame'&&onLeaveGame){onLeaveGame();}
+  SCREENS.forEach(s=>{$('#'+s).hidden=s!==id;});
+  window.scrollTo(0,0);
+  if(id==='scrHome')refreshHome();
+}
+function topbar(title,backTo='scrHome',extra=[]){
+  return h('div',{class:'topbar noprint'},h('button',{class:'btn',onclick:()=>showScreen(backTo)},'← กลับ'),h('h1',{text:title}),...extra);
+}
+function refreshHome(){
+  const sv=lsGet('save');$('#hmResume').hidden=!(sv&&sv.case&&sv.G&&!sv.demo);
+  $('#homeFoot').textContent=storageOK?'ข้อมูลทั้งหมดอยู่ในเครื่องนี้เท่านั้น ไม่ส่งออกอินเทอร์เน็ต':'⚠ เบราว์เซอร์นี้ไม่เก็บข้อมูล — ยังเล่นได้ แต่จะไม่บันทึก';
+}
+
+/* ---------- field helpers (all via value/textContent: XSS-safe) ---------- */
+let afterChange=()=>{};
+function changed(){persist();afterChange();}
+function fText(label,obj,key,{max=100,multi=false,rows=3,ph='',on,hint}={}){
+  const id=uid('f');
+  const inp=multi?h('textarea',{id,rows,maxLength:max,placeholder:ph}):h('input',{id,type:'text',maxLength:max,placeholder:ph});
+  inp.value=obj[key]==null?'':obj[key];
+  inp.addEventListener('input',()=>{const old=obj[key];obj[key]=inp.value;changed();if(on)on(inp.value,old);});
+  return h('div',{class:'field'},h('label',{for:id},label),inp,hint?h('span',{class:'hint',text:hint}):null);
+}
+function fNum(label,obj,key,{min=0,max=100,hint,on}={}){
+  const id=uid('f'),inp=h('input',{id,type:'number',min,max,step:1});inp.value=obj[key];
+  inp.addEventListener('input',()=>{obj[key]=int(inp.value,min,max,min);changed();});
+  inp.addEventListener('change',()=>{obj[key]=int(inp.value,min,max,min);inp.value=obj[key];changed();if(on)on();});
+  return h('div',{class:'field'},h('label',{for:id},label),inp,hint?h('span',{class:'hint',text:hint}):null);
+}
+function fChk(label,obj,key,{on,hint}={}){
+  const inp=h('input',{type:'checkbox'});inp.checked=!!obj[key];
+  inp.addEventListener('change',()=>{obj[key]=inp.checked;changed();if(on)on();});
+  return h('label',{class:'chk'},inp,h('span',null,label,hint?h('span',{class:'hint'},' — '+hint):null));
+}
+function fSel(label,obj,key,opts,{on,num}={}){
+  const id=uid('f'),sel=h('select',{id},opts.map(([v,t])=>h('option',{value:String(v),text:t})));
+  sel.value=String(obj[key]);
+  sel.addEventListener('change',()=>{obj[key]=num?Number(sel.value):sel.value;changed();if(on)on();});
+  return h('div',{class:'field'},h('label',{for:id},label),sel);
+}
+
+/* ---------- studio ---------- */
+const ST={tab:'info',evId:null};
+function renderStudio(){
+  const root=$('#scrStudio');
+  const c=activeCase();
+  const list=h('div',{class:'caselist'});
+  store.cases.forEach(k=>{
+    const v=validateCase(k);
+    list.append(h('button',{class:'caseitem','aria-current':String(k.id===c.id),onclick:()=>{store.activeId=k.id;ST.evId=null;persist();renderStudio();}},
+      h('b',null,k.title||'(ไม่มีชื่อ)'),h('br'),h('span',{class:'small muted'},`${k.evidence.length} หลักฐาน · `+(v.errors.length?`ต้องแก้ ${v.errors.length} จุด`:'พร้อมเล่น'))));
+  });
+  const side=h('div',{class:'card'},h('h2',{text:'คดีของฉัน'}),list,
+    h('div',{class:'row',style:'margin-top:10px'},
+      h('button',{class:'btn primary sm',onclick:()=>{const k=blankCase();store.cases.push(k);store.activeId=k.id;ST.tab='info';ST.evId=null;persist(true);renderStudio();toast('สร้างคดีใหม่แล้ว เริ่มกรอกข้อมูลได้เลย');}},'+ คดีใหม่'),
+      h('button',{class:'btn sm',onclick:()=>{const k=clone(c);k.id=uid('case_');k.title=(k.title||'คดี')+' (สำเนา)';store.cases.push(k);store.activeId=k.id;persist(true);renderStudio();}},'ทำสำเนา'),
+      h('button',{class:'btn sm danger',onclick:async()=>{if(store.cases.length<2){toast('ต้องเหลืออย่างน้อย 1 คดี');return;}
+        if(!await confirmDlg('ลบคดี "'+c.title+'" ถาวร? (ส่งออก JSON สำรองไว้ก่อนได้)',{ok:'ลบคดี',danger:true}))return;
+        store.cases=store.cases.filter(k=>k.id!==c.id);store.activeId=store.cases[0].id;persist(true);renderStudio();}},'ลบ')),
+    h('h3',{text:'นำเข้า / ส่งออก',style:'margin-top:16px'}),
+    h('div',{class:'row'},
+      h('button',{class:'btn sm',onclick:doImportJSON},'นำเข้า JSON'),
+      h('button',{class:'btn sm',onclick:()=>{download('detective-case-'+stamp()+'.json',JSON.stringify(c,null,2),'application/json');toast('ส่งออก JSON แล้ว');}},'ส่งออก JSON'),
+      h('button',{class:'btn sm',onclick:doImportCSV},'นำเข้า CSV (ปรนัย)'),
+      h('button',{class:'btn sm',onclick:()=>{const r=questionsCSV(c);download('detective-questions-'+stamp()+'.csv',r.text,'text/csv');toast('ส่งออก CSV แล้ว'+(r.skipped?` (ข้าม ${r.skipped} ข้อที่ไม่ใช่ปรนัย)`:''));}},'ส่งออก CSV'),
+      h('button',{class:'btn sm',onclick:()=>{download('detective-backup-'+stamp()+'.json',JSON.stringify({schemaVersion:SCHEMA,kind:'backup',cases:store.cases},null,2),'application/json');toast('สำรองคดีทั้งหมดแล้ว');}},'สำรองทั้งหมด'),
+      h('button',{class:'btn sm',onclick:()=>{const k=normalizeCase(clone(SAMPLE));k.id=uid('case_');store.cases.push(k);store.activeId=k.id;persist(true);renderStudio();toast('เพิ่มคดีตัวอย่างแล้ว');}},'+ คดีตัวอย่าง')),
+    h('p',{class:'hint',text:`พื้นที่ที่ใช้ในเครื่องนี้ประมาณ ${storageUsageKB()} KB`+(storageOK?'':' (เบราว์เซอร์ไม่เก็บข้อมูล)')}));
+  const tabs=[['info','ข้อมูลคดี'],['chars','ผู้เกี่ยวข้อง'],['evidence','หลักฐาน & คำถาม'],['solution','ทางเลือก & เฉลย'],['links','เส้นเชื่อม'],['config','ตั้งค่าคดี'],['check','ตรวจสอบ']];
+  const tabBar=h('div',{class:'tabs',role:'tablist'},tabs.map(([k,t])=>{
+    const b=h('button',{class:'tab',role:'tab','aria-selected':String(ST.tab===k),'data-id':k,onclick:()=>{ST.tab=k;renderStudio();}},t);
+    if(k==='check')b.append(h('span',{class:'badge',id:'chkBadge'}));
+    return b;}));
+  const body=h('div',{id:'edBody'});
+  root.replaceChildren(topbar('จัดการเนื้อหา — สร้างและแก้ไขคดี'),
+    h('div',{class:'wrap'},h('div',{class:'studio'},side,h('div',{class:'card'},h('h2',{text:c.title||'(ยังไม่ตั้งชื่อ)',id:'edHead'}),tabBar,body))));
+  afterChange=()=>{updateBadge();const hd=$('#edHead');if(hd)hd.textContent=c.title||'(ยังไม่ตั้งชื่อ)';};
+  updateBadge();
+  ({info:edInfo,chars:edChars,evidence:edEvidence,solution:edSolution,links:edLinks,config:edConfig,check:edCheck})[ST.tab](body,c);
+}
+function updateBadge(){
+  const b=$('#chkBadge');if(!b)return;const v=validateCase(activeCase());
+  b.textContent=v.errors.length||'✓';b.className='badge'+(v.errors.length?'':' ok');
+}
+async function doImportJSON(){
+  const f=await pickFile('.json,application/json');if(!f)return;
+  try{
+    const raw=JSON.parse(await readText(f));
+    const list=raw&&raw.kind==='backup'&&Array.isArray(raw.cases)?raw.cases:[raw];
+    let n=0,renamed=0;
+    for(const r of list){const k=normalizeCase(r);if(store.cases.some(x=>x.id===k.id)){k.id=uid('case_');renamed++;}store.cases.push(k);store.activeId=k.id;n++;}
+    persist(true);renderStudio();
+    toast(`นำเข้า ${n} คดีสำเร็จ`+(renamed?` (มีรหัสซ้ำ ${renamed} คดี จึงสร้างรหัสใหม่ให้)`:''));
+  }catch(e){infoDlg('นำเข้าไม่สำเร็จ',h('p',{text:(e instanceof SyntaxError?'ไฟล์ไม่ใช่ JSON ที่ถูกต้อง: ':'')+e.message}),h('p',{class:'hint',text:'ตรวจสอบว่าเป็นไฟล์ที่ส่งออกจากเกมนี้ (UTF-8) แล้วลองใหม่ ข้อมูลเดิมยังไม่ถูกเปลี่ยน'}));}
+}
+async function doImportCSV(){
+  const f=await pickFile('.csv,text/csv');if(!f)return;
+  try{
+    const c=activeCase(),r=importQuestionsCSV(c,await readText(f));
+    persist(true);ST.tab='evidence';renderStudio();
+    infoDlg('นำเข้า CSV เสร็จแล้ว',h('p',{text:`เพิ่ม ${r.added} ข้อเป็นหลักฐานร่าง`+(r.bad?` · ข้าม ${r.bad} แถวที่ข้อมูลไม่ครบ`:'')+(r.full?' · หลักฐานเต็ม 8 ชิ้นแล้ว จึงข้ามแถวที่เหลือ (ลบหลักฐานเดิมก่อนถ้าต้องการเพิ่ม)':'')}),
+      h('p',{text:'หลักฐานที่สร้างจาก CSV มีเฉพาะคำถาม — โปรดเติมรายละเอียดหลักฐาน ห้อง และเวลา ในแท็บ "หลักฐาน & คำถาม" ก่อนเริ่มเล่น'}));
+  }catch(e){infoDlg('นำเข้า CSV ไม่สำเร็จ',h('p',{text:e.message}));}
+}
+
+function edInfo(b,c){
+  b.append(fText('ชื่อคดี',c,'title',{max:80}),
+    h('div',{class:'grid2'},fText('วิชา/หัวข้อ',c,'subject',{max:60}),fText('ระดับชั้น',c,'grade',{max:20})),
+    fText('เรื่องราว / เหตุการณ์ของคดี',c,'story',{max:700,multi:true,rows:5,hint:'เล่าเหตุการณ์แบบไม่รุนแรง เช่น ของหาย ของสลับ ป้ายหาย โดยไม่บอกเฉลย'}),
+    h('h3',{text:'ชื่อห้อง/สถานที่ทั้ง 4 ห้องบนแผนที่'}),
+    h('div',{class:'grid2'},c.rooms.map((r,i)=>fText('ห้องที่ '+(i+1),r,'name',{max:30}))));
+}
+function edChars(b,c){
+  b.append(h('p',{class:'hint',text:'ผู้เกี่ยวข้อง 3–5 คน (ใช้ชื่อสมมติ ไม่ต้องใช้ชื่อนักเรียนจริง)'}));
+  c.characters.forEach((x,i)=>{
+    b.append(h('div',{class:'listrow',style:'display:block'},h('div',{class:'grid2'},fText('ชื่อ',x,'name',{max:30}),fText('บทบาท',x,'role',{max:60})),fText('รายละเอียดสั้น ๆ',x,'desc',{max:200}),
+      h('button',{class:'btn sm danger',onclick:async()=>{if(!await confirmDlg('ลบ "'+x.name+'"? หลักฐานและเส้นเชื่อมที่เกี่ยวข้องจะถูกปรับให้อัตโนมัติ',{danger:true,ok:'ลบ'}))return;
+        c.characters.splice(i,1);c.evidence.forEach(e=>e.characterIds=e.characterIds.filter(k=>k!==x.id));c.links=c.links.filter(l=>l.a!=='c:'+x.id&&l.b!=='c:'+x.id);persist(true);renderStudio();}},'ลบคนนี้')));
+  });
+  b.append(h('button',{class:'btn primary',disabled:c.characters.length>=5,onclick:()=>{c.characters.push({id:uid('c'),name:'ตัวละคร '+(c.characters.length+1),role:'',desc:''});persist(true);renderStudio();}},'+ เพิ่มผู้เกี่ยวข้อง'+(c.characters.length>=5?' (ครบ 5 คนแล้ว)':'')));
+}
+
+function moveEv(c,i,d){const j=i+d;if(j<0||j>=c.evidence.length)return;[c.evidence[i],c.evidence[j]]=[c.evidence[j],c.evidence[i]];persist(true);renderStudio();}
+function edEvidence(b,c){
+  if(!c.evidence.some(e=>e.id===ST.evId))ST.evId=c.evidence[0]?c.evidence[0].id:null;
+  const left=h('div',null,h('p',{class:'hint',text:'หลักฐาน 5–8 ชิ้น แต่ละชิ้นผูกกับคำถามหนึ่งข้อ (ตอบถูกจึงเปิดหลักฐาน)'}));
+  c.evidence.forEach((e,i)=>{
+    left.append(h('div',{class:'listrow'+(e.id===ST.evId?' sel':'')},
+      h('button',{class:'btn sm grow',style:'justify-content:flex-start;text-align:left',onclick:()=>{ST.evId=e.id;renderStudio();}},`${i+1}. ${e.title||'(ไม่มีชื่อ)'}`+(e.mandatory?' ★':'')),
+      h('button',{class:'btn sm icon','aria-label':'เลื่อนขึ้น',disabled:i===0,onclick:()=>moveEv(c,i,-1)},'▲'),
+      h('button',{class:'btn sm icon','aria-label':'เลื่อนลง',disabled:i===c.evidence.length-1,onclick:()=>moveEv(c,i,1)},'▼')));
+  });
+  left.append(h('div',{class:'row',style:'margin-top:8px'},
+    h('button',{class:'btn primary sm',disabled:c.evidence.length>=8,onclick:()=>{ST.evId=newEvidence(c);persist(true);renderStudio();}},'+ เพิ่มหลักฐาน'),
+    h('button',{class:'btn sm',disabled:!ST.evId||c.evidence.length>=8,onclick:()=>{const e=evOf(c,ST.evId),q=qOf(c,ST.evId);const ne=clone(e),nq=clone(q);ne.id=uid('e');ne.title+=' (สำเนา)';nq.id=uid('q');nq.evidenceId=ne.id;
+      c.evidence.splice(c.evidence.indexOf(e)+1,0,ne);c.questions.push(nq);ST.evId=ne.id;persist(true);renderStudio();}},'ทำสำเนา'),
+    h('button',{class:'btn sm danger',disabled:!ST.evId,onclick:async()=>{const e=evOf(c,ST.evId);if(!await confirmDlg('ลบหลักฐาน "'+e.title+'" และคำถามของมัน?',{danger:true,ok:'ลบ'}))return;
+      c.evidence=c.evidence.filter(x=>x.id!==e.id);c.questions=c.questions.filter(q=>q.evidenceId!==e.id);c.solution.keyEvidence=c.solution.keyEvidence.filter(k=>k!==e.id);
+      c.links=c.links.filter(l=>l.a!=='e:'+e.id&&l.b!=='e:'+e.id);ST.evId=null;persist(true);renderStudio();}},'ลบ')));
+  const right=h('div');
+  if(ST.evId)evForm(right,c,evOf(c,ST.evId));else right.append(h('p',{text:'ยังไม่มีหลักฐาน กด "+ เพิ่มหลักฐาน" เพื่อเริ่ม'}));
+  b.append(h('div',{class:'evgrid'},left,right));
+}
+function evForm(r,c,e){
+  let q=qOf(c,e.id);
+  if(!q){q={id:uid('q'),type:'single-choice',evidenceId:e.id,prompt:'',options:['a','b','c','d'].map(x=>({id:x,text:''})),answer:'a',explanation:'',topic:'',difficulty:1};c.questions.push(q);}
+  r.append(h('h3',{text:'รายละเอียดหลักฐาน'}),fText('ชื่อหลักฐาน',e,'title',{max:60,on:()=>{}}),
+    fText('คำอธิบายหลักฐาน (แสดงเมื่อตอบคำถามถูก)',e,'desc',{max:500,multi:true,rows:4}),
+    h('div',{class:'grid2'},
+      fSel('อยู่ที่ห้อง',e,'room',c.rooms.map((x,i)=>[i,x.name||('ห้อง '+(i+1))]),{num:true}),
+      fText('เวลา (เช่น 09:30) — ถ้าไม่เกี่ยวข้องเว้นว่างได้',e,'time',{max:20,on:(nv,ov)=>{
+        if(ov&&ov!==nv&&!c.evidence.some(x=>x!==e&&x.time===ov))c.links.forEach(l=>{if(l.a==='t:'+ov)l.a='t:'+nv;if(l.b==='t:'+ov)l.b='t:'+nv;});}}),
+      fNum('ลำดับเผย (1 = เผยก่อน)',e,'order',{min:1,max:99,hint:'ใช้เมื่อเปิด "บังคับลำดับ" ในแท็บตั้งค่าคดี'}),
+      fSel('หลักฐานนี้ชี้ไปทางเลือกใด',e,'supports',[['','เป็นกลาง / เบาะแสหลอก'],...c.hypotheses.map(x=>[x.id,x.text||'(ว่าง)'])])),
+    fChk('เป็นเบาะแสบังคับ (ต้องสืบจุดนี้ก่อนจึงสรุปคดีได้ ถ้าเปิดใช้ในตั้งค่าคดี)',e,'mandatory'),
+    h('div',{class:'field'},h('span',{class:'lbl',text:'ผู้เกี่ยวข้องกับหลักฐานนี้'}),
+      h('div',{class:'row'},c.characters.map(x=>{const i=h('input',{type:'checkbox'});i.checked=e.characterIds.includes(x.id);
+        i.addEventListener('change',()=>{e.characterIds=i.checked?[...new Set([...e.characterIds,x.id])]:e.characterIds.filter(k=>k!==x.id);changed();});
+        return h('label',{class:'chk'},i,x.name||'(ไม่มีชื่อ)');}))),
+    fText('คำใบ้ของคำถามนี้ (ไม่บอกคำตอบตรง ๆ)',e,'hint',{max:200}),
+    imgField(e));
+  /* question */
+  r.append(h('h3',{text:'คำถามที่ผูกกับหลักฐาน',style:'margin-top:18px'}),
+    fSel('ชนิดคำถาม',q,'type',[['single-choice','ปรนัยหลายตัวเลือก'],['true-false','ถูก–ผิด'],['short-answer','คำตอบสั้น (ครูตัดสินถูก–ผิด)']],{on:()=>{
+      if(q.type==='single-choice'){if(q.options.length<2)q.options=['a','b','c','d'].map(x=>({id:x,text:''}));q.answer=q.options[0].id;}
+      else if(q.type==='true-false'){q.options=[];q.answer=true;}else{q.options=[];q.answer='';}
+      persist(true);renderStudio();}}),
+    fText('โจทย์',q,'prompt',{max:240,multi:true,rows:3}));
+  if(q.type==='single-choice'){
+    const box=h('div',{class:'field'},h('span',{class:'lbl',text:'ตัวเลือก (ติ๊กวงกลมหน้าข้อที่เป็นคำตอบถูก)'}));
+    q.options.forEach((o,i)=>{
+      const rd=h('input',{type:'radio',name:'ans'+q.id,'aria-label':'ตัวเลือกนี้เป็นคำตอบถูก'});rd.checked=q.answer===o.id;
+      rd.addEventListener('change',()=>{q.answer=o.id;changed();});
+      const t=h('input',{type:'text',maxLength:100,'aria-label':'ตัวเลือก '+LET[i],placeholder:'ตัวเลือก '+LET[i]});t.value=o.text;t.addEventListener('input',()=>{o.text=t.value;changed();});
+      box.append(h('div',{class:'row',style:'margin:4px 0'},rd,h('b',null,LET[i]),h('div',{class:'grow'},t),
+        h('button',{class:'btn sm icon','aria-label':'ลบตัวเลือก',disabled:q.options.length<=2,onclick:()=>{q.options.splice(i,1);if(q.answer===o.id)q.answer=q.options[0].id;persist(true);renderStudio();}},'✕')));});
+    box.append(h('button',{class:'btn sm',disabled:q.options.length>=6,onclick:()=>{q.options.push({id:uid('o'),text:''});persist(true);renderStudio();}},'+ เพิ่มตัวเลือก'));
+    r.append(box);
+  }else if(q.type==='true-false'){
+    const mk=(v,t)=>{const i=h('input',{type:'radio',name:'tf'+q.id});i.checked=q.answer===v;i.addEventListener('change',()=>{q.answer=v;changed();});return h('label',{class:'chk'},i,t);};
+    r.append(h('div',{class:'field'},h('span',{class:'lbl',text:'คำตอบที่ถูกคือ'}),h('div',{class:'row'},mk(true,'ถูก / จริง'),mk(false,'ผิด / ไม่จริง'))));
+  }else r.append(fText('แนวคำตอบสำหรับครู (ไม่แสดงให้นักเรียนเห็นก่อนครูสั่งเฉลย)',q,'answer',{max:240,multi:true,rows:2}));
+  r.append(fText('คำอธิบายคำตอบ (แสดงหลังตอบถูกหรือครูสั่งเฉลย)',q,'explanation',{max:300,multi:true,rows:2}),
+    h('div',{class:'grid2'},fText('หัวข้อ/วิชา (ใช้สรุปหัวข้อที่ควรทบทวน)',q,'topic',{max:60}),fSel('ระดับความยาก',q,'difficulty',[[1,'ง่าย'],[2,'ปานกลาง'],[3,'ยาก']],{num:true})));
+}
+function imgField(e){
+  const prev=h('div'),draw=()=>{prev.replaceChildren(e.image?h('div',{class:'row'},h('img',{class:'thumb',src:e.image,alt:'ภาพประกอบหลักฐาน'}),h('button',{class:'btn sm danger',onclick:()=>{e.image='';changed();draw();}},'ลบภาพ')):h('span',{class:'hint',text:'ยังไม่มีภาพ (ไม่บังคับ)'}));};draw();
+  return h('div',{class:'field'},h('span',{class:'lbl',text:'ภาพประกอบหลักฐาน (จากไฟล์ในเครื่อง — ย่อให้อัตโนมัติ)'}),prev,
+    h('button',{class:'btn sm',onclick:async()=>{const f=await pickFile('image/jpeg,image/png,image/webp,image/gif');if(!f)return;
+      try{e.image=await resizeImage(f);changed();draw();toast('แนบภาพแล้ว');}catch(er){toast(er.message,4000);}}},'เลือกภาพ…'));
+}
+
+function edSolution(b,c){
+  const S=c.solution;
+  b.append(h('h3',{text:'ทางเลือกสมมติฐาน (3–5 ข้อ)'}),h('p',{class:'hint',text:'ติ๊กวงกลมหน้าข้อที่เป็นเฉลย · "ข้อความแนะนำ" จะแสดงให้ผู้เล่นเมื่อเลือกข้อนั้นแล้วยังไม่พอ (ไม่ตัดสินว่าผิด)'}));
+  c.hypotheses.forEach((x,i)=>{
+    const rd=h('input',{type:'radio',name:'hans','aria-label':'เป็นเฉลย'});rd.checked=S.answer===x.id;rd.addEventListener('change',()=>{S.answer=x.id;changed();});
+    b.append(h('div',{class:'listrow',style:'display:block'},h('div',{class:'row'},rd,h('b',null,'ข้อ '+(i+1)),h('span',{class:'hint'},'(เฉลย)')),
+      fText('ข้อความทางเลือก',x,'text',{max:120,on:()=>{}}),fText('ข้อความแนะนำเมื่อเลือกข้อนี้แล้วยังไม่พอ (ไม่บังคับ)',x,'feedback',{max:200}),
+      h('button',{class:'btn sm danger',disabled:c.hypotheses.length<=3,onclick:()=>{c.hypotheses.splice(i,1);if(S.answer===x.id)S.answer=c.hypotheses[0].id;c.evidence.forEach(e=>{if(e.supports===x.id)e.supports='';});persist(true);renderStudio();}},'ลบทางเลือก')));
+  });
+  b.append(h('button',{class:'btn sm',disabled:c.hypotheses.length>=5,onclick:()=>{c.hypotheses.push({id:uid('h'),text:'',feedback:''});persist(true);renderStudio();}},'+ เพิ่มทางเลือก'));
+  b.append(h('h3',{text:'เฉลยและคำอธิบาย',style:'margin-top:18px'}),
+    fText('คำอธิบายเฉลยรวม',S,'explanation',{max:600,multi:true,rows:3,hint:'แสดงเมื่อครูกด "เปิดเฉลย" ในหน้ารายงานเท่านั้น'}),
+    h('p',{class:'lbl',text:'ขั้นเฉลยทีละขั้น (ครูกดเปิดทีละข้อในหน้ารายงาน)'}));
+  S.steps.forEach((s,i)=>{
+    const t=h('textarea',{rows:2,maxLength:400,'aria-label':'ขั้นเฉลยที่ '+(i+1)});t.value=s;t.addEventListener('input',()=>{S.steps[i]=t.value;changed();});
+    b.append(h('div',{class:'row',style:'align-items:flex-start;margin:4px 0'},h('b',null,(i+1)+'.'),h('div',{class:'grow'},t),
+      h('button',{class:'btn sm icon','aria-label':'ลบขั้น',onclick:()=>{S.steps.splice(i,1);persist(true);renderStudio();}},'✕')));});
+  b.append(h('button',{class:'btn sm',disabled:S.steps.length>=8,onclick:()=>{S.steps.push('');persist(true);renderStudio();}},'+ เพิ่มขั้นเฉลย'));
+  b.append(h('h3',{text:'หลักฐานหลักที่ต้องอ้างอิงตอนสรุปคดี',style:'margin-top:18px'}),h('p',{class:'hint',text:'ผู้เล่นต้องเลือกหลักฐานเหล่านี้ครบจึงได้คะแนนสรุปคดี (ต้องไม่ขัดกับเฉลย)'}),
+    h('div',null,c.evidence.map(e=>{const i=h('input',{type:'checkbox'});i.checked=S.keyEvidence.includes(e.id);
+      i.addEventListener('change',()=>{S.keyEvidence=i.checked?[...new Set([...S.keyEvidence,e.id])]:S.keyEvidence.filter(k=>k!==e.id);changed();});
+      return h('label',{class:'chk'},i,e.title||'(ไม่มีชื่อ)');})));
+}
+function nodeOptions(c){
+  const o=[];
+  c.evidence.forEach(e=>o.push(['e:'+e.id,'หลักฐาน: '+(e.title||'(ไม่มีชื่อ)')]));
+  c.characters.forEach(x=>o.push(['c:'+x.id,'ผู้เกี่ยวข้อง: '+(x.name||'(ไม่มีชื่อ)')]));
+  [...new Set(c.evidence.map(e=>e.time).filter(Boolean))].forEach(t=>o.push(['t:'+t,'เวลา '+t]));
+  return o;
+}
+function edLinks(b,c){
+  b.append(h('p',{class:'hint',text:'กำหนดคู่ที่ "เชื่อมแล้วสมเหตุสมผล" — เมื่อผู้เล่นโยงคู่นี้บนกระดานหลักฐาน จะได้คะแนนเชื่อมหลักฐาน (โยงคู่อื่นได้ แต่ไม่ได้คะแนน)'}));
+  const opts=nodeOptions(c);
+  c.links.forEach((l,i)=>{
+    const mk=(k)=>{const s=h('select',{'aria-label':k==='a'?'ปลายทางที่ 1':'ปลายทางที่ 2'});
+      if(l[k]&&!opts.some(o=>o[0]===l[k]))s.append(h('option',{value:l[k],text:'(ไม่พบ) '+l[k]}));
+      opts.forEach(([v,t])=>s.append(h('option',{value:v,text:t})));s.value=l[k];s.addEventListener('change',()=>{l[k]=s.value;changed();});return s;};
+    b.append(h('div',{class:'listrow',style:'display:block'},h('div',{class:'grid2'},mk('a'),mk('b')),fText('เหตุผลที่สมเหตุสมผล',l,'reason',{max:200}),
+      h('button',{class:'btn sm danger',onclick:()=>{c.links.splice(i,1);persist(true);renderStudio();}},'ลบคู่นี้')));
+  });
+  b.append(h('button',{class:'btn primary',disabled:opts.length<2||c.links.length>=60,onclick:()=>{c.links.push({id:uid('l'),a:opts[0][0],b:opts[1][0],reason:''});persist(true);renderStudio();}},'+ เพิ่มคู่ที่เชื่อมได้'));
+}
+function edConfig(b,c){
+  const g=c.gameConfig;
+  b.append(fSel('ระดับความยากของฉากสืบสวน',g,'difficulty',[[1,'ง่าย — จุดสืบสวนเรืองแสง และมีตัวช่วยตัดตัวเลือก'],[2,'ปานกลาง — จุดสืบสวนมองเห็นได้'],[3,'ยาก — จุดสืบสวนซ่อน ต้องใช้แว่นขยายส่องหา']],{num:true}),
+    fChk('บังคับลำดับการเผยหลักฐาน (ตามเลข "ลำดับเผย" ของแต่ละชิ้น)',g,'enforceOrder'),
+    fChk('บังคับสืบเบาะแสบังคับ (★) ให้ครบก่อนจึงตั้งข้อสรุปได้',g,'requireMandatory'),
+    h('div',{class:'grid2'},fNum('จำนวนคำใบ้ต่อเกม (ทั้งห้อง/ทุกทีมรวมกัน)',g,'hintsPerGame',{min:0,max:20}),
+      fNum('เวลาต่อคำถาม (วินาที, 0 = ไม่จับเวลา)',g,'questionSeconds',{min:0,max:300,hint:'ต้องเปิด "จับเวลา" ในหน้าตั้งค่าด้วย และไม่มีการหักคะแนนเมื่อหมดเวลา'})));
+  const ta=h('textarea',{rows:5,maxLength:1200,'aria-label':'คำถามชวนอภิปราย'});ta.value=g.discussion.join('\n');
+  ta.addEventListener('input',()=>{g.discussion=ta.value.split('\n').map(s=>s.trim().slice(0,200)).filter(Boolean).slice(0,8);changed();});
+  b.append(h('div',{class:'field'},h('label',{class:'lbl'},'คำถามชวนอภิปราย (บรรทัดละข้อ ครูกดสุ่มแสดงบนจอได้)'),ta));
+}
+function edCheck(b,c){
+  const v=validateCase(c);
+  if(!v.errors.length)b.append(h('div',{class:'vitem okk'},'✓ ข้อมูลครบและไม่ขัดแย้งกับเฉลย — พร้อมเล่น'));
+  v.errors.forEach(x=>b.append(h('div',{class:'vitem err'},h('div',{class:'grow'},'ต้องแก้: '+x.m),jumpBtn(c,x.w))));
+  v.warnings.forEach(x=>b.append(h('div',{class:'vitem warn'},h('div',{class:'grow'},'ข้อแนะนำ: '+x.m),jumpBtn(c,x.w))));
+  b.append(h('div',{class:'row',style:'margin-top:14px'},h('button',{class:'btn amber',disabled:v.errors.length>0,onclick:()=>{store.activeId=c.id;persist(true);startFlow();}},'เริ่มเล่นคดีนี้')));
+}
+function jumpBtn(c,w){
+  if(!w)return null;
+  return h('button',{class:'btn sm',onclick:()=>{if(w.startsWith('evidence:')){ST.tab='evidence';ST.evId=w.slice(9);}else ST.tab=w;renderStudio();}},'ไปแก้');
+}
+
+/* ---------- sound (Web Audio, created after a user gesture; can be muted) ---------- */
+let ac=null,musicT=null;
+function audio(){if(ac===null){try{ac=new(window.AudioContext||window.webkitAudioContext)();}catch(e){ac=false;}}if(ac&&ac.state==='suspended')ac.resume();return ac;}
+function tone(f,dur=.15,type='sine',vol=.1,delay=0){
+  if(!store.settings.sound)return;const a=audio();if(!a)return;const t=a.currentTime+delay,o=a.createOscillator(),g=a.createGain();
+  o.type=type;o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.012);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(a.destination);o.start(t);o.stop(t+dur+.03);
+}
+const SFX={
+  click:()=>tone(660,.05,'triangle',.05),
+  good:()=>[523,659,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.11,i*.08)),
+  soft:()=>[392,349].forEach((f,i)=>tone(f,.22,'sine',.08,i*.13)),
+  found:()=>[880,1175,1568].forEach((f,i)=>tone(f,.25,'sine',.08,i*.07)),
+  link:()=>[600,900].forEach((f,i)=>tone(f,.09,'square',.04,i*.07)),
+  win:()=>[523,659,784,659,784,1047,1319].forEach((f,i)=>tone(f,.28,'triangle',.12,i*.11))
+};
+function syncMusic(){
+  clearInterval(musicT);musicT=null;
+  if(store.settings.music&&store.settings.sound&&!$('#scrGame').hidden){
+    const pent=[392,440,523,587,659,784];
+    musicT=setInterval(()=>{if(!paused&&Math.random()<.7)tone(pent[Math.floor(Math.random()*pent.length)]/(Math.random()<.3?2:1),.5,'sine',.035);},620);
+  }
+}
+
+/* ---------- settings screen ---------- */
+function applySettings(){document.body.classList.toggle('calm',!!store.settings.reduceMotion);syncMusic();}
+function renderSettings(){
+  const s=store.settings,root=$('#scrSettings');
+  const modeDesc={teams:'แข่งขัน 2–8 ทีม — ผลัดกันตอบคำถามที่จุดสืบสวน ทุกทีมช่วยกันใช้กระดานหลักฐานร่วมกัน ทีมที่เสนอการเชื่อมโยง/ข้อสรุปได้คะแนนนั้น',
+    coop:'ร่วมมือทั้งห้อง — ทั้งห้องเป็นทีมเดียว สะสมคะแนนรวม ไม่มีการสลับตา',solo:'ฝึกคนเดียว — ผู้เล่น 1 คน เหมาะกับการทบทวนหรือใช้บนเครื่องของนักเรียน'};
+  const modes=h('div',{class:'grid2'},[['teams','โหมดแข่งขันเป็นทีม'],['coop','โหมดร่วมมือทั้งห้อง'],['solo','โหมดฝึกคนเดียว']].map(([k,t])=>{
+    const i=h('input',{type:'radio',name:'mode'});i.checked=s.mode===k;i.addEventListener('change',()=>{s.mode=k;persist();renderSettings();});
+    return h('label',{class:'chk card',style:'padding:10px'},i,h('span',null,h('b',null,t),h('br'),h('span',{class:'hint'},modeDesc[k])));}));
+  const teams=h('div');
+  if(s.mode==='teams'){
+    teams.append(fNum('จำนวนทีม (2–8)',s,'teamCount',{min:2,max:8,on:()=>renderSettings()}));
+    for(let i=0;i<s.teamCount;i++){
+      const nm=h('input',{type:'text',maxLength:24,'aria-label':'ชื่อทีมที่ '+(i+1)});nm.value=s.teams[i].name;nm.addEventListener('input',()=>{s.teams[i].name=nm.value;persist();});
+      const col=h('input',{type:'color','aria-label':'สีทีมที่ '+(i+1),style:'width:56px;min-height:44px;padding:2px'});col.value=s.teams[i].color;col.addEventListener('input',()=>{s.teams[i].color=col.value;persist();});
+      teams.append(h('div',{class:'row',style:'margin:4px 0'},h('b',{style:'width:64px'},'ทีม '+(i+1)),h('div',{class:'grow'},nm),col));
+    }
+    teams.append(h('p',{class:'hint',text:'ชื่อเริ่มต้นคือ "ทีม 1", "ทีม 2" … ไม่จำเป็นต้องใช้ชื่อนักเรียน'}));
+  }
+  root.replaceChildren(topbar('ตั้งค่า'),h('div',{class:'wrap'},
+    h('div',{class:'card'},h('h2',{text:'โหมดการเล่น'}),modes,teams),
+    h('div',{class:'card',style:'margin-top:14px'},h('h2',{text:'คะแนน'}),
+      h('div',{class:'grid2'},fNum('ตอบคำถามถูก (คะแนน)',s,'scoreAnswer',{min:0,max:100}),fNum('เชื่อมหลักฐานสมเหตุสมผลตามที่ครูกำหนด',s,'scoreLink',{min:0,max:100}),
+        fNum('สรุปคดีพร้อมหลักฐานถูกต้อง',s,'scoreConclusion',{min:0,max:200})),
+      h('p',{class:'hint',text:'ไม่มีคะแนนจากความเร็ว ไม่หักคะแนนเมื่อเดาไม่ถูกหรือใช้คำใบ้ ครูแก้คะแนนเองได้ในแผงครูระหว่างเล่น'})),
+    h('div',{class:'card',style:'margin-top:14px'},h('h2',{text:'เวลา เสียง และการแสดงผล'}),
+      fChk('เปิดจับเวลาต่อคำถาม (เวลาที่กำหนดอยู่ในแท็บ "ตั้งค่าคดี"; หมดเวลาไม่หักคะแนน)',s,'timerEnabled'),
+      fChk('สลับลำดับตัวเลือกในแต่ละคำถาม',s,'shuffle'),
+      fChk('เปิดเสียงเอฟเฟกต์',s,'sound',{on:syncMusic}),fChk('เปิดเพลงบรรยากาศเบา ๆ ระหว่างเล่น',s,'music',{on:syncMusic}),
+      fChk('ลดการเคลื่อนไหว (ปิดแอนิเมชันและเอฟเฟกต์ที่วูบวาบ)',s,'reduceMotion',{on:applySettings}),
+      h('button',{class:'btn',onclick:toggleFullscreen},'เปิด/ปิดเต็มจอ')),
+    h('div',{class:'card',style:'margin-top:14px'},h('h2',{text:'ข้อมูลในเครื่องนี้'}),
+      h('p',{text:'คดีและความคืบหน้าถูกบันทึกในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่มีการส่งข้อมูลออกอินเทอร์เน็ต ใช้ประมาณ '+storageUsageKB()+' KB'+(storageOK?'':' (เบราว์เซอร์ไม่เก็บข้อมูล)')}),
+      h('div',{class:'row'},
+        h('button',{class:'btn danger',onclick:async()=>{if(!await confirmDlg('ล้างคดี การตั้งค่า และเกมที่บันทึกไว้ทั้งหมดในเครื่องนี้? (ส่งออกสำรองก่อนได้ในหน้าจัดการเนื้อหา)',{danger:true,ok:'ล้างทั้งหมด'}))return;
+          clearAllData();loadStore();applySettings();renderSettings();toast('ล้างข้อมูลแล้ว คืนค่าเริ่มต้นพร้อมคดีตัวอย่าง');}},'ล้างข้อมูลทั้งหมด'),
+        h('button',{class:'btn',onclick:()=>{download('detective-backup-'+stamp()+'.json',JSON.stringify({schemaVersion:SCHEMA,kind:'backup',cases:store.cases},null,2),'application/json');}},'สำรองคดีทั้งหมดเป็นไฟล์')))));
+}
+function toggleFullscreen(){
+  try{if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen().catch(()=>toast('เบราว์เซอร์ไม่อนุญาตให้เปิดเต็มจอ'));}catch(e){toast('เบราว์เซอร์ไม่รองรับเต็มจอ');}
+}
+
+/* ---------- how-to screen ---------- */
+function renderHow(){
+  const root=$('#scrHow'),smp=normalizeCase(clone(SAMPLE));
+  const rows=smp.evidence.map((e,i)=>{const q=qOf(smp,e.id);let a='';
+    if(q.type==='single-choice')a=q.options.find(o=>o.id===q.answer).text;else if(q.type==='true-false')a=q.answer?'ถูก / จริง':'ผิด / ไม่จริง';else a='(ครูตัดสิน) '+q.answer;
+    return h('tr',null,h('td',null,String(i+1)),h('td',null,smp.rooms[e.room].name),h('td',null,q.prompt),h('td',null,a));});
+  root.replaceChildren(topbar('วิธีเล่น'),h('div',{class:'wrap'},
+    h('div',{class:'step3'},
+      h('div',{class:'card'},h('div',{class:'n'},'1'),h('h2',{text:'สืบสวน'}),h('p',{text:'เดินในแผนที่ 4 ห้อง (คลิก หรือกดลูกศร/WASD) ส่องหาจุดสืบสวนด้วยแว่นขยาย ตอบคำถามของครูให้ถูกเพื่อเปิดหลักฐาน'})),
+      h('div',{class:'card'},h('div',{class:'n'},'2'),h('h2',{text:'เชื่อมหลักฐาน'}),h('p',{text:'บนกระดานหลักฐาน คลิกโน้ตสองอัน (หลักฐาน เวลา หรือบุคคล) แล้วเขียนว่าเชื่อมโยงกันอย่างไร ลากโน้ตเพื่อจัดวางได้'})),
+      h('div',{class:'card'},h('div',{class:'n'},'3'),h('h2',{text:'สรุปคดี'}),h('p',{text:'เลือกข้อสรุป เลือกหลักฐานที่ใช้ยืนยัน และเขียนเหตุผล ถ้ายังไม่พอ ก็ลองใหม่ได้เสมอ ครูจะเปิดเฉลยทีละขั้น'}))),
+    h('div',{class:'card',style:'margin-top:14px'},h('h2',{text:'คะแนนและความเป็นธรรม'}),
+      h('ul',null,h('li',{text:`ตอบคำถามถูก +${store.settings.scoreAnswer} · เชื่อมหลักฐานสมเหตุสมผลตามที่ครูกำหนด +${store.settings.scoreLink} · สรุปคดีพร้อมหลักฐานถูกต้อง +${store.settings.scoreConclusion}`}),
+        h('li',{text:'ไม่มีคะแนนจากความเร็ว ไม่หักคะแนนเมื่อเดาไม่ถูก และสรุปคดีใหม่ได้ไม่จำกัดครั้ง'}),
+        h('li',{text:'โหมดทีม: ทีมผลัดกันตอบทีละตา จำนวนคำถามของแต่ละทีมใกล้เคียงกัน ครูสลับทีมหรือแก้คะแนนได้'}),
+        h('li',{text:'ครูเป็นผู้ควบคุม (Game Master): พัก/เล่นต่อ, สลับทีม, แก้คะแนน, ย้อนคำสั่ง, ปลดหลักฐาน, ชวนอภิปราย, เปิดเฉลยทีละขั้น'}))),
+    h('div',{class:'card',style:'margin-top:14px'},h('h2',{text:'ปุ่มลัด'}),
+      h('ul',null,h('li',null,h('kbd',null,'ลูกศร / WASD'),' เดิน · ',h('kbd',null,'Enter'),' ยืนยัน/สืบสวนจุดที่ยืนอยู่'),h('li',null,h('kbd',null,'Space'),' พัก/เล่นต่อ · ',h('kbd',null,'Esc'),' ปิดหน้าต่าง'),
+        h('li',null,'บนกระดานหลักฐาน: โฟกัสที่โน้ตแล้วกดลูกศรเพื่อย้าย, ',h('kbd',null,'Enter'),' เพื่อเลือกเชื่อม'))),
+    h('details',{class:'card',style:'margin-top:14px'},h('summary',{style:'cursor:pointer;font-weight:700;min-height:44px'},'สำหรับครู: เฉลยจุดสาธิตของคดีตัวอย่าง (ใช้ตรวจการทดลองเล่น)'),
+      h('p',{class:'hint',text:'คดีตัวอย่างมี 8 จุดสืบสวน — คำตอบของคำถามแต่ละจุดเป็นดังนี้ · เฉลยของคดี: '+smp.hypotheses.find(x=>x.id===smp.solution.answer).text}),
+      h('div',{style:'overflow:auto'},h('table',{class:'tbl'},h('thead',null,h('tr',null,['จุดที่','ห้อง','คำถาม','คำตอบที่ถูก'].map(t=>h('th',{text:t})))),h('tbody',null,rows))))));
+}
+
+/* ---------- start flow ---------- */
+function startFlow(){
+  const s=store.settings;
+  openDlg({title:'เริ่มเล่น',cls:'wide'});
+  const body=h('div');
+  function draw(){
+    const c=activeCase(),v=validateCase(c);
+    const sel=h('select',{id:'stCase'},store.cases.map(k=>h('option',{value:k.id,text:k.title||'(ไม่มีชื่อ)'})));sel.value=c.id;
+    sel.addEventListener('change',()=>{store.activeId=sel.value;persist();draw();});
+    const modes=h('div',{class:'row'},[['teams','แข่งขันเป็นทีม'],['coop','ร่วมมือทั้งห้อง'],['solo','ฝึกคนเดียว']].map(([k,t])=>{
+      const i=h('input',{type:'radio',name:'stmode'});i.checked=s.mode===k;i.addEventListener('change',()=>{s.mode=k;persist();draw();});return h('label',{class:'chk'},i,t);}));
+    const cnt=s.mode==='teams'?fNum('จำนวนทีม (2–8)',s,'teamCount',{min:2,max:8,on:()=>{}}):null;
+    const timeOn=s.timerEnabled&&c.gameConfig.questionSeconds>0;
+    body.replaceChildren(
+      h('div',{class:'field'},h('label',{for:'stCase'},'เลือกคดี'),sel),
+      h('p',{class:'muted',text:c.story}),
+      h('div',{class:'field'},h('span',{class:'lbl',text:'โหมด'}),modes),cnt,
+      h('div',{class:'card',style:'background:#f3f6ff'},h('b',null,'กติกาคะแนน: '),
+        `ตอบถูก +${s.scoreAnswer} · เชื่อมหลักฐานสมเหตุสมผล +${s.scoreLink} · สรุปคดีพร้อมหลักฐานถูกต้อง +${s.scoreConclusion} · `,
+        timeOn?`จับเวลา ${c.gameConfig.questionSeconds} วินาที/ข้อ (หมดเวลาไม่หักคะแนน)`:'ไม่จับเวลา',` · คำใบ้ ${c.gameConfig.hintsPerGame} ครั้ง/เกม (ไม่หักคะแนน) · ไม่มีคะแนนจากความเร็ว`,
+        h('br'),h('span',{class:'hint'},'เปลี่ยนค่าเหล่านี้ได้ที่หน้า "ตั้งค่า"')),
+      v.errors.length?h('div',null,h('div',{class:'vitem err'},h('div',null,'ยังเริ่มเล่นไม่ได้ — ต้องแก้ข้อมูลคดีก่อน '+v.errors.length+' จุด:',h('ul',null,v.errors.slice(0,5).map(x=>h('li',{text:x.m})),v.errors.length>5?h('li',{text:'… และอีก '+(v.errors.length-5)+' จุด'}):null))),
+        h('button',{class:'btn',onclick:()=>{closeDlg();ST.tab='check';renderStudio();showScreen('scrStudio');}},'ไปแก้ในหน้าจัดการเนื้อหา')):h('div',{class:'vitem okk'},'✓ ตรวจข้อมูลคดีแล้ว พร้อมเล่น'));
+    setDlgActions([{label:'ยกเลิก',fn:closeDlg},{label:'เริ่มเกม',cls:'primary',disabled:v.errors.length>0,fn:()=>{const k=activeCase();closeDlg();beginGame(k);}}]);
+  }
+  setDlgBody(body);draw();
+}
+
+/* =====================  GAME  ===================== */
+let CASE=null,G=null,undo=[],isDemo=false,paused=false,Qs=null,selNode=null,HS=[],UI={};
+const ev=id=>CASE.evidence.find(e=>e.id===id);
+const qq=id=>CASE.questions.find(q=>q.evidenceId===id);
+const spotNo=id=>CASE.evidence.findIndex(e=>e.id===id)+1;
+const roomName=i=>CASE.rooms[i].name||('ห้อง '+(i+1));
+const done=id=>G.collected.includes(id);
+const team=()=>G.teams[G.cur];
+const hypText=id=>{const x=CASE.hypotheses.find(k=>k.id===id);return x?x.text:'';};
+function nodeText(n){
+  if(n.startsWith('e:')){const e=ev(n.slice(2));return e?e.title:'?';}
+  if(n.startsWith('c:')){const x=CASE.characters.find(k=>k.id===n.slice(2));return x?x.name:'?';}
+  return 'เวลา '+n.slice(2);
+}
+function isLocked(e){return CASE.gameConfig.enforceOrder&&CASE.evidence.some(o=>o.order<e.order&&!done(o.id));}
+function mandatoryLeft(){return CASE.gameConfig.requireMandatory?CASE.evidence.filter(e=>e.mandatory&&!done(e.id)).length:0;}
+
+function newGameState(){
+  const s=store.settings,n=s.mode==='teams'?s.teamCount:1;
+  const teams=[];
+  for(let i=0;i<n;i++)teams.push({name:s.mode==='teams'?(s.teams[i].name.trim()||'ทีม '+(i+1)):(s.mode==='coop'?'ทั้งห้อง':'ผู้เล่น'),color:s.teams[i].color,score:0,asked:0});
+  return{v:1,mode:s.mode,teams,cur:0,collected:[],via:{},attempts:{},hinted:{},hintsLeft:CASE.gameConfig.hintsPerGame,pos:{},links:[],awarded:[],hyps:[],
+    solved:null,revealStep:0,phase:'play',log:[],shuf:{},
+    cfg:{scoreAnswer:s.scoreAnswer,scoreLink:s.scoreLink,scoreConclusion:s.scoreConclusion,secs:s.timerEnabled?CASE.gameConfig.questionSeconds:0,shuffle:s.shuffle},startedAt:Date.now()};
+}
+function saveGame(){if(isDemo)return;lsSet('save',{case:CASE,G});}
+function act(label,fn){
+  undo.push({label,s:JSON.stringify(G)});if(undo.length>60)undo.shift();
+  fn();saveGame();renderAll();
+}
+function award(t,pts,text){G.teams[t].score+=pts;G.log.push({n:G.log.length+1,team:t,pts,text,at:Date.now()});}
+function doUndo(){
+  const u=undo.pop();if(!u){toast('ไม่มีคำสั่งให้ย้อนแล้ว');return;}
+  G=JSON.parse(u.s);saveGame();if(dlg.open)closeDlg();selNode=null;renderAll();toast('ย้อนคำสั่ง: '+u.label);
+}
+
+/* ---------- spots layout ---------- */
+const SLOTS=[
+  [[90,165],[520,195],[290,190],[110,305],[560,305],[440,260],[40,240],[250,310]],
+  [[110,150],[540,150],[210,300],[420,300],[300,170],[40,300],[590,300],[60,230]],
+  [[270,150],[535,170],[150,260],[400,275],[560,310],[60,160],[300,330],[40,300]],
+  [[130,170],[490,200],[300,300],[540,310],[90,300],[330,170],[600,250],[250,235]]
+];
+const RO=[[0,0],[640,0],[0,360],[640,360]];
+function layoutSpots(){
+  const cnt=[0,0,0,0];
+  return CASE.evidence.map(e=>{const k=cnt[e.room]++,s=SLOTS[e.room][k%8];return{evId:e.id,x:RO[e.room][0]+s[0],y:RO[e.room][1]+s[1]};});
+}
+function spotState(id){return done(id)?'done':(isLocked(ev(id))?'lock':'open');}
+
+/* ---------- procedural 2D art ---------- */
+function rnd(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function rrect(x,X,Y,W,H,r){x.beginPath();if(x.roundRect)x.roundRect(X,Y,W,H,r);else x.rect(X,Y,W,H);}
+function box(x,X,Y,W,H,fill,{r=6,stroke,lw=2,shadow=true}={}){
+  if(shadow){x.fillStyle='rgba(0,0,0,.22)';rrect(x,X+4,Y+6,W,H,r);x.fill();}
+  x.fillStyle=fill;rrect(x,X,Y,W,H,r);x.fill();if(stroke){x.strokeStyle=stroke;x.lineWidth=lw;x.stroke();}
+}
+function circ(x,cx,cy,r,fill,stroke,lw=2){x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);if(fill){x.fillStyle=fill;x.fill();}if(stroke){x.strokeStyle=stroke;x.lineWidth=lw;x.stroke();}}
+function label(x,t,X,Y,size=22,color='#fff',align='left'){x.font='800 '+size+'px "Noto Sans Thai","Sarabun","Leelawadee UI",Tahoma,sans-serif';x.textAlign=align;x.textBaseline='middle';x.fillStyle=color;x.fillText(t,X,Y);}
+function plaque(x,t,X,Y){x.font='800 22px "Noto Sans Thai","Sarabun","Leelawadee UI",Tahoma,sans-serif';const w=x.measureText(t).width+28;
+  x.fillStyle='rgba(0,0,0,.25)';rrect(x,X+3,Y+4,w,34,10);x.fill();x.fillStyle='#16284a';rrect(x,X,Y,w,34,10);x.fill();x.strokeStyle='#f2a516';x.lineWidth=2.5;x.stroke();label(x,t,X+14,Y+18,22,'#fff');}
+const WALLS=[[634,0,12,130],[634,230,12,260],[634,590,12,130],[0,354,270,12],[370,354,540,12],[1010,354,270,12]];
+const DOORS=[[640,180],[320,360],[960,360],[640,540]];
+
+function drawLibrary(x,R){
+  x.fillStyle='#d9b484';x.fillRect(0,0,640,360);
+  x.strokeStyle='rgba(110,70,30,.22)';x.lineWidth=1.5;
+  for(let i=0;i<=16;i++){x.beginPath();x.moveTo(i*40,0);x.lineTo(i*40,360);x.stroke();}
+  for(let j=0;j<9;j++)for(let i=0;i<16;i++){if((i+j)%2){x.beginPath();x.moveTo(i*40,j*40);x.lineTo(i*40+40,j*40);x.stroke();}}
+  x.fillStyle='#8b5e34';x.fillRect(0,0,640,30);x.fillStyle='#6f4a26';x.fillRect(0,26,640,6);
+  for(let i=0;i<4;i++){const bx=24+i*100;box(x,bx,34,92,92,'#7a4a22',{r:4});
+    for(let s=0;s<3;s++){const sy=40+s*29;x.fillStyle='#5c3716';x.fillRect(bx+4,sy+24,84,4);let px=bx+6;
+      while(px<bx+84){const w=6+R()*7,hh=14+R()*10;x.fillStyle=['#c0392b','#2e86c1','#27ae60','#f39c12','#8e44ad','#16a085','#d35400'][Math.floor(R()*7)];x.fillRect(px,sy+24-hh,w,hh);px+=w+1;}}}
+  box(x,466,34,118,126,'#5d3a1a',{r:6});x.fillStyle='rgba(205,235,255,.55)';x.fillRect(474,42,102,110);
+  x.fillStyle='rgba(255,255,255,.35)';x.beginPath();x.moveTo(480,44);x.lineTo(520,44);x.lineTo(490,150);x.lineTo(480,150);x.fill();
+  x.strokeStyle='rgba(180,120,0,.7)';x.setLineDash([6,5]);x.lineWidth=3;x.beginPath();x.moveTo(500,120);x.lineTo(552,120);x.moveTo(512,120);x.lineTo(512,100);x.lineTo(490,84);x.moveTo(540,120);x.lineTo(540,100);x.lineTo(562,84);x.moveTo(526,120);x.lineTo(526,90);x.stroke();x.setLineDash([]);
+  box(x,486,128,80,18,'#c9a227',{r:3,shadow:false});label(x,'รางวัลการอ่านดีเด่น',526,137,10,'#3a2a00','center');
+  box(x,150,196,290,112,'#c8625a',{r:10,stroke:'#8d3d38',lw:3});x.strokeStyle='rgba(255,255,255,.35)';x.lineWidth=2;rrect(x,162,208,266,88,6);x.stroke();
+  box(x,200,214,190,64,'#a0703a',{r:8,stroke:'#6b4423'});box(x,226,224,28,20,'#fff',{r:2,shadow:false});box(x,266,230,28,20,'#3b82f6',{r:2,shadow:false});
+  [[210,196],[360,196],[210,288],[360,288]].forEach(([cx,cy])=>box(x,cx,cy,26,18,'#7a4a22',{r:6}));
+  circ(x,44,318,20,'#2f8f4e','#1f6b38');circ(x,36,308,10,'#47b36a');circ(x,56,310,10,'#47b36a');box(x,32,328,24,18,'#b4552d',{r:3});
+}
+function drawCanteen(x,R){
+  for(let j=0;j<9;j++)for(let i=0;i<16;i++){x.fillStyle=(i+j)%2?'#f6efd9':'#e6d9b5';x.fillRect(i*40,j*40,40,40);}
+  x.fillStyle='#e9b872';x.fillRect(0,0,640,30);x.fillStyle='#c9924a';x.fillRect(0,26,640,6);
+  box(x,24,36,320,66,'#b4793f',{r:6,stroke:'#7a4b1f'});x.fillStyle='#e2a762';x.fillRect(28,40,312,18);
+  for(let i=0;i<5;i++){circ(x,56+i*58,50,14,'#fff','#bbb');circ(x,56+i*58,50,8,['#e74c3c','#f1c40f','#2ecc71','#e67e22','#9b59b6'][i]);}
+  box(x,480,36,116,62,'#aab7c4',{r:8,stroke:'#6c7a89'});box(x,500,46,76,34,'#dde6ee',{r:6,shadow:false});
+  box(x,534,28,10,18,'#6c7a89',{r:3,shadow:false});x.fillStyle='#5dade2';x.beginPath();x.ellipse(539,84,3,6,0,0,7);x.fill();
+  [[62,200],[240,232],[418,200]].forEach(([tx,ty])=>{box(x,tx,ty,118,62,'#b98a54',{r:8,stroke:'#7a5430'});box(x,tx+6,ty-18,106,14,'#9b6c3a',{r:5});box(x,tx+6,ty+66,106,14,'#9b6c3a',{r:5});
+    circ(x,tx+30,ty+30,9,'#fff','#ccc');circ(x,tx+82,ty+30,9,'#fff','#ccc');});
+  box(x,580,290,34,44,'#6b7f8f',{r:6});box(x,576,284,42,10,'#556674',{r:4,shadow:false});
+}
+function drawClass(x,R){
+  x.fillStyle='#c6dae9';x.fillRect(0,0,640,360);x.strokeStyle='rgba(60,90,120,.2)';x.lineWidth=1.5;
+  for(let i=0;i<=16;i++){x.beginPath();x.moveTo(i*40,0);x.lineTo(i*40,360);x.stroke();}for(let j=0;j<=9;j++){x.beginPath();x.moveTo(0,j*40);x.lineTo(640,j*40);x.stroke();}
+  x.fillStyle='#8aa9c1';x.fillRect(0,0,640,30);x.fillStyle='#6a89a1';x.fillRect(0,26,640,6);
+  box(x,84,30,372,76,'#8b5e34',{r:6});box(x,92,38,356,60,'#2f5d4a',{r:4,shadow:false});
+  x.strokeStyle='rgba(255,255,255,.75)';x.lineWidth=3;x.lineCap='round';x.beginPath();x.moveTo(120,60);x.quadraticCurveTo(160,48,200,64);x.moveTo(120,82);x.lineTo(240,82);x.moveTo(280,56);x.lineTo(400,56);x.moveTo(280,76);x.lineTo(360,76);x.stroke();
+  x.fillStyle='#fff';x.fillRect(100,92,30,5);
+  box(x,476,44,120,66,'#a0703a',{r:8,stroke:'#6b4423'});box(x,490,52,34,24,'#fff',{r:2,shadow:false});box(x,586,60,10,10,'#3b82f6',{r:2,shadow:false});
+  for(let r=0;r<2;r++)for(let c=0;c<3;c++){const dx=70+c*170,dy=186+r*84;box(x,dx,dy,100,44,'#d9a566',{r:6,stroke:'#9a6c34'});box(x,dx+36,dy+50,28,16,'#6b8cae',{r:5});}
+  circ(x,610,60,16,'#fff','#16284a',3);x.strokeStyle='#16284a';x.lineWidth=2.5;x.beginPath();x.moveTo(610,60);x.lineTo(610,48);x.moveTo(610,60);x.lineTo(619,64);x.stroke();
+}
+function drawGarden(x,R){
+  x.fillStyle='#94d27c';x.fillRect(0,0,640,360);
+  for(let i=0;i<140;i++){x.fillStyle=R()<.5?'#a6df8d':'#7fc368';circ(x,R()*640,R()*360,5+R()*14,x.fillStyle);}
+  x.fillStyle='#ecd9a6';x.beginPath();x.moveTo(0,150);x.bezierCurveTo(200,130,320,230,640,200);x.lineTo(640,250);x.bezierCurveTo(330,290,200,190,0,205);x.fill();
+  x.strokeStyle='#cdb77d';x.lineWidth=3;x.stroke();
+  x.fillStyle='#5dade2';x.beginPath();x.ellipse(500,78,76,38,0,0,7);x.fill();x.strokeStyle='#2e86c1';x.lineWidth=5;x.stroke();
+  circ(x,470,74,11,'#58b368');circ(x,520,92,9,'#58b368');circ(x,528,70,5,'#ff9fb1');
+  x.fillStyle='rgba(0,0,0,.2)';x.beginPath();x.ellipse(110,110,52,22,0,0,7);x.fill();box(x,98,62,24,50,'#7a4a22',{r:4,shadow:false});
+  circ(x,110,56,44,'#2f9e57','#20723d',3);circ(x,82,70,26,'#3dbd6b');circ(x,140,68,28,'#3dbd6b');circ(x,112,38,26,'#4ccf7b');
+  box(x,230,268,100,18,'#9b6c3a',{r:5});box(x,232,252,96,14,'#b98a54',{r:4,shadow:false});box(x,236,286,10,14,'#6b4423',{r:2,shadow:false});box(x,314,286,10,14,'#6b4423',{r:2,shadow:false});
+  for(let i=0;i<46;i++){const fx=R()*620+10,fy=R()*340+10;if(fx>420&&fx<580&&fy<125)continue;if(fy>140&&fy<260&&fx>20&&fx<620&&R()<.6)continue;
+    circ(x,fx,fy,4,['#ff7aa2','#ffd23f','#fff','#c77dff','#ff9f1c'][i%5]);circ(x,fx,fy,1.6,'#e67e22');}
+}
+function buildScene(S){
+  const o=document.createElement('canvas');o.width=Math.round(1280*S);o.height=Math.round(720*S);const x=o.getContext('2d');x.scale(S,S);
+  const R=rnd(20260),draws=[drawLibrary,drawCanteen,drawClass,drawGarden];
+  draws.forEach((d,i)=>{x.save();x.translate(RO[i][0],RO[i][1]);x.beginPath();x.rect(0,0,640,360);x.clip();d(x,R);
+    const g=x.createRadialGradient(320,180,120,320,180,420);g.addColorStop(0,'rgba(255,240,200,.10)');g.addColorStop(1,'rgba(20,20,50,.22)');x.fillStyle=g;x.fillRect(0,0,640,360);
+    if(i===0){x.fillStyle='rgba(255,255,255,.08)';x.beginPath();x.moveTo(200,0);x.lineTo(300,0);x.lineTo(160,360);x.lineTo(40,360);x.fill();}
+    x.restore();});
+  /* doors (mats) then walls */
+  DOORS.forEach(([dx,dy],i)=>{x.fillStyle='rgba(120,70,30,.55)';
+    if(i===0||i===3)x.fillRect(dx-14,dy-50,28,100);else x.fillRect(dx-50,dy-14,100,28);});
+  x.fillStyle='#4a3220';WALLS.forEach(([a,b,w,hh])=>{x.fillRect(a,b,w,hh);});
+  x.fillStyle='rgba(255,255,255,.18)';WALLS.forEach(([a,b,w,hh])=>{if(w<hh)x.fillRect(a,b,3,hh);else x.fillRect(a,b,w,3);});
+  x.strokeStyle='#4a3220';x.lineWidth=14;x.strokeRect(0,0,1280,720);
+  plaque(x,roomName0(0),16,40+0);plaque(x,roomName0(1),656,40);plaque(x,roomName0(2),16,400);plaque(x,roomName0(3),656,400);
+  return o;
+}
+function roomName0(i){return CASE?roomName(i):ROOM_DEF[i];}
+
+/* ---------- map runtime ---------- */
+const P={x:320,y:210,path:[],onArrive:null,face:1,moving:false,bob:0};
+const keys={};let lens={x:0,y:0,on:false},scene=null,scale=1,raf=0,lastT=0,resizeObs=null,sceneKey='';
+const roomAt=(x,y)=>(x<640?0:1)+(y<360?0:2);
+const ADJ=[[1,2],[0,3],[0,3],[1,2]];
+const DOOR_BETWEEN={'0-1':DOORS[0],'1-0':DOORS[0],'0-2':DOORS[1],'2-0':DOORS[1],'1-3':DOORS[2],'3-1':DOORS[2],'2-3':DOORS[3],'3-2':DOORS[3]};
+function route(fx,fy,tx,ty){
+  const a=roomAt(fx,fy),b=roomAt(tx,ty);if(a===b)return[[tx,ty]];
+  const prev={[a]:-1},q=[a];
+  while(q.length){const r=q.shift();if(r===b)break;ADJ[r].forEach(n=>{if(!(n in prev)){prev[n]=r;q.push(n);}});}
+  const rooms=[];for(let r=b;r!==-1;r=prev[r])rooms.unshift(r);
+  const pts=[];for(let i=0;i<rooms.length-1;i++){const d=DOOR_BETWEEN[rooms[i]+'-'+rooms[i+1]];pts.push([d[0],d[1]]);}
+  pts.push([tx,ty]);return pts;
+}
+function blocked(x,y,r=14){
+  if(x<r+8||x>1272-r||y<r+8||y>712-r)return true;
+  return WALLS.some(([a,b,w,hh])=>x>a-r&&x<a+w+r&&y>b-r&&y<b+hh+r);
+}
+function setPath(pts,cb){P.path=pts.slice();P.onArrive=cb||null;}
+function update(dt){
+  let vx=0,vy=0;
+  if(keys.ArrowLeft||keys.a)vx-=1;if(keys.ArrowRight||keys.d)vx+=1;if(keys.ArrowUp||keys.w)vy-=1;if(keys.ArrowDown||keys.s)vy+=1;
+  P.moving=false;
+  if(vx||vy){P.path=[];P.onArrive=null;const l=Math.hypot(vx,vy),sp=250*dt;vx=vx/l*sp;vy=vy/l*sp;
+    if(!blocked(P.x+vx,P.y))P.x+=vx;if(!blocked(P.x,P.y+vy))P.y+=vy;if(vx)P.face=vx>0?1:-1;P.moving=true;}
+  else if(P.path.length){const[tx,ty]=P.path[0],dx=tx-P.x,dy=ty-P.y,d=Math.hypot(dx,dy),sp=300*dt;
+    if(d<=sp){P.x=tx;P.y=ty;P.path.shift();if(!P.path.length){const cb=P.onArrive;P.onArrive=null;if(cb)cb();}}
+    else{P.x+=dx/d*sp;P.y+=dy/d*sp;if(Math.abs(dx)>1)P.face=dx>0?1:-1;P.moving=true;}}
+  P.bob=P.moving?P.bob+dt*14:0;
+}
+function nearestSpot(x,y,maxD){let best=null,bd=maxD;HS.forEach(s=>{const d=Math.hypot(s.x-x,s.y-y);if(d<bd){bd=d;best=s;}});return best;}
+function drawSpot(x,s,t,inLens){
+  const st=spotState(s.evId),diff=CASE.gameConfig.difficulty,no=spotNo(s.evId);
+  if(st==='open'&&diff===3&&!inLens)return;
+  const calm=reducedMotion(),pulse=calm?0:Math.sin(t*3.2+no)*.5+.5;
+  x.save();x.translate(s.x,s.y);
+  if(st==='open'){
+    if(diff===1){const g=x.createRadialGradient(0,0,4,0,0,46);g.addColorStop(0,'rgba(255,230,120,.75)');g.addColorStop(1,'rgba(255,230,120,0)');x.fillStyle=g;x.beginPath();x.arc(0,0,46,0,7);x.fill();}
+    circ(x,0,0,21+pulse*6,null,'rgba(242,165,22,'+(.9-pulse*.45)+')',3);
+    circ(x,0,0,17,'#ffd54a','#7a4b00',3);label(x,String(no),0,1,18,'#2b1b00','center');
+  }else if(st==='done'){circ(x,0,0,15,'#2fb55a','#0d4f25',3);x.strokeStyle='#fff';x.lineWidth=4;x.lineCap='round';x.lineJoin='round';x.beginPath();x.moveTo(-6,0);x.lineTo(-1,5);x.lineTo(7,-5);x.stroke();}
+  else{circ(x,0,0,15,'#9ca3af','#4b5563',3);x.fillStyle='#374151';x.fillRect(-6,-1,12,9);x.strokeStyle='#374151';x.lineWidth=3;x.beginPath();x.arc(0,-2,5,Math.PI,0);x.stroke();}
+  x.restore();
+}
+function drawPlayer(x,t){
+  const by=P.moving?Math.sin(P.bob)*3:0;
+  x.save();x.translate(P.x,P.y);
+  x.fillStyle='rgba(0,0,0,.28)';x.beginPath();x.ellipse(0,18,17,6,0,0,7);x.fill();
+  x.scale(P.face,1);x.translate(0,by);
+  x.fillStyle='#6b4a2b';rrect(x,-13,-4,26,24,8);x.fill();x.fillStyle='#8b6a45';rrect(x,-13,-4,26,12,8);x.fill();x.fillStyle='#3a2616';x.fillRect(-13,9,26,4);
+  circ(x,0,-14,12,'#f5cfa6','#a77a4f',2);
+  x.fillStyle='#8b6b3e';x.beginPath();x.ellipse(0,-22,15,7,0,Math.PI,0);x.fill();x.fillStyle='#6f542c';x.fillRect(-14,-23,28,4);circ(x,0,-30,4,'#6f542c');
+  circ(x,4,-14,1.8,'#222');
+  x.strokeStyle='#5b3a17';x.lineWidth=3;x.lineCap='round';x.beginPath();x.moveTo(12,4);x.lineTo(22,-4);x.stroke();circ(x,25,-8,7,'rgba(190,230,255,.6)','#16284a',2.5);
+  x.restore();
+}
+function drawWorld(x,t,inLens){
+  x.drawImage(scene,0,0,1280,720);
+  HS.forEach(s=>drawSpot(x,s,t,inLens));
+  drawPlayer(x,t);
+  const ns=nearestSpot(P.x,P.y,46);
+  if(ns&&!inLens&&!P.path.length){const lab='Enter: สืบสวนจุดที่ '+spotNo(ns.evId);x.font='700 18px "Noto Sans Thai",Tahoma,sans-serif';const w=x.measureText(lab).width+20;
+    x.fillStyle='rgba(22,40,74,.92)';rrect(x,P.x-w/2,P.y-74,w,28,8);x.fill();label(x,lab,P.x,P.y-60,18,'#fff','center');}
+}
+function frame(ts){
+  raf=requestAnimationFrame(frame);
+  const dt=Math.min(.05,(ts-lastT)/1000||0);lastT=ts;
+  if(!G||$('#scrGame').hidden||!scene)return;
+  if(!paused)update(dt);
+  const x=UI.ctx,t=ts/1000;
+  x.setTransform(scale,0,0,scale,0,0);x.clearRect(0,0,1280,720);
+  drawWorld(x,t,false);
+  if(lens.on){
+    const R=86,Z=2;x.save();x.beginPath();x.arc(lens.x,lens.y,R,0,Math.PI*2);x.clip();x.fillStyle='#fff';x.fillRect(lens.x-R,lens.y-R,R*2,R*2);
+    x.translate(lens.x,lens.y);x.scale(Z,Z);x.translate(-lens.x,-lens.y);drawWorld(x,t,true);x.restore();
+    x.beginPath();x.arc(lens.x,lens.y,R,0,Math.PI*2);x.strokeStyle='#16284a';x.lineWidth=9;x.stroke();x.strokeStyle='#f2c14e';x.lineWidth=3;x.stroke();
+    const g=x.createRadialGradient(lens.x-30,lens.y-34,6,lens.x,lens.y,R);g.addColorStop(0,'rgba(255,255,255,.35)');g.addColorStop(.5,'rgba(255,255,255,0)');x.fillStyle=g;x.beginPath();x.arc(lens.x,lens.y,R,0,Math.PI*2);x.fill();
+    x.strokeStyle='#6b4423';x.lineWidth=14;x.lineCap='round';x.beginPath();x.moveTo(lens.x+R*.72,lens.y+R*.72);x.lineTo(lens.x+R*1.25,lens.y+R*1.25);x.stroke();
+  }
+}
+function resizeMap(){
+  const w=UI.cv.clientWidth;if(!w)return;const dpr=Math.min(2,window.devicePixelRatio||1);
+  const px=Math.round(w*dpr);if(UI.cv.width!==px){UI.cv.width=px;UI.cv.height=Math.round(px*9/16);}
+  scale=UI.cv.width/1280;const k=Math.round(scale*100)+'|'+CASE.rooms.map(r=>r.name).join();
+  if(k!==sceneKey||!scene){sceneKey=k;scene=buildScene(scale);}
+}
+function pt(e){const r=UI.cv.getBoundingClientRect();return[(e.clientX-r.left)*1280/r.width,(e.clientY-r.top)*720/r.height];}
+function bindMap(){
+  const cv=UI.cv;let lensT=null;
+  cv.addEventListener('pointermove',e=>{const[x,y]=pt(e);lens.x=x;lens.y=y;lens.on=true;});
+  cv.addEventListener('pointerleave',()=>{lens.on=false;});
+  cv.addEventListener('pointerdown',e=>{
+    const[x,y]=pt(e);lens.x=x;lens.y=y;lens.on=true;audio();
+    const sp=nearestSpot(x,y,38);
+    if(sp)goToSpot(sp.evId);else if(!paused){const tx=clamp(x,24,1256),ty=clamp(y,24,696);setPath(route(P.x,P.y,tx,ty));}
+    if(e.pointerType==='touch'){clearTimeout(lensT);lensT=setTimeout(()=>{lens.on=false;},1500);}
+  });
+}
+function goToSpot(id){
+  if(paused)return;
+  const s=HS.find(k=>k.evId===id);if(!s)return;
+  if(reducedMotion()){P.x=s.x;P.y=s.y+30;P.path=[];openSpot(id);return;}
+  setPath(route(P.x,P.y,s.x,s.y+30),()=>openSpot(id));
+}
+function startLoop(){cancelAnimationFrame(raf);lastT=performance.now();raf=requestAnimationFrame(frame);}
+function stopLoop(){cancelAnimationFrame(raf);raf=0;}
+
+/* ---------- game UI ---------- */
+function beginGame(c,{demo=false}={}){
+  CASE=clone(c);isDemo=demo;G=newGameState();undo=[];selNode=null;paused=false;Qs=null;
+  if(demo){G.mode='solo';G.teams=[{name:'ผู้เล่น',color:store.settings.teams[0].color,score:0,asked:0}];}
+  enterGame();saveGame();
+  if(demo||!store.settings.tutorialSeen)showTutorial();
+}
+function resumeGame(){
+  const sv=lsGet('save');
+  try{
+    if(!sv||!sv.case||!sv.G)throw new Error('ไม่มีเกมที่บันทึกไว้');
+    CASE=normalizeCase(sv.case);G=sv.G;
+    if(G.v!==1||!Array.isArray(G.teams)||!G.teams.length||!Array.isArray(G.collected)||!Array.isArray(G.links)||!G.cfg)throw new Error('ข้อมูลเกมที่บันทึกไว้เสียหาย');
+    isDemo=false;undo=[];selNode=null;paused=false;Qs=null;
+    enterGame();if(G.phase==='report')showReport();
+  }catch(e){toast('เล่นต่อไม่ได้: '+e.message,4000);lsDel('save');refreshHome();}
+}
+function enterGame(){
+  HS=layoutSpots();P.x=320;P.y=230;P.path=[];scene=null;sceneKey='';
+  buildGameUI();showScreen('scrGame');
+  resizeMap();ensureNodes();renderAll();startLoop();syncMusic();
+  onLeaveGame=()=>{stopLoop();paused=false;syncMusic();onLeaveGame=null;if(resizeObs){resizeObs.disconnect();resizeObs=null;}};
+}
+function buildGameUI(){
+  const root=$('#scrGame');
+  UI={};
+  UI.cv=h('canvas',{id:'cv',tabindex:'-1','aria-label':'แผนที่โรงเรียน 4 ห้อง ใช้ลูกศรเพื่อเดิน หรือใช้รายการจุดสืบสวนด้านล่าง',role:'img'});
+  UI.ctx=UI.cv.getContext('2d');
+  UI.teams=h('div',{class:'teams',role:'group','aria-label':'คะแนนทีม'});
+  UI.concl=h('button',{class:'btn amber',id:'btnConcl',onclick:openConclusion},'ตั้งข้อสรุปคดี');
+  UI.spots=h('div',{class:'spots'});UI.spotInfo=h('div',{class:'hint'});
+  UI.board=h('div',{class:'board',id:'board'});UI.svg=document.createElementNS('http://www.w3.org/2000/svg','svg');UI.svg.setAttribute('aria-hidden','true');
+  UI.board.append(UI.svg);UI.links=h('div',{class:'linklist',id:'linkList'});UI.status=h('div',{class:'statusbar'});
+  UI.root=h('div',{class:'game','data-view':'map'},
+    h('div',{class:'hud'},h('div',{class:'ttl',text:CASE.title}),UI.teams,
+      h('button',{class:'btn',onclick:openScoreLog},'ที่มาคะแนน'),
+      h('button',{class:'btn',id:'btnGM',onclick:openGM},'แผงครู'),
+      h('button',{class:'btn',id:'btnPause',onclick:togglePause},'พัก'),
+      h('button',{class:'btn',onclick:toggleFullscreen,'aria-label':'เปิด/ปิดเต็มจอ'},'เต็มจอ'),
+      h('button',{class:'btn',onclick:exitGame},'ออก')),
+    h('div',{class:'gtabs',role:'tablist'},[['map','แผนที่สืบสวน'],['board','กระดานหลักฐาน']].map(([k,t])=>h('button',{class:'tab',role:'tab','aria-selected':String(k==='map'),'data-id':k,onclick:()=>setView(k)},t))),
+    h('div',{class:'gbody'},
+      h('div',{class:'pmap'},h('div',{class:'mapwrap'},UI.cv),
+        h('div',{class:'panelcard'},h('b',null,'จุดสืบสวน '),h('span',{class:'hint'},'(คลิกจุดบนแผนที่ หรือกดปุ่มเหล่านี้ · ใช้แว่นขยายส่องหาเบาะแส)'),UI.spots,UI.spotInfo)),
+      h('div',{class:'pboard'},h('div',{class:'boardhd'},h('h2',{text:'กระดานหลักฐาน'}),UI.concl),UI.status,
+        h('div',{class:'hint'},'คลิกโน้ต 2 อัน เพื่อเชื่อมโยง · ลากหรือกดลูกศรเพื่อย้ายโน้ต'),UI.board,
+        h('div',{class:'panelcard'},h('b',null,'เส้นเชื่อมที่เราพบ'),UI.links))));
+  root.replaceChildren(UI.root);
+  bindMap();
+  resizeObs=new ResizeObserver(()=>{resizeMap();drawLines();});resizeObs.observe(UI.cv);resizeObs.observe(UI.board);
+}
+function setView(v){UI.root.dataset.view=v;$$('.gtabs .tab',UI.root).forEach(b=>b.setAttribute('aria-selected',String(b.dataset.id===v)));if(v==='map')resizeMap();else drawLines();}
+async function exitGame(){
+  if(!await confirmDlg('ออกจากเกมกลับหน้าแรก?'+(isDemo?'':'\n(ความคืบหน้าถูกบันทึกไว้ เลือก "เล่นต่อ" ได้ภายหลัง)'),{ok:'ออก'}))return;
+  saveGame();showScreen('scrHome');
+}
+function renderAll(){if(!G||!UI.root)return;renderHud();renderSpots();renderBoard();renderStatus();}
+
+function renderHud(){
+  UI.teams.replaceChildren(...G.teams.map((t,i)=>h('div',{class:'tchip'+(G.mode==='teams'&&i===G.cur?' cur':''),'aria-current':G.mode==='teams'&&i===G.cur?'true':null},
+    h('span',{class:'dot',style:'background:'+t.color}),t.name,h('b',null,String(t.score)),G.mode==='teams'&&i===G.cur?h('span',{class:'small'},'· ตานี้'):null)));
+}
+function renderSpots(){
+  UI.spots.replaceChildren(...CASE.evidence.map((e,i)=>{
+    const st=spotState(e.id);
+    const t=st==='done'?`✓ ${i+1}. ${e.title}`:st==='lock'?`${i+1}. ${roomName(e.room)} (ยังไม่เปิด)`:`${i+1}. ${roomName(e.room)}`;
+    return h('button',{class:'spot '+(st==='done'?'done':st==='lock'?'lock':''),onclick:()=>{SFX.click();goToSpot(e.id);},'aria-label':`จุดสืบสวนที่ ${i+1} ${roomName(e.room)} ${st==='done'?'เก็บแล้ว':st==='lock'?'ยังไม่เปิด':'ยังไม่ได้สืบ'}`},t);
+  }));
+  UI.spotInfo.textContent=`เก็บหลักฐานแล้ว ${G.collected.length}/${CASE.evidence.length} ชิ้น`+(G.mode==='teams'?` · ตาของ ${team().name}`:'');
+}
+function renderStatus(){
+  const left=mandatoryLeft();
+  UI.status.replaceChildren(...[
+    h('span',{class:'chip'},`คำใบ้เหลือ ${G.hintsLeft}`),
+    left>0?h('span',{class:'chip',style:'background:#fff4dc;border-color:#f2a516'},`ต้องสืบเบาะแสบังคับอีก ${left} จุดก่อนสรุปคดี`):null,
+    G.solved?h('button',{class:'btn sm primary',onclick:showReport},'ดูรายงานสรุป'):null].filter(Boolean));
+  UI.concl.textContent=G.solved?'สรุปคดีอีกครั้ง':(G.hyps.length?`ตั้งข้อสรุปใหม่ (ครั้งที่ ${G.hyps.length+1})`:'ตั้งข้อสรุปคดี');
+  UI.concl.disabled=false;
+}
+
+/* ---------- board ---------- */
+function allTimes(){return[...new Set(CASE.evidence.map(e=>e.time).filter(Boolean))];}
+function nodeList(){
+  const n=[];
+  CASE.characters.forEach(c=>n.push({id:'c:'+c.id,kind:'pe',name:c.name,sub:c.role}));
+  CASE.evidence.filter(e=>done(e.id)).forEach(e=>n.push({id:'e:'+e.id,kind:'ev',name:e.title,sub:roomName(e.room)+(e.time?' · '+e.time:''),img:e.image}));
+  const col=new Set(CASE.evidence.filter(e=>done(e.id)&&e.time).map(e=>e.time));
+  allTimes().filter(t=>col.has(t)).forEach(t=>n.push({id:'t:'+t,kind:'ti',name:'เวลา '+t,sub:''}));
+  return n;
+}
+function autoPos(id){
+  if(id.startsWith('c:')){const i=CASE.characters.findIndex(c=>c.id===id.slice(2)),n=CASE.characters.length;return{x:.12+.76*(n>1?i/(n-1):.5),y:.09+(i%2)*.1};}
+  if(id.startsWith('e:')){const k=G.collected.indexOf(id.slice(2));return{x:.14+.24*(k%4),y:.42+.2*Math.floor(k/4)};}
+  const T=allTimes(),j=T.indexOf(id.slice(2));return{x:.08+.84*(T.length>1?j/(T.length-1):.5),y:.84+(j%2)*.09};
+}
+function ensureNodes(){nodeList().forEach(n=>{if(!G.pos[n.id])G.pos[n.id]=autoPos(n.id);});}
+let lastFocusNode=null;
+function renderBoard(){
+  ensureNodes();
+  const foc=document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.node;
+  [...UI.board.querySelectorAll('.note')].forEach(n=>n.remove());
+  nodeList().forEach(n=>{
+    const el=h('button',{class:'note '+n.kind+(selNode===n.id?' sel':''),type:'button','data-node':n.id,'aria-pressed':String(selNode===n.id),
+      'aria-label':`${n.kind==='ev'?'หลักฐาน':n.kind==='pe'?'บุคคล':'เวลา'}: ${n.name}. กดเพื่อเลือกเชื่อมโยง ลูกศรเพื่อย้าย`,
+      style:`left:${G.pos[n.id].x*100}%;top:${G.pos[n.id].y*100}%`},
+      n.img?h('img',{src:n.img,alt:''}):null,h('span',null,n.name),n.sub?h('small',null,n.sub):null);
+    bindNote(el,n.id);UI.board.append(el);
+  });
+  if(foc){const f=UI.board.querySelector(`[data-node="${CSS.escape(foc)}"]`);if(f)f.focus();}
+  drawLines();renderLinkList();
+}
+function bindNote(el,id){
+  let sx=0,sy=0,moved=false,drag=false;
+  el.addEventListener('pointerdown',e=>{if(paused)return;drag=true;moved=false;sx=e.clientX;sy=e.clientY;el.setPointerCapture(e.pointerId);audio();});
+  el.addEventListener('pointermove',e=>{
+    if(!drag)return;if(!moved&&Math.hypot(e.clientX-sx,e.clientY-sy)<6)return;moved=true;el.style.cursor='grabbing';
+    const r=UI.board.getBoundingClientRect();G.pos[id]={x:clamp((e.clientX-r.left)/r.width,.05,.95),y:clamp((e.clientY-r.top)/r.height,.06,.94)};
+    el.style.left=G.pos[id].x*100+'%';el.style.top=G.pos[id].y*100+'%';drawLines();});
+  el.addEventListener('pointerup',e=>{if(!drag)return;drag=false;el.style.cursor='';try{el.releasePointerCapture(e.pointerId);}catch(x){}
+    if(moved){saveGame();e.preventDefault();el._moved=true;setTimeout(()=>{el._moved=false;},0);}});
+  el.addEventListener('click',()=>{if(el._moved)return;pickNode(id);});
+  el.addEventListener('keydown',e=>{
+    const d={ArrowLeft:[-.03,0],ArrowRight:[.03,0],ArrowUp:[0,-.03],ArrowDown:[0,.03]}[e.key];
+    if(d){e.preventDefault();e.stopPropagation();const p=G.pos[id];p.x=clamp(p.x+d[0],.05,.95);p.y=clamp(p.y+d[1],.06,.94);el.style.left=p.x*100+'%';el.style.top=p.y*100+'%';drawLines();saveGame();}
+  });
+}
+function pickNode(id){
+  SFX.click();
+  if(!selNode){selNode=id;renderBoard();toast('เลือก "'+nodeText(id)+'" แล้ว — คลิกโน้ตอีกอันเพื่อเชื่อม');return;}
+  if(selNode===id){selNode=null;renderBoard();return;}
+  const a=selNode;selNode=null;renderBoard();openLinkDlg(a,id);
+}
+function drawLines(){
+  if(!UI.svg||!UI.board)return;const w=UI.board.clientWidth,hh=UI.board.clientHeight;if(!w)return;
+  UI.svg.setAttribute('viewBox',`0 0 ${w} ${hh}`);UI.svg.replaceChildren();
+  const NS='http://www.w3.org/2000/svg';
+  G.links.forEach((l,i)=>{
+    const A=G.pos[l.a],B=G.pos[l.b];if(!A||!B)return;const col=LINKCOL[i%LINKCOL.length];
+    const x1=A.x*w,y1=A.y*hh,x2=B.x*w,y2=B.y*hh;
+    const ln=document.createElementNS(NS,'line');ln.setAttribute('x1',x1);ln.setAttribute('y1',y1);ln.setAttribute('x2',x2);ln.setAttribute('y2',y2);
+    ln.setAttribute('stroke',col);ln.setAttribute('stroke-width','5');ln.setAttribute('stroke-linecap','round');if(!l.ruleId)ln.setAttribute('stroke-dasharray','10 8');UI.svg.append(ln);
+    const g=document.createElementNS(NS,'g');g.setAttribute('class','badgeg');g.addEventListener('click',()=>showLinkDetail(l));
+    const c=document.createElementNS(NS,'circle');c.setAttribute('cx',(x1+x2)/2);c.setAttribute('cy',(y1+y2)/2);c.setAttribute('r','13');c.setAttribute('fill',col);c.setAttribute('stroke','#fff');c.setAttribute('stroke-width','3');
+    const t=document.createElementNS(NS,'text');t.setAttribute('x',(x1+x2)/2);t.setAttribute('y',(y1+y2)/2+5);t.setAttribute('text-anchor','middle');t.setAttribute('fill','#fff');t.setAttribute('font-size','14');t.setAttribute('font-weight','800');t.textContent=String(i+1);
+    g.append(c,t);UI.svg.append(g);
+  });
+}
+function renderLinkList(){
+  if(!G.links.length){UI.links.replaceChildren(h('span',{class:'hint',text:'ยังไม่มีเส้นเชื่อม — ลองคลิกโน้ตสองอันที่เกี่ยวข้องกัน'}));return;}
+  UI.links.replaceChildren(...G.links.map((l,i)=>h('div',{class:'linkitem'},h('span',{class:'lnum',style:'background:'+LINKCOL[i%LINKCOL.length]},String(i+1)),
+    h('div',{class:'grow'},h('b',null,nodeText(l.a)+' ↔ '+nodeText(l.b)),h('div',{class:'small'},l.text+(l.team!=null&&G.mode==='teams'?' (เสนอโดย '+G.teams[l.team].name+')':''))),
+    h('button',{class:'btn sm',onclick:()=>showLinkDetail(l)},'ดู'))));
+}
+function showLinkDetail(l){
+  openDlg({title:'เส้นเชื่อม'});
+  setDlgBody(h('p',null,h('b',null,nodeText(l.a)),' ↔ ',h('b',null,nodeText(l.b))),h('p',{text:l.text,style:'white-space:pre-wrap'}),
+    h('p',{class:'hint',text:l.ruleId?'เป็นความเชื่อมโยงที่สมเหตุสมผลตามที่ครูกำหนด (เส้นทึบ)':'เป็นข้อสังเกตของเรา — ยังไม่ตรงกับคู่ที่ครูกำหนด (เส้นประ) ลองอภิปรายกันต่อได้'}));
+  setDlgActions([{label:'ลบเส้นนี้',cls:'danger',fn:async()=>{if(!await confirmDlg('ลบเส้นเชื่อมนี้? (คะแนนที่ได้ไปแล้วไม่ถูกหัก)',{ok:'ลบ'}))return;act('ลบเส้นเชื่อม',()=>{G.links=G.links.filter(k=>k.id!==l.id);});closeDlg();}},{label:'ปิด',cls:'primary',fn:closeDlg}]);
+}
+function openLinkDlg(a,b){
+  const pairEq=(r)=>(r.a===a&&r.b===b)||(r.a===b&&r.b===a);
+  if(G.links.some(l=>(l.a===a&&l.b===b)||(l.a===b&&l.b===a))){toast('เชื่อมคู่นี้ไว้แล้ว ดูได้ที่รายการเส้นเชื่อม');return;}
+  openDlg({title:'เชื่อมโยงหลักฐาน'});
+  const ta=h('textarea',{id:'lkText',rows:3,maxLength:200,placeholder:'เช่น ภาพนี้ถ่ายตอนเวลาใกล้กับที่ถ้วยหาย'});
+  const tsel=G.mode==='teams'?h('select',{id:'lkTeam'},G.teams.map((t,i)=>h('option',{value:i,text:t.name}))):null;if(tsel)tsel.value=String(G.cur);
+  const msg=h('div',{class:'fb soft',hidden:true,role:'alert'});
+  setDlgBody(h('p',{style:'font-size:20px'},h('b',null,nodeText(a)),'  ↔  ',h('b',null,nodeText(b))),
+    h('div',{class:'field'},h('label',{for:'lkText'},'อธิบายว่าสองอย่างนี้เชื่อมโยงกันอย่างไร'),ta),
+    tsel?h('div',{class:'field'},h('label',{for:'lkTeam'},'ทีมที่เสนอ'),tsel):null,msg);
+  setDlgActions([{label:'ยกเลิก',fn:closeDlg},{label:'บันทึกเส้นเชื่อม',cls:'primary',fn:()=>{
+    const text=ta.value.trim();if(text.length<3){msg.hidden=false;msg.textContent='ช่วยเขียนอธิบายสั้น ๆ ก่อนนะ (อย่างน้อย 3 ตัวอักษร)';ta.focus();return;}
+    const t=tsel?Number(tsel.value):0,rule=CASE.links.find(r=>pairEq(r)&&!G.awarded.includes(r.id));let pts=0;
+    act('เชื่อมหลักฐาน',()=>{
+      if(rule){pts=G.cfg.scoreLink;G.awarded.push(rule.id);award(t,pts,`เชื่อมหลักฐานสมเหตุสมผล: ${nodeText(a)} ↔ ${nodeText(b)}`);}
+      G.links.push({id:uid('l'),a,b,text,team:t,ruleId:rule?rule.id:null,pts});});
+    closeDlg();
+    if(rule){SFX.link();SFX.good();toast(`เชื่อมได้สมเหตุสมผล! ${G.teams[t].name} +${pts}`);}else{SFX.link();toast('บันทึกข้อสังเกตแล้ว ยังไม่ตรงกับคู่ที่ครูกำหนด ลองอภิปรายกันต่อได้');}
+  }}]);
+  ta.focus();
+}
+
+/* ---------- opening a spot / question ---------- */
+function openSpot(id){
+  if(paused||!G)return;
+  if(done(id))return showEvidence(id,false);
+  const e=ev(id);if(isLocked(e)){toast('จุดนี้ยังไม่เปิด — ไปสืบจุดอื่นก่อนตามลำดับที่ครูกำหนด');SFX.soft();return;}
+  openQuestion(id);
+}
+function optOrder(q){
+  if(!G.cfg.shuffle)return q.options.map(o=>o.id);
+  if(!G.shuf[q.id]){const a=q.options.map(o=>o.id);for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}G.shuf[q.id]=a;}
+  return G.shuf[q.id];
+}
+function openQuestion(id){
+  const e=ev(id),secs=G.cfg.secs;
+  Qs={evId:id,sel:null,done:false,tried:new Set(),remaining:secs*1000,total:secs*1000,running:secs>0,timedOut:false,revealed:false,fb:null,fbCls:'soft'};
+  openDlg({title:`จุดสืบสวนที่ ${spotNo(id)} · ${roomName(e.room)}`,onClose:()=>{Qs=null;}});
+  renderQ();
+}
+function renderQ(){
+  if(!Qs)return;
+  const e=ev(Qs.evId),q=qq(Qs.evId);
+  const meta=h('div',{class:'meta'},h('span',{class:'chip'},roomName(e.room)),
+    G.mode==='teams'?h('span',{class:'chip'},h('span',{class:'dot',style:'background:'+team().color}),'ตาของ '+team().name):null,
+    h('span',{class:'chip'},['ง่าย','ปานกลาง','ยาก'][q.difficulty-1]));
+  const nodes=[meta];
+  if(Qs.total){nodes.push(h('div',{class:'tbar'+(Qs.remaining<10000?' low':''),id:'qbar',role:'timer','aria-label':'เวลาที่เหลือ'},h('i',{style:`width:${Math.max(0,Qs.remaining/Qs.total*100)}%`})));}
+  nodes.push(h('div',{class:'qprompt',text:q.prompt}));
+  const locked=Qs.done||Qs.timedOut;
+  if(q.type==='single-choice'||q.type==='true-false'){
+    const opts=q.type==='true-false'?[{id:'true',text:'ถูก / จริง'},{id:'false',text:'ผิด / ไม่จริง'}]:optOrder(q).map(i=>q.options.find(o=>o.id===i)).filter(Boolean);
+    let elim=null;if(CASE.gameConfig.difficulty===1&&(G.attempts[Qs.evId]||0)>=2&&q.type==='single-choice')elim=opts.find(o=>o.id!==q.answer&&!Qs.tried.has(o.id));
+    const grp=h('div',{class:'opts',role:'radiogroup','aria-label':'ตัวเลือกคำตอบ'});
+    opts.forEach((o,i)=>{
+      if(elim&&o.id===elim.id)return;
+      const tried=Qs.tried.has(o.id);
+      grp.append(h('button',{class:'opt'+(tried?' tried':''),type:'button',role:'radio','aria-checked':String(Qs.sel===o.id),'data-opt':o.id,disabled:locked||tried,
+        onclick:()=>{SFX.click();Qs.sel=o.id;Qs.fb=null;renderQ();}},h('span',{class:'let'},q.type==='true-false'?(o.id==='true'?'✓':'✗'):LET[i]),h('span',null,o.text),tried?h('small',null,' (ลองแล้ว)'):null));});
+    nodes.push(grp);
+    if(elim)nodes.push(h('div',{class:'fb info'},'โหมดง่าย: ตัดตัวเลือกที่ไม่ใช่ออกให้ 1 ข้อแล้ว'));
+  }else{
+    nodes.push(h('div',{class:'fb info'},'ให้ทีมอภิปราย/ตอบด้วยปากเปล่า แล้วให้ครูกดตัดสินด้านล่าง'));
+  }
+  if(G.hinted[Qs.evId])nodes.push(h('div',{class:'fb info'},h('b',null,'คำใบ้: '),e.hint||'ลองอ่านโจทย์ช้า ๆ แล้วตัดสิ่งที่ไม่เกี่ยวข้องออกก่อน'));
+  if(Qs.fb)nodes.push(h('div',{class:'fb '+Qs.fbCls,role:'status'},Qs.fb));
+  if(Qs.revealed)nodes.push(h('div',{class:'revealbox'},h('b',null,'เฉลย: '),answerText(q),q.explanation?h('div',{text:q.explanation}):null));
+  setDlgBody(nodes);
+  const acts=[{label:'ปิด (Esc)',fn:closeDlg}];
+  if(!Qs.done){
+    if(!G.hinted[Qs.evId])acts.push({label:`ใบ้ (เหลือ ${G.hintsLeft})`,disabled:G.hintsLeft<=0,fn:()=>{act('ใช้คำใบ้',()=>{G.hintsLeft--;G.hinted[Qs.evId]=true;});SFX.found();renderQ();}});
+    if(Qs.total)acts.push({label:'พักเวลา',fn:togglePause});
+    if(Qs.timedOut)acts.push({label:'ต่อเวลา 30 วินาที',cls:'amber',fn:()=>{Qs.remaining+=30000;Qs.total=Math.max(Qs.total,Qs.remaining);Qs.timedOut=false;Qs.running=true;Qs.fb=null;renderQ();}});
+  }
+  if(!Qs.revealed)acts.push({label:'ครู: เฉลยข้อนี้',fn:()=>{Qs.revealed=true;renderQ();}});
+  if(q.type==='short-answer'){
+    if(!Qs.done)acts.push({label:'ยังไม่ถูก',fn:()=>resolveQ(false)},{label:'ครูตัดสิน: ตอบถูก',cls:'primary',fn:()=>resolveQ(true)});
+  }else if(!locked)acts.push({label:'ยืนยันคำตอบ (Enter)',cls:'primary',id:'qConfirm',fn:submitQ});
+  setDlgActions(acts);
+  if(Qs.sel){const f=$(`[data-opt="${Qs.sel}"]`);if(f)f.focus();}
+}
+function answerText(q){
+  if(q.type==='single-choice')return(q.options.find(o=>o.id===q.answer)||{}).text||'';
+  if(q.type==='true-false')return q.answer?'ถูก / จริง':'ผิด / ไม่จริง';return q.answer;
+}
+function submitQ(){
+  if(!Qs||Qs.done||Qs.timedOut)return;const q=qq(Qs.evId);
+  if(Qs.sel==null){Qs.fb='เลือกคำตอบก่อน แล้วกดยืนยัน';Qs.fbCls='info';renderQ();return;}
+  resolveQ(q.type==='true-false'?(Qs.sel==='true')===q.answer:Qs.sel===q.answer);
+}
+function resolveQ(ok){
+  if(!Qs)return;const id=Qs.evId,t=G.cur;
+  if(ok){
+    act('ตอบถูก',()=>{G.attempts[id]=(G.attempts[id]||0)+1;G.teams[t].asked++;award(t,G.cfg.scoreAnswer,`ตอบถูก: จุดที่ ${spotNo(id)} ${ev(id).title}`);
+      G.collected.push(id);G.via[id]='answer';ensureNodes();if(G.mode==='teams')G.cur=(G.cur+1)%G.teams.length;});
+    SFX.good();closeDlg();showEvidence(id,true,t);
+  }else{
+    act('ตอบยังไม่ถูก',()=>{G.attempts[id]=(G.attempts[id]||0)+1;G.teams[t].asked++;if(G.mode==='teams')G.cur=(G.cur+1)%G.teams.length;});
+    SFX.soft();if(Qs.sel!=null)Qs.tried.add(Qs.sel);Qs.sel=null;
+    if(G.mode==='teams'){Qs.done=true;Qs.fb=`ยังไม่ใช่ข้อนี้ ไม่เป็นไรนะ — ส่งต่อให้ ${team().name} ได้เลย (กลับมาสืบจุดนี้ใหม่ได้)`;}
+    else Qs.fb='ยังไม่ใช่ข้อนี้ ลองคิดใหม่อีกครั้งได้เลย';
+    Qs.fbCls='soft';renderQ();
+  }
+}
+function showEvidence(id,isNew,byTeam){
+  const e=ev(id),q=qq(id),via=G.via[id];
+  openDlg({title:isNew?'พบหลักฐานใหม่!':'หลักฐาน: '+e.title,onClose:()=>{if(isNew)afterCollect(id);}});
+  const persons=e.characterIds.map(k=>CASE.characters.find(c=>c.id===k)).filter(Boolean);
+  setDlgBody(h('div',{class:'reveal'+(isNew&&!reducedMotion()?' anim':'')},
+    h('h3',{text:e.title}),
+    h('div',{class:'meta'},h('span',{class:'chip'},'ห้อง: '+roomName(e.room)),e.time?h('span',{class:'chip'},'เวลา '+e.time):null,...persons.map(p=>h('span',{class:'chip'},'เกี่ยวข้อง: '+p.name))),
+    e.image?h('img',{class:'ei',src:e.image,alt:'ภาพหลักฐาน: '+e.title}):null,
+    h('p',{text:e.desc,style:'font-size:19px;white-space:pre-wrap'}),
+    via==='gm'?h('div',{class:'fb info'},'ครูเปิดหลักฐานชิ้นนี้ให้'):(q&&q.explanation?h('div',{class:'fb good'},h('b',null,'คำอธิบายคำถาม: '),q.explanation):null)));
+  setDlgActions([{label:isNew?'เก็บเข้ากระดานหลักฐาน':'ปิด',cls:'primary',fn:closeDlg}]);
+  if(isNew){SFX.found();}
+}
+function afterCollect(id){
+  setView('board');toast('เพิ่มโน้ตลงกระดานหลักฐานแล้ว — ลองเชื่อมกับเวลาหรือบุคคลที่เกี่ยวข้อง');
+  setTimeout(()=>{const n=UI.board&&UI.board.querySelector(`[data-node="e:${id}"]`);if(n){n.classList.add('flash');}},60);
+  if(G.collected.length===CASE.evidence.length)toast('เก็บหลักฐานครบทุกชิ้นแล้ว!',3500);
+}
+
+/* ---------- conclusion ---------- */
+function openConclusion(){
+  if(paused)return;
+  const left=mandatoryLeft();
+  if(left>0){infoDlg('ยังสรุปคดีไม่ได้',h('p',{text:`ครูกำหนดให้สืบเบาะแสบังคับให้ครบก่อน — ยังเหลืออีก ${left} จุด ลองสำรวจห้องที่ยังไม่ได้ไปดูนะ`}));return;}
+  if(!G.collected.length){infoDlg('ยังไม่มีหลักฐาน',h('p',{text:'ลองสืบสวนอย่างน้อยหนึ่งจุดก่อน แล้วค่อยตั้งข้อสรุป'}));return;}
+  const S=CASE.solution,st={choice:null,evs:new Set(),msg:null};
+  openDlg({title:'ตั้งข้อสรุปคดี',cls:'wide'});
+  const tsel=G.mode==='teams'?h('select',{id:'cnTeam'},G.teams.map((t,i)=>h('option',{value:i,text:t.name}))):null;if(tsel)tsel.value=String(G.cur);
+  const reason=h('textarea',{id:'cnReason',rows:3,maxLength:400,placeholder:'เช่น เพราะ… หลักฐานชิ้นที่… บอกว่า… และเวลา… ตรงกับ…'});
+  const msg=h('div',{hidden:true,role:'alert'});
+  const hyp=h('div',{class:'opts',role:'radiogroup','aria-label':'ข้อสรุป'});
+  CASE.hypotheses.forEach((x,i)=>{const b=h('button',{class:'opt',type:'button',role:'radio','aria-checked':'false','data-opt':x.id,onclick:()=>{st.choice=x.id;$$('[data-opt]',hyp).forEach(k=>k.setAttribute('aria-checked',String(k.dataset.opt===x.id)));SFX.click();}},h('span',{class:'let'},LET[i]),h('span',null,x.text));hyp.append(b);});
+  const evBox=h('div',null,CASE.evidence.filter(e=>done(e.id)).map(e=>{const i=h('input',{type:'checkbox'});i.addEventListener('change',()=>{i.checked?st.evs.add(e.id):st.evs.delete(e.id);});
+    return h('label',{class:'chk'},i,h('span',null,h('b',null,e.title),h('span',{class:'hint'},' — '+roomName(e.room)+(e.time?' · '+e.time:''))));}));
+  setDlgBody(
+    G.hyps.length?h('div',{class:'fb info'},`นี่คือการตั้งข้อสรุปครั้งที่ ${G.hyps.length+1} — ลองได้ไม่จำกัดครั้ง ไม่เสียคะแนน`):null,
+    h('h3',{text:'1) เราคิดว่าเกิดอะไรขึ้น?'}),hyp,
+    h('h3',{text:'2) เลือกหลักฐานที่ใช้ยืนยัน'}),evBox,
+    h('h3',{text:'3) เขียนเหตุผลของเรา'}),reason,
+    tsel?h('div',{class:'field'},h('label',{for:'cnTeam'},'ทีมที่เสนอข้อสรุป'),tsel):null,msg);
+  setDlgActions([{label:'ปิด',fn:closeDlg},{label:'ส่งข้อสรุป (Enter)',cls:'primary',fn:()=>{
+    const r=reason.value.trim();
+    const warn=t=>{msg.hidden=false;msg.className='fb info';msg.textContent=t;};
+    if(!st.choice)return warn('เลือกข้อสรุปก่อน');
+    if(!st.evs.size)return warn('เลือกหลักฐานที่ใช้ยืนยันอย่างน้อย 1 ชิ้น');
+    if(r.length<8)return warn('ช่วยเขียนเหตุผลสั้น ๆ ก่อนนะ (อย่างน้อย 8 ตัวอักษร)');
+    const t=tsel?Number(tsel.value):0,right=st.choice===S.answer,keyOK=S.keyEvidence.every(k=>st.evs.has(k)),ok=right&&keyOK;
+    act('ตั้งข้อสรุป',()=>{G.hyps.push({team:t,choice:st.choice,evidence:[...st.evs],reason:r,ok});
+      if(ok){G.solved={team:t,choice:st.choice,evidence:[...st.evs],reason:r};award(t,G.cfg.scoreConclusion,'สรุปคดีพร้อมหลักฐานถูกต้อง');}});
+    if(ok){closeDlg();showSolved();return;}
+    SFX.soft();msg.hidden=false;msg.className='fb soft';
+    const hx=CASE.hypotheses.find(k=>k.id===st.choice);
+    msg.replaceChildren(h('b',null,'ยังมีหลักฐานไม่เพียงพอที่จะสรุปแบบนี้'),h('div',{text:right?'ลองตรวจดูว่าหลักฐานที่เลือกครอบคลุมทั้งเรื่องเวลา และบุคคลที่เกี่ยวข้องแล้วหรือยัง หรือไปสืบเพิ่มอีกสักจุด':((hx&&hx.feedback)||'ลองกลับไปดูหลักฐานและเวลาอีกครั้ง หรือไปสืบเพิ่ม แล้วลองสรุปใหม่ได้เลย')}));
+  }}]);
+}
+function showSolved(){
+  SFX.win();confetti();
+  openDlg({title:'ไขคดีสำเร็จ!'});
+  setDlgBody(h('div',{class:'revealbox'},h('h3',{text:'เก่งมาก! ข้อสรุปมีหลักฐานรองรับ'}),
+    h('p',{text:`${G.teams[G.solved.team].name} ได้ +${G.cfg.scoreConclusion} คะแนนจากการสรุปคดีพร้อมเหตุผลและหลักฐาน`}),
+    h('p',{class:'muted',text:'ต่อไปจะดูรายงานสรุป — ครูจะเปิดเฉลยจริงทีละขั้นในหน้ารายงาน'})));
+  setDlgActions([{label:'เล่นต่อ (สำรวจเพิ่ม)',fn:closeDlg},{label:'ดูรายงานสรุป',cls:'primary',fn:()=>{closeDlg();showReport();}}]);
+}
+function confetti(){
+  if(reducedMotion())return;
+  const cv=$('#confetti');cv.hidden=false;cv.width=innerWidth;cv.height=innerHeight;const x=cv.getContext('2d');
+  const ps=Array.from({length:120},()=>({x:Math.random()*cv.width,y:-20-Math.random()*cv.height*.5,vx:(Math.random()-.5)*3,vy:2+Math.random()*4,r:4+Math.random()*5,c:LINKCOL[Math.floor(Math.random()*8)],a:Math.random()*6}));
+  let n=0;(function f(){x.clearRect(0,0,cv.width,cv.height);ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.a+=.15;x.save();x.translate(p.x,p.y);x.rotate(p.a);x.fillStyle=p.c;x.fillRect(-p.r,-p.r/2,p.r*2,p.r);x.restore();});
+    if(++n<180)requestAnimationFrame(f);else{x.clearRect(0,0,cv.width,cv.height);cv.hidden=true;}})();
+}
+
+/* ---------- pause / timer ---------- */
+const dlgP=$('#dlgP');
+function togglePause(){
+  if(!G||$('#scrGame').hidden)return;
+  if(paused){dlgP.close();}else{paused=true;dlgP.showModal();$('#pauseResume').focus();}
+}
+dlgP.addEventListener('close',()=>{paused=false;});
+$('#pauseResume').addEventListener('click',()=>dlgP.close());
+setInterval(()=>{
+  if(!Qs||paused||!Qs.running||Qs.done||Qs.timedOut||!dlg.open)return;
+  Qs.remaining-=250;const bar=$('#qbar');
+  if(Qs.remaining<=0){Qs.remaining=0;Qs.running=false;Qs.timedOut=true;Qs.fb='หมดเวลาแล้ว — ไม่มีการหักคะแนน ครูเลือก "ต่อเวลา" หรือปิดเพื่อส่งต่อได้';Qs.fbCls='soft';SFX.soft();renderQ();return;}
+  if(bar){bar.firstChild.style.width=(Qs.remaining/Qs.total*100)+'%';bar.classList.toggle('low',Qs.remaining<10000);}
+},250);
+
+/* ---------- Game Master panel ---------- */
+function openScoreLog(){
+  openDlg({title:'ที่มาของคะแนน',cls:'wide'});
+  const sum=h('table',{class:'tbl'},h('thead',null,h('tr',null,['ทีม','คะแนนรวม','ตอบคำถามแล้ว (ครั้ง)'].map(t=>h('th',{text:t})))),
+    h('tbody',null,G.teams.map(t=>h('tr',null,h('td',null,h('span',{class:'dot',style:'background:'+t.color}),' '+t.name),h('td',null,String(t.score)),h('td',null,String(t.asked))))));
+  const lg=h('table',{class:'tbl',style:'margin-top:12px'},h('thead',null,h('tr',null,['#','ทีม','คะแนน','เหตุผล'].map(t=>h('th',{text:t})))),
+    h('tbody',null,G.log.length?G.log.map(l=>h('tr',null,h('td',null,String(l.n)),h('td',null,G.teams[l.team].name),h('td',null,(l.pts>0?'+':'')+l.pts),h('td',null,l.text))):[h('tr',null,h('td',{colSpan:4},'ยังไม่มีคะแนน'))]));
+  setDlgBody(sum,lg);setDlgActions([{label:'ปิด',cls:'primary',fn:closeDlg}]);
+}
+function openGM(){
+  if(paused)return;
+  openDlg({title:'แผงควบคุมครู (Game Master)',cls:'wide'});
+  const sec=(t,...n)=>h('div',{class:'card',style:'margin-bottom:10px'},h('h3',{text:t}),...n);
+  const tsel=h('select',{'aria-label':'เลือกทีม'},G.teams.map((t,i)=>h('option',{value:i,text:t.name})));tsel.value=String(G.cur);
+  const parts=[];
+  if(G.mode==='teams')parts.push(sec('สลับทีม',h('div',{class:'row'},tsel,h('button',{class:'btn',onclick:()=>{act('สลับทีม',()=>{G.cur=Number(tsel.value);});toast('ตอนนี้เป็นตาของ '+team().name);closeDlg();}},'ให้ทีมนี้เป็นตาถัดไป'))));
+  const ts2=h('select',{'aria-label':'ทีมที่แก้คะแนน'},G.teams.map((t,i)=>h('option',{value:i,text:t.name}))),dn=h('input',{type:'number',value:'0',min:-500,max:500,'aria-label':'คะแนนที่เปลี่ยน (ติดลบได้)',style:'width:110px'}),why=h('input',{type:'text',placeholder:'เหตุผล (ไม่บังคับ)',maxLength:60,'aria-label':'เหตุผล'});
+  parts.push(sec('แก้คะแนน',h('div',{class:'row'},ts2,dn,why,h('button',{class:'btn',onclick:()=>{const d=int(dn.value,-500,500,0);if(!d){toast('ใส่จำนวนคะแนนที่ต้องการเพิ่ม/ลด');return;}
+    act('แก้คะแนน',()=>award(Number(ts2.value),d,'ครูแก้คะแนน'+(why.value.trim()?': '+why.value.trim():'')));toast('แก้คะแนนแล้ว');closeDlg();}},'ปรับคะแนน'))));
+  const last=undo[undo.length-1];
+  parts.push(sec('ย้อนและควบคุม',h('div',{class:'row'},
+    h('button',{class:'btn',disabled:!last,onclick:()=>{closeDlg();doUndo();}},last?'ย้อนคำสั่งล่าสุด: '+last.label:'ไม่มีคำสั่งให้ย้อน'),
+    h('button',{class:'btn',onclick:()=>{closeDlg();togglePause();}},'พักเกม'),
+    h('button',{class:'btn',onclick:()=>{const d=CASE.gameConfig.discussion.length?CASE.gameConfig.discussion:['หลักฐานชิ้นไหนบอกเวลา? ใครอยู่ที่ไหนในตอนนั้น?'];const p=d[Math.floor(Math.random()*d.length)];
+      closeDlg();openDlg({title:'ชวนอภิปราย'});setDlgBody(h('p',{text:p,style:'font-size:clamp(22px,3.4vw,34px);font-weight:800;text-align:center;padding:20px 0'}));setDlgActions([{label:'ปิด',cls:'primary',fn:closeDlg}]);}},'ชวนอภิปราย (สุ่มคำถาม)'))));
+  const rel=CASE.evidence.filter(e=>!done(e.id));
+  parts.push(sec('ปลดหลักฐาน (ไม่ให้คะแนน)',rel.length?h('div',{class:'row'},rel.map(e=>h('button',{class:'btn sm',onclick:()=>{act('ปลดหลักฐาน',()=>{G.collected.push(e.id);G.via[e.id]='gm';ensureNodes();});closeDlg();showEvidence(e.id,true);}},`จุดที่ ${spotNo(e.id)} · ${roomName(e.room)}`))):h('span',{class:'hint',text:'เก็บหลักฐานครบแล้ว'})));
+  parts.push(sec('จบเกม',h('div',{class:'row'},
+    h('button',{class:'btn amber',onclick:async()=>{if(!await confirmDlg('จบเกมก่อนเวลาและไปหน้ารายงานสรุป?',{ok:'จบเกม'}))return;closeDlg();act('จบเกม',()=>{G.phase='report';});showReport();}},'จบก่อนเวลา → รายงาน'),
+    h('button',{class:'btn danger',onclick:async()=>{if(!await confirmDlg('เริ่มเกมใหม่ตั้งแต่ต้น? คะแนนและกระดานหลักฐานปัจจุบันจะหายไป',{danger:true,ok:'เริ่มใหม่'}))return;closeDlg();const c=CASE,d=isDemo;beginGame(c,{demo:d});}},'รีสตาร์ทเกม'))));
+  setDlgBody(parts);setDlgActions([{label:'ปิด',cls:'primary',fn:closeDlg}]);
+}
+
+/* ---------- tutorial + warm-up ---------- */
+function showTutorial(){
+  const steps=[
+    ['1) สืบสวน','เดินในแผนที่ 4 ห้อง ใช้แว่นขยายส่องหาจุดสืบสวน ตอบคำถามของครูให้ถูกเพื่อเปิดหลักฐาน'],
+    ['2) เชื่อมหลักฐาน','คลิกโน้ตสองอันบนกระดาน แล้วเขียนว่าสัมพันธ์กันอย่างไร — โยงเวลา บุคคล และเหตุการณ์เข้าด้วยกัน'],
+    ['3) สรุปคดี','เลือกข้อสรุป หลักฐาน และเหตุผล ถ้ายังไม่พอ ไม่เป็นไร ลองใหม่ได้เสมอ'],
+  ];
+  let i=0;
+  openDlg({title:'วิธีเล่นใน 3 ขั้น',onClose:()=>{store.settings.tutorialSeen=true;persist();}});
+  function draw(){
+    if(i<3){
+      setDlgBody(h('div',{class:'card',style:'text-align:center'},h('div',{class:'n',style:'display:inline-grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#f2a516;font-weight:800;font-size:26px;border:2px solid #7a4b00'},String(i+1)),
+        h('h3',{text:steps[i][0],style:'font-size:26px'}),h('p',{text:steps[i][1],style:'font-size:20px'})),h('div',{class:'pager'},[0,1,2,3].map(k=>h('i',{class:k===i?'on':''}))));
+      setDlgActions([{label:'ข้ามบทเรียน',fn:closeDlg},{label:'ถัดไป',cls:'primary',fn:()=>{i++;draw();}}]);
+    }else{
+      const q={p:'วอร์มอัป (ไม่มีคะแนน): เหตุการณ์ไหนเกิดก่อนกัน?',o:['09:50 พบถ้วยในห้องเรียน','08:15 ถ้วยยังอยู่บนชั้นโชว์','10:30 เริ่มพิธีมอบรางวัล'],a:1};let picked=null;
+      const grp=h('div',{class:'opts'}),fb=h('div',{class:'fb info',hidden:true,role:'status'});
+      q.o.forEach((t,k)=>grp.append(h('button',{class:'opt',type:'button',onclick:()=>{picked=k;fb.hidden=false;
+        if(k===q.a){fb.className='fb good';fb.textContent='ถูกต้อง! เวลาช่วยเรียงลำดับเหตุการณ์ได้ — พร้อมไขคดีแล้ว';SFX.good();}else{fb.className='fb soft';fb.textContent='ยังไม่ใช่ ลองดูเวลาเปรียบเทียบอีกครั้ง';SFX.soft();}}},h('span',{class:'let'},LET[k]),t)));
+      setDlgBody(h('div',{class:'qprompt',text:q.p}),grp,fb,h('div',{class:'pager'},[0,1,2,3].map(k=>h('i',{class:k===3?'on':''}))));
+      setDlgActions([{label:'เริ่มสืบสวนเลย!',cls:'primary',fn:closeDlg}]);
+    }
+  }
+  draw();
+}
+
+/* ---------- report ---------- */
+function showReport(){
+  if(dlg.open)closeDlg();
+  if(G.phase!=='report'){G.phase='report';saveGame();}
+  showScreen('scrReport');renderReport();
+}
+function evStatus(id){
+  if(done(id))return G.via[id]==='gm'?'ครูเปิดให้':`ตอบถูก (ลองทั้งหมด ${G.attempts[id]||1} ครั้ง)`;
+  return (G.attempts[id]?`ยังไม่เก็บ (ลองแล้ว ${G.attempts[id]} ครั้ง)`:'ยังไม่ได้สืบ');
+}
+function reviewTopics(){
+  const m={};CASE.evidence.forEach(e=>{const q=qq(e.id);if(!q)return;const t=q.topic||'(ไม่ระบุหัวข้อ)';const tries=G.attempts[e.id]||0;
+    if(!done(e.id)||tries>1||G.via[e.id]==='gm'){m[t]=m[t]||{n:0,items:[]};m[t].n++;m[t].items.push(`จุดที่ ${spotNo(e.id)}`);}});
+  return m;
+}
+function scoreBreak(t){const r={ans:0,link:0,concl:0,adj:0};G.log.forEach(l=>{if(l.team!==t)return;const k=l.text.startsWith('ตอบถูก')?'ans':l.text.startsWith('เชื่อม')?'link':l.text.startsWith('สรุป')?'concl':'adj';r[k]+=l.pts;});return r;}
+function resultObj(){
+  return{schemaVersion:SCHEMA,kind:'result',exportedAt:new Date().toISOString(),case:{id:CASE.id,title:CASE.title},mode:G.mode,solved:!!G.solved,
+    teams:G.teams.map((t,i)=>({name:t.name,score:t.score,answered:t.asked,breakdown:scoreBreak(i)})),
+    evidence:CASE.evidence.map(e=>({id:e.id,title:e.title,topic:(qq(e.id)||{}).topic||'',collected:done(e.id),via:G.via[e.id]||'',attempts:G.attempts[e.id]||0})),
+    links:G.links.map(l=>({a:nodeText(l.a),b:nodeText(l.b),reason:l.text,reasonable:!!l.ruleId,team:G.teams[l.team]?G.teams[l.team].name:''})),
+    conclusions:G.hyps.map(x=>({team:G.teams[x.team].name,choice:hypText(x.choice),evidence:x.evidence.map(i=>(ev(i)||{}).title),reason:x.reason,sufficient:x.ok})),log:G.log};
+}
+function resultCSV(){
+  const r=resultObj(),rows=[['ทีม','คะแนนรวม','ตอบคำถาม(ครั้ง)','ตอบถูก','เชื่อมหลักฐาน','สรุปคดี','ครูปรับ']];
+  r.teams.forEach(t=>rows.push([t.name,t.score,t.answered,t.breakdown.ans,t.breakdown.link,t.breakdown.concl,t.breakdown.adj]));
+  rows.push([],['จุดสืบสวน','หลักฐาน','สถานะ','จำนวนครั้งที่ลอง','หัวข้อ']);
+  CASE.evidence.forEach(e=>rows.push([spotNo(e.id),e.title,evStatus(e.id),G.attempts[e.id]||0,(qq(e.id)||{}).topic||'']));
+  rows.push([],['เส้นเชื่อม','เหตุผล','สมเหตุสมผลตามครู']);r.links.forEach(l=>rows.push([l.a+' ↔ '+l.b,l.reason,l.reasonable?'ใช่':'ยังไม่ตรง']));
+  return toCSV(rows);
+}
+function renderReport(){
+  const root=$('#scrReport'),S=CASE.solution,last=G.solved||G.hyps[G.hyps.length-1];
+  const sorted=G.mode==='teams'?[...G.teams.keys()].sort((a,b)=>G.teams[b].score-G.teams[a].score):[...G.teams.keys()];
+  const total=1+S.steps.length;
+  const tops=reviewTopics();
+  const revealParts=[];
+  if(G.revealStep>=1)revealParts.push(h('div',{class:'revealbox'},h('b',null,'เฉลยจริง: '),hypText(S.answer),h('div',{text:S.explanation,style:'margin-top:6px'})));
+  S.steps.forEach((s,i)=>{if(G.revealStep>=i+2)revealParts.push(h('div',{class:'revealbox'},h('b',null,`ขั้นที่ ${i+1}: `),s));});
+  root.replaceChildren(
+    h('div',{class:'topbar noprint'},h('button',{class:'btn',onclick:()=>{G.phase='play';saveGame();enterGame();}},'← กลับไปเล่นต่อ'),h('h1',{text:'รายงานสรุปคดี'}),
+      h('button',{class:'btn',onclick:()=>window.print()},'พิมพ์'),
+      h('button',{class:'btn',onclick:()=>download('detective-result-'+stamp()+'.csv',resultCSV(),'text/csv')},'ส่งออก CSV'),
+      h('button',{class:'btn',onclick:()=>download('detective-result-'+stamp()+'.json',JSON.stringify(resultObj(),null,2),'application/json')},'ส่งออก JSON')),
+    h('div',{class:'wrap rep'},
+      h('h1',{text:CASE.title}),
+      h('p',{class:'muted',text:[CASE.subject,CASE.grade,new Date().toLocaleDateString('th-TH')].filter(Boolean).join(' · ')}),
+      h('p',{text:CASE.story}),
+      h('h2',{text:'ผลคะแนน'}),
+      h('div',{style:'overflow:auto'},h('table',{class:'tbl'},h('thead',null,h('tr',null,['ทีม','คะแนนรวม','ตอบคำถาม (ครั้ง)','ตอบถูก','เชื่อมหลักฐาน','สรุปคดี','ครูปรับ'].map(t=>h('th',{text:t})))),
+        h('tbody',null,sorted.map(i=>{const t=G.teams[i],b=scoreBreak(i);return h('tr',null,h('td',null,t.name),h('td',null,h('b',null,String(t.score))),h('td',null,String(t.asked)),h('td',null,String(b.ans)),h('td',null,String(b.link)),h('td',null,String(b.concl)),h('td',null,String(b.adj)));})))),
+      G.mode==='teams'?h('p',{class:'hint',text:'ทุกทีมช่วยกันสร้างกระดานหลักฐานเดียวกัน คะแนนบอกเพียงจังหวะการตอบ ไม่ได้บอกว่าใครเก่งกว่า'}):null,
+      h('h2',{text:'1) สิ่งที่เกิดขึ้น (ตามที่ผู้เล่นสรุป)'}),
+      last?h('div',{class:'card'},h('p',null,h('b',null,'ข้อสรุป: '),hypText(last.choice)),h('p',null,h('b',null,'เหตุผล: '),last.reason),
+        h('p',null,h('b',null,'หลักฐานที่ใช้ยืนยัน: '),last.evidence.map(i=>(ev(i)||{}).title).filter(Boolean).join(' · ')),
+        h('p',{class:'hint',text:`ตั้งข้อสรุปทั้งหมด ${G.hyps.length} ครั้ง: `+G.hyps.map((x,i)=>`ครั้งที่ ${i+1} ${x.ok?'มีหลักฐานเพียงพอ':'ต้องการหลักฐานเพิ่ม'}`).join(' → ')})):
+        h('div',{class:'card'},'ยังไม่ได้สรุปคดี — ครูอาจใช้ช่วงนี้อภิปรายสิ่งที่พบ แล้วเปิดเฉลยทีละขั้นด้านล่าง'),
+      h('h2',{text:'2) หลักฐานหลัก'}),
+      h('div',{style:'overflow:auto'},h('table',{class:'tbl'},h('thead',null,h('tr',null,['จุด','ห้อง','หลักฐาน','เวลา','สถานะ'].map(t=>h('th',{text:t})))),
+        h('tbody',null,CASE.evidence.map(e=>h('tr',null,h('td',null,String(spotNo(e.id))),h('td',null,roomName(e.room)),
+          h('td',null,(S.keyEvidence.includes(e.id)&&G.revealStep>=1?'★ ':'')+(done(e.id)?e.title:'(ยังไม่ได้สืบ)')),h('td',null,done(e.id)?e.time:''),h('td',null,evStatus(e.id))))))),
+      h('h2',{text:'3) เหตุผลที่เชื่อมโยง'}),
+      G.links.length?h('ol',null,G.links.map(l=>h('li',null,h('b',null,nodeText(l.a)+' ↔ '+nodeText(l.b)),' — '+l.text,l.ruleId?' ✓ สมเหตุสมผลตามที่ครูกำหนด':' (ข้อสังเกตของเรา)'))):h('p',{text:'ยังไม่มีเส้นเชื่อม'}),
+      h('h2',{text:'4) หัวข้อที่ควรทบทวน'}),
+      Object.keys(tops).length?h('ul',null,Object.entries(tops).map(([t,v])=>h('li',null,h('b',null,t),` — ${v.items.join(', ')}`))):h('p',{text:'ไม่มีหัวข้อที่ต้องทบทวนเป็นพิเศษ — ตอบถูกในครั้งแรกทุกจุดที่สืบ'}),
+      h('h2',{text:'5) เฉลยจริง'}),
+      revealParts.length?revealParts:h('p',{class:'muted',text:'ยังไม่เปิดเฉลย — ครูกดเปิดทีละขั้นหลังอภิปรายกับนักเรียน'}),
+      h('div',{class:'row noprint',style:'margin:10px 0'},
+        h('button',{class:'btn amber',disabled:G.revealStep>=total,onclick:()=>{act('เปิดเฉลย',()=>{G.revealStep++;});renderReport();SFX.found();}},G.revealStep>=total?'เปิดเฉลยครบแล้ว':`เปิดเฉลยขั้นถัดไป (${G.revealStep}/${total})`),
+        h('button',{class:'btn',disabled:!G.revealStep,onclick:()=>{act('ซ่อนเฉลย',()=>{G.revealStep=0;});renderReport();}},'ซ่อนเฉลยทั้งหมด')),
+      h('div',{class:'row noprint',style:'margin-top:22px'},
+        h('button',{class:'btn primary',onclick:async()=>{if(!await confirmDlg('เล่นคดีนี้อีกครั้งตั้งแต่ต้น? ผลรอบนี้จะหายไป (ส่งออกผลไว้ก่อนได้)',{ok:'เล่นอีกครั้ง'}))return;beginGame(CASE,{demo:isDemo});}},'เล่นคดีนี้อีกครั้ง'),
+        h('button',{class:'btn',onclick:()=>showScreen('scrHome')},'กลับหน้าแรก'))));
+}
+
+/* ---------- init / wiring ---------- */
+function init(){
+  probeStorage();loadStore();applySettings();refreshHome();
+  $('#hmStart').onclick=()=>{audio();startFlow();};
+  $('#hmResume').onclick=()=>{audio();resumeGame();};
+  $('#hmStudio').onclick=()=>{renderStudio();showScreen('scrStudio');};
+  $('#hmSettings').onclick=()=>{renderSettings();showScreen('scrSettings');};
+  $('#hmHow').onclick=()=>{renderHow();showScreen('scrHow');};
+  $('#hmDemo').onclick=()=>{audio();beginGame(normalizeCase(clone(SAMPLE)),{demo:true});};
+  document.addEventListener('keydown',e=>{
+    if($('#scrGame').hidden||!G)return;
+    const tag=e.target.tagName,inField=['INPUT','TEXTAREA','SELECT'].includes(tag);
+    if(inField)return;
+    if(e.key===' '&&!['BUTTON','A'].includes(tag)){e.preventDefault();togglePause();return;}
+    if(dlg.open||dlgC.open||paused)return;
+    const k=e.key.length===1?e.key.toLowerCase():e.key;
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s'].includes(k)){keys[k]=true;if(k.startsWith('Arrow'))e.preventDefault();return;}
+    if(e.key==='Enter'&&(tag==='BODY'||tag==='CANVAS')){const s=nearestSpot(P.x,P.y,50);if(s){e.preventDefault();openSpot(s.evId);}}
+    if(e.key==='Escape'&&selNode){selNode=null;renderBoard();}
+  });
+  document.addEventListener('keyup',e=>{const k=e.key.length===1?e.key.toLowerCase():e.key;delete keys[k];});
+  window.addEventListener('blur',()=>{for(const k in keys)delete keys[k];});
+  window.addEventListener('beforeunload',()=>{persist(true);});
+  window.addEventListener('error',()=>{showBanner('เกิดข้อผิดพลาดบางอย่าง ถ้าหน้าจอค้าง ให้โหลดหน้าใหม่ — ข้อมูลที่บันทึกไว้ยังอยู่');});
+}
+init();
+})();
+</script>
+</body>
+</html>
