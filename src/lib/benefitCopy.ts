@@ -34,6 +34,14 @@ const KNOWN_COPY: Readonly<Record<string, BenefitCopy>> = {
   },
 };
 
+/** Capability ids whose customer-facing wording is intentionally code-owned. */
+export const FIXED_CUSTOMER_BENEFIT_IDS: readonly string[] = Object.freeze(Object.keys(KNOWN_COPY));
+const FIXED_CUSTOMER_BENEFIT_ID_SET = new Set(FIXED_CUSTOMER_BENEFIT_IDS);
+
+export function hasFixedCustomerBenefitCopy(featureId: string): boolean {
+  return FIXED_CUSTOMER_BENEFIT_ID_SET.has(featureId);
+}
+
 const IMPLEMENTATION_WORDING = /\bnull\b|signed\s*url|supabase|\brls\b|\bjwt\b|\bapi\b|database|service[ _-]?role|\bsql\b|\bjson\b|\buuid\b|\bendpoint\b|\bserver\b|\bcache\b/i;
 const RETIRED_MARKETING_WORDS = /พรีเมียม|premium/i;
 

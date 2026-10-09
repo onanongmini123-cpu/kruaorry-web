@@ -38,7 +38,6 @@ import {
   memberPlanChangeConfirmation,
   preferredAdminSubscription,
   renewalAmountThb,
-  type AdminPlan,
   type AdminSubscription,
 } from "@/lib/adminMembership";
 import {
@@ -62,6 +61,8 @@ import { AdminMobileNav } from "./AdminMobileNav";
 import { AdminOverviewInsights } from "./AdminOverviewInsights";
 import { AdminMembersPanel } from "./AdminMembersPanel";
 import type { AdminMemberListItem, AdminMemberRole } from "./memberList";
+import { AdminPlansPanel } from "./AdminPlansPanel";
+import type { AdminPlanOverviewItem, PlanBenefitRow } from "./planOverview";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
@@ -114,10 +115,7 @@ interface AdminResource {
   slug?: string | null;
 }
 
-interface AdminPlanRow extends AdminPlan {
-  is_public: boolean;
-  sort_order: number;
-}
+type AdminPlanRow = AdminPlanOverviewItem;
 
 interface AdminAuditLogRow {
   id: string;
@@ -225,16 +223,6 @@ interface AdminQueueSnapshot {
   reportPage: number;
 }
 
-interface PlanBenefitRow {
-  plan_id: string;
-  feature_id: string;
-  feature_name: string;
-  feature_description: string | null;
-  value_type: "boolean" | "integer";
-  limit_value: number | null;
-  sort_order: number;
-}
-
 type UploadStatus =
   | { phase: "idle" }
   | { phase: "uploading"; target: UploadTarget; progress: number; strategy: UploadStrategy; onPause: (() => void) | null; onCancel: () => void }
@@ -257,7 +245,7 @@ const BASE_NAV_ITEMS: SideNavGroup["items"] = [
   { key: "moderation", label: "รีวิว / รายงาน", icon: ShieldCheck },
   { key: "upgrades", label: "คำขออัปเกรด", icon: Wallet },
   { key: "members", label: "สมาชิก", icon: Users },
-  { key: "benefits", label: "ข้อความสิทธิ์แพ็ก", icon: ListChecks },
+  { key: "benefits", label: "แพ็กและสิทธิ์", icon: ListChecks },
 ];
 
 const OWNER_NAV_ITEM = { key: "audit", label: "ประวัติการแก้ไข", icon: History };
@@ -327,6 +315,9 @@ export default function AdminConsolePage() {
   const [reportPage, setReportPage] = useState(0);
   const [reportTotal, setReportTotal] = useState(0);
   const [benefitRows, setBenefitRows] = useState<PlanBenefitRow[]>([]);
+  const [memberDirectoryAvailable, setMemberDirectoryAvailable] = useState(false);
+  const [benefitDataAvailable, setBenefitDataAvailable] = useState(false);
+  const [planOverviewMessage, setPlanOverviewMessage] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
   const [premiumPlanIds, setPremiumPlanIds] = useState<Set<string> | null>(null);
   const [memberStatusNow, setMemberStatusNow] = useState(() => Date.now());
@@ -777,6 +768,7 @@ export default function AdminConsolePage() {
 
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
     if (memberError) console.error("Failed to load members:", memberError.message);
+    setMemberDirectoryAvailable(!memberError);
     setResources((resourceRows as unknown as AdminResource[] | null) ?? []);
     setMembers((memberRows as AdminMemberListItem[]) ?? []);
     if (premiumFeatureError) console.error("Failed to load premium plan capabilities (code=" + (premiumFeatureError.code || "unknown") + ")");
@@ -795,10 +787,14 @@ export default function AdminConsolePage() {
     if (featuredError) console.error("Failed to load featured resources:", featuredError.message);
     setFeaturedIds(((featuredRows ?? []) as { resource_id: string }[]).map((row) => row.resource_id));
     if (benefitError) console.error("Failed to load plan benefits:", benefitError.message);
+    setBenefitDataAvailable(!benefitError);
     setBenefitRows((benefits as PlanBenefitRow[]) ?? []);
     const basePlans: AdminPlanRow[] = ((basePlanRows ?? []) as Omit<AdminPlanRow, "renewal_price_amount_thb">[])
       .map((plan) => ({ ...plan, name: planDisplayName(plan.id, plan.name), renewal_price_amount_thb: null }));
     setPlans(basePlanError ? [] : basePlans);
+    setPlanOverviewMessage(memberError || basePlanError || benefitError
+      ? "ข้อมูลบางส่วนยังโหลดไม่สำเร็จ ระบบจึงซ่อนตัวเลขที่ยังยืนยันไม่ได้ กรุณารีเฟรชข้อมูลแล้วลองอีกครั้ง"
+      : null);
 
     const overviewResult = await overviewInsightsPromise;
     setOverviewInsights((current) => overviewResult.data ?? (overviewResult.unavailable ? null : current));
@@ -1864,27 +1860,25 @@ export default function AdminConsolePage() {
     }
   };
 
-  const handleBenefitCopy = async (featureId: string, event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (pendingAction) return;
-    const fields = new FormData(event.currentTarget);
-    const name = String(fields.get("name") ?? "").trim();
-    const description = String(fields.get("description") ?? "").trim();
-    if (!name) {
-      window.alert("กรุณากรอกชื่อสิทธิ์");
-      return;
-    }
-    setPendingAction(`benefit:${featureId}`);
+  const handleBenefitCopy = async (featureId: string, rawName: string, rawDescription: string): Promise<string | null> => {
+    const name = rawName.trim();
+    const description = rawDescription.trim();
+    if (!name) return "กรุณากรอกชื่อสิทธิ์";
+    const action = `benefit:${featureId}`;
+    if (!beginPendingAction(action)) return "กำลังทำรายการอื่นอยู่ กรุณารอสักครู่แล้วลองใหม่";
     try {
       const { error } = await supabase.rpc("admin_update_feature_copy", {
         p_feature_id: featureId,
         p_name: name,
         p_description: description,
       });
-      if (error) window.alert(`บันทึกข้อความสิทธิ์ไม่สำเร็จ: ${error.message}`);
-      else await reloadAdminData();
+      if (error) return friendlyErrorMessage(error, "บันทึกข้อความสิทธิ์ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      await reloadAdminData();
+      return null;
+    } catch (error) {
+      return friendlyErrorMessage(error, "บันทึกข้อความสิทธิ์ไม่สำเร็จ กรุณาลองอีกครั้ง");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -2693,35 +2687,19 @@ export default function AdminConsolePage() {
           )}
 
           {view === "benefits" && (
-            <div>
-              <h1 style={{ fontSize: "var(--fs-30)" }}>ข้อความสิทธิ์แพ็ก</h1>
-              <p style={{ margin: "var(--sp-3) 0 var(--sp-6)", color: "var(--text-muted)" }}>แก้ได้เฉพาะชื่อและคำอธิบายของ capability ที่ระบบรองรับ การตั้งค่านี้ไม่เปิดหรือปิดสิทธิ์ของแพ็ก</p>
-              {benefitRows.length === 0 ? (
-                <EmptyState icon={ListChecks} title="ยังไม่มีสิทธิ์ที่เปิดใช้งาน" description="ระบบจะแสดงเฉพาะ capability ที่เปิดใช้งานจริงในแพ็ก" />
-              ) : (
-                <div className="kru-admin-card-list">
-                  {[...new Map(benefitRows.map((row) => [row.feature_id, row])).values()].map((feature) => {
-                    const assignedPlans = benefitRows.filter((row) => row.feature_id === feature.feature_id).map((row) => planNameById.get(row.plan_id) ?? row.plan_id);
-                    return (
-                      <form key={feature.feature_id} className="kru-card kru-admin-benefit-card" onSubmit={(event) => handleBenefitCopy(feature.feature_id, event)}>
-                        <div>
-                          <h2 style={{ fontSize: "var(--fs-16)" }}>{feature.feature_name}</h2>
-                          <p className="kru-admin-field-help">ใช้ในแพ็ก: {assignedPlans.join(", ")} · รหัส {feature.feature_id}</p>
-                        </div>
-                        <Input name="name" label="ชื่อสิทธิ์ที่แสดง" defaultValue={feature.feature_name} required maxLength={100} />
-                        <div className="kru-field">
-                          <label className="kru-field__label" htmlFor={`benefit-description-${feature.feature_id}`}>คำอธิบาย</label>
-                          <textarea id={`benefit-description-${feature.feature_id}`} name="description" className="kru-input kru-admin-textarea" defaultValue={feature.feature_description ?? ""} maxLength={500} />
-                        </div>
-                        <Button type="submit" size="sm" loading={pendingAction === `benefit:${feature.feature_id}`} disabled={pendingAction !== null && pendingAction !== `benefit:${feature.feature_id}`}>
-                          บันทึกข้อความ
-                        </Button>
-                      </form>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <AdminPlansPanel
+              plans={plans}
+              benefitRows={benefitRows}
+              members={members}
+              subscriptionsByUser={subscriptionsByUser}
+              countsAvailable={subscriptions !== null && premiumPlanIds !== null && memberDirectoryAvailable}
+              benefitsAvailable={benefitDataAvailable}
+              founderSeatsUsed={founderSeatsUsed}
+              referenceNow={memberStatusNow}
+              pendingFeatureId={pendingAction?.startsWith("benefit:") ? pendingAction.slice("benefit:".length) : null}
+              dataMessage={planOverviewMessage ?? (subscriptions === null ? membershipDataError : null)}
+              onSaveBenefitCopy={handleBenefitCopy}
+            />
           )}
 
           {view === "upgrades" && (
