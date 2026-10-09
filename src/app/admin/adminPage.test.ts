@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const membersSource = readFileSync(new URL("./AdminMembersPanel.tsx", import.meta.url), "utf8");
+const plansSource = readFileSync(new URL("./AdminPlansPanel.tsx", import.meta.url), "utf8");
 const mobileNavSource = readFileSync(new URL("./AdminMobileNav.tsx", import.meta.url), "utf8");
 
 describe("responsive admin console contracts", () => {
@@ -64,6 +65,17 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).not.toContain("form.is_free");
     expect(pageSource).toContain("p_access_mode: form.access_mode");
     expect(pageSource).not.toContain('rpc("set_resource_access"');
+  });
+
+  it("keeps the reviewed benefit-copy RPC while rendering the package overview in a focused component", () => {
+    expect(pageSource).toContain('{ key: "benefits", label: "แพ็กและสิทธิ์"');
+    expect(pageSource).toContain("<AdminPlansPanel");
+    expect(pageSource).toContain('rpc("admin_update_feature_copy"');
+    expect(plansSource).toContain('role="tablist"');
+    expect(plansSource).toContain('aria-selected={tab === item}');
+    expect(plansSource).toContain('event.key === "ArrowRight"');
+    expect(plansSource).toContain("ข้อความนี้ถูกกำหนดในระบบ แก้ในฐานข้อมูลไม่เปลี่ยนหน้าเว็บ");
+    expect(plansSource).not.toContain("แก้ราคา");
   });
 
   it("keeps hidden legacy plans selectable for new premium resources", () => {
