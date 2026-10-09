@@ -59,6 +59,7 @@ import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { AdminMobileNav } from "./AdminMobileNav";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
+import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
 import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
@@ -367,6 +368,10 @@ export default function AdminConsolePage() {
   // public bucket if the row save never happens (validation failure,
   // closed form, etc.).
   const [selectedCoverFile, setSelectedCoverFile] = useState<File | null>(null);
+  // The original selection stays local while the inline crop panel is open.
+  // Only its optimized result replaces selectedCoverFile and can be uploaded.
+  const [coverCropSource, setCoverCropSource] = useState<File | null>(null);
+  const [coverCropMeta, setCoverCropMeta] = useState<{ width: number; height: number; extension: "webp" | "jpg" } | null>(null);
   const [fileRemoved, setFileRemoved] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({ phase: "idle" });
   // Storage cleanup that failed and was NOT dropped — kept here so it can
@@ -384,6 +389,7 @@ export default function AdminConsolePage() {
   const [moderationTab, setModerationTab] = useState<"reviews" | "reports">("reviews");
   const paymentDialogRef = useRef<HTMLElement>(null);
   const paymentTriggerRef = useRef<HTMLElement | null>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const pendingActionRef = useRef<string | null>(null);
 
   // Derived (not state) so nothing calls setState from inside an effect —
@@ -984,6 +990,8 @@ export default function AdminConsolePage() {
     setFormBaseline(JSON.stringify(EMPTY_FORM));
     setSelectedFile(null);
     setSelectedCoverFile(null);
+    setCoverCropSource(null);
+    setCoverCropMeta(null);
     setFileRemoved(false);
     setFormError(null);
     setShowForm(true);
@@ -997,6 +1005,8 @@ export default function AdminConsolePage() {
     }
     setSelectedFile(null);
     setSelectedCoverFile(null);
+    setCoverCropSource(null);
+    setCoverCropMeta(null);
     setFileRemoved(false);
     setSavedSlug("");
     setForm(EMPTY_FORM);
@@ -1033,6 +1043,8 @@ export default function AdminConsolePage() {
     setPendingResourceId(null);
     setSelectedFile(null);
     setSelectedCoverFile(null);
+    setCoverCropSource(null);
+    setCoverCropMeta(null);
     setFileRemoved(false);
     setSavedSlug(data.slug ?? "");
     const nextForm = {
@@ -1067,7 +1079,13 @@ export default function AdminConsolePage() {
       return;
     }
     setFormError(null);
-    setSelectedCoverFile(file);
+    setCoverCropSource(file);
+    setCoverCropMeta(null);
+  };
+
+  const closeCoverCropper = () => {
+    setCoverCropSource(null);
+    window.requestAnimationFrame(() => coverInputRef.current?.focus());
   };
 
   // The object path is fixed the moment a file is selected — every retry
@@ -1409,6 +1427,8 @@ export default function AdminConsolePage() {
       setPendingResourceId(null);
       setSelectedFile(null);
       setSelectedCoverFile(null);
+      setCoverCropSource(null);
+      setCoverCropMeta(null);
       setFileRemoved(false);
       setShowForm(false);
       await reloadAdminData();
@@ -2007,7 +2027,7 @@ export default function AdminConsolePage() {
 
   const resourceCounts = statusCounts(resources);
   const visibleResources = filterResources(resources, { query: resourceQuery, status: resourceFilter });
-  const formDirty = showForm && (JSON.stringify(form) !== formBaseline || Boolean(selectedFile) || Boolean(selectedCoverFile) || fileRemoved);
+  const formDirty = showForm && (JSON.stringify(form) !== formBaseline || Boolean(selectedFile) || Boolean(selectedCoverFile) || Boolean(coverCropSource) || fileRemoved);
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -2135,7 +2155,7 @@ export default function AdminConsolePage() {
                 subtitle={form.title.trim() || (editingId ? undefined : "เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่")}
                 submitLabel={editingId ? "บันทึกการแก้ไข" : "บันทึกเป็นฉบับร่าง"}
                 saving={saving}
-                submitDisabled={mutationBusy && !saving}
+                submitDisabled={(mutationBusy && !saving) || Boolean(coverCropSource)}
                 dirty={formDirty}
                 error={formError}
                 onClose={closeForm}
@@ -2303,13 +2323,27 @@ export default function AdminConsolePage() {
                       <img
                         src={coverPreviewUrl || form.cover_image_url}
                         alt="ตัวอย่างรูปปก"
-                        style={{ width: "100%", maxWidth: 320, height: 160, objectFit: "cover", borderRadius: "var(--r-md)", border: "1px solid var(--border-subtle)", marginBottom: "var(--sp-3)" }}
+                        style={{ width: "100%", maxWidth: 320, aspectRatio: "4 / 3", height: "auto", objectFit: "cover", borderRadius: "var(--r-md)", border: "1px solid var(--border-subtle)", marginBottom: "var(--sp-3)" }}
                       />
                     )}
                     {selectedCoverFile && uploadStatusFor("cover") === null && (
-                      <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginBottom: "var(--sp-3)" }}>รูปใหม่ — จะอัปโหลดเมื่อกด &quot;บันทึก&quot;</div>
+                      <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)", marginBottom: "var(--sp-3)" }}>
+                        รูปใหม่ {coverCropMeta ? `${coverCropMeta.width}×${coverCropMeta.height} ${coverCropMeta.extension.toUpperCase()} · ${formatFileSize(selectedCoverFile.size)}` : ""} — จะอัปโหลดเมื่อกด &quot;บันทึก&quot;
+                      </div>
                     )}
-                    <input id="resource-cover" type="file" accept="image/*" onChange={handleCoverSelect} disabled={uploadStatus.phase !== "idle"} />
+                    <input ref={coverInputRef} id="resource-cover" type="file" accept="image/*" onChange={handleCoverSelect} disabled={uploadStatus.phase !== "idle" || Boolean(coverCropSource)} />
+                    {coverCropSource && (
+                      <CoverCropper
+                        file={coverCropSource}
+                        onCancel={closeCoverCropper}
+                        onConfirm={(croppedFile, output) => {
+                          setSelectedCoverFile(croppedFile);
+                          setCoverCropMeta(output);
+                          setFormError(null);
+                          closeCoverCropper();
+                        }}
+                      />
+                    )}
                   </div>
 
                   </section>
