@@ -37,6 +37,7 @@ const KNOWN_MESSAGES: ReadonlyArray<readonly [string, string]> = [
   ["Saved resource limit reached", "บัญชีนี้บันทึกสื่อที่ชอบครบตามจำนวนที่กำหนดแล้ว ลบรายการเดิมก่อนบันทึกเพิ่ม"],
   ["Saving resources is not available", "แพ็กเกจนี้ยังบันทึกสื่อที่ชอบไม่ได้"],
   ["Avatar object does not belong to this member", "บันทึกรูปโปรไฟล์ไม่สำเร็จ กรุณาอัปโหลดรูปใหม่อีกครั้ง"],
+  ["Cannot demote the last remaining owner", "ไม่สามารถลดสิทธิ์เจ้าของระบบคนสุดท้ายได้ — ต้องมีเจ้าของระบบอย่างน้อย 1 คนเสมอ"],
   ["Display name must contain", "ชื่อที่แสดงต้องมี 2–80 ตัวอักษร"],
   ["Request title must contain", "ชื่อคำขอต้องมี 3–200 ตัวอักษร"],
   ["Review must contain", "รีวิวต้องมี 3–1,000 ตัวอักษร"],

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const membersSource = readFileSync(new URL("./AdminMembersPanel.tsx", import.meta.url), "utf8");
 const mobileNavSource = readFileSync(new URL("./AdminMobileNav.tsx", import.meta.url), "utf8");
 
 describe("responsive admin console contracts", () => {
@@ -107,11 +108,20 @@ describe("responsive admin console contracts", () => {
   });
 
   it("renders members and audit rows as labelled mobile cards rather than wide-only tables", () => {
-    expect(pageSource).toContain('data-label="ครู"');
+    expect(membersSource).toContain('data-label="ครู"');
     expect(pageSource).toContain('data-label="ผู้แก้ไข"');
     expect(pageSource).toContain(".kru-admin-responsive-table td::before");
     expect(pageSource).not.toContain("minWidth: 720");
     expect(pageSource).not.toContain("minWidth: 560");
+  });
+
+  it("warns before changing the viewer's own role and refreshes member status time", () => {
+    expect(pageSource).toContain("adminId={adminId}");
+    expect(pageSource).toContain("referenceNow={memberStatusNow}");
+    expect(pageSource).toContain("setMemberStatusNow(Date.now())");
+    expect(membersSource).toContain("roleTarget?.id === adminId");
+    expect(membersSource).toContain("roleChangeConfirmationCopy(");
+    expect(membersSource).toContain("roleTarget.role, nextRole, roleTargetIsSelf");
   });
 
   it("searches upgrade requests by reference, name, or email and displays payment workflow status", () => {

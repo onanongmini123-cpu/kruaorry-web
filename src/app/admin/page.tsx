@@ -35,7 +35,6 @@ import {
   adminMembershipApplicationStatusLabel,
   canOfferAdminPlan,
   canRenewMember,
-  effectiveMemberPlan,
   memberPlanChangeConfirmation,
   preferredAdminSubscription,
   renewalAmountThb,
@@ -58,8 +57,11 @@ import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { fetchAdminOverviewInsights, type AdminOverviewInsights as AdminOverviewInsightsData } from "@/lib/adminOverview";
+import { friendlyErrorMessage } from "@/lib/userMessages";
 import { AdminMobileNav } from "./AdminMobileNav";
 import { AdminOverviewInsights } from "./AdminOverviewInsights";
+import { AdminMembersPanel } from "./AdminMembersPanel";
+import type { AdminMemberListItem, AdminMemberRole } from "./memberList";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
@@ -115,14 +117,6 @@ interface AdminResource {
 interface AdminPlanRow extends AdminPlan {
   is_public: boolean;
   sort_order: number;
-}
-
-interface AdminMember {
-  id: string;
-  full_name: string | null;
-  email: string;
-  plan: string;
-  role: "member" | "admin" | "owner";
 }
 
 interface AdminAuditLogRow {
@@ -270,7 +264,7 @@ const OWNER_NAV_ITEM = { key: "audit", label: "ประวัติการแ
 
 const REQUEST_LABEL: Record<AdminRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
 const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
-const ROLE_LABEL: Record<AdminMember["role"], string> = { member: "สมาชิก", admin: "แอดมิน", owner: "เจ้าของระบบ" };
+const ROLE_LABEL: Record<AdminMemberRole, string> = { member: "สมาชิก", admin: "แอดมิน", owner: "เจ้าของระบบ" };
 const AUDIT_FIELD_LABEL: Record<AdminAuditLogRow["field"], string> = { role: "บทบาท", plan: "แพ็ก" };
 const MODERATION_PAGE_SIZE = 50;
 const ADMIN_REVIEW_SELECT = "id, resource_id, user_id, rating, body, moderation_status, created_at, updated_at, resources(title), profiles!resource_reviews_user_id_fkey(full_name, email)";
@@ -306,10 +300,10 @@ export default function AdminConsolePage() {
   const [checking, setChecking] = useState(true);
   const [allowed, setAllowed] = useState(false);
   const [adminId, setAdminId] = useState<string | null>(null);
-  const [viewerRole, setViewerRole] = useState<AdminMember["role"] | null>(null);
+  const [viewerRole, setViewerRole] = useState<AdminMemberRole | null>(null);
   const [view, setView] = useState<View>("dash");
   const [resources, setResources] = useState<AdminResource[]>([]);
-  const [members, setMembers] = useState<AdminMember[]>([]);
+  const [members, setMembers] = useState<AdminMemberListItem[]>([]);
   const [requests, setRequests] = useState<AdminRequest[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<AdminUpgradeRequest[]>([]);
   const [upgradeSearch, setUpgradeSearch] = useState("");
@@ -334,6 +328,8 @@ export default function AdminConsolePage() {
   const [reportTotal, setReportTotal] = useState(0);
   const [benefitRows, setBenefitRows] = useState<PlanBenefitRow[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
+  const [premiumPlanIds, setPremiumPlanIds] = useState<Set<string> | null>(null);
+  const [memberStatusNow, setMemberStatusNow] = useState(() => Date.now());
   const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [lineSlipWorkflowReadiness, setLineSlipWorkflowReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
@@ -755,8 +751,9 @@ export default function AdminConsolePage() {
     // readiness marker has been verified.
     const baseDataPromise = Promise.all([
       loadResourceList(),
-      supabase.from("profiles").select("id, full_name, email, plan, role").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, full_name, email, plan, role, created_at").order("created_at", { ascending: false }),
       supabase.from("plans").select("id, name, lifecycle_status, price_amount_thb, is_upgradeable, is_public, sort_order").order("sort_order", { ascending: true }),
+      supabase.from("plan_features").select("plan_id, feature_id, enabled").eq("feature_id", "library.premium").eq("enabled", true),
       // RLS scopes this to owners only — a non-owner viewer just gets [] back, no error.
       supabase.from("admin_audit_log").select("id, actor_id, target_id, field, old_value, new_value, created_at").order("created_at", { ascending: false }).limit(200),
       supabase.from("resource_plan_access").select("resource_id, plan_id").order("plan_id", { ascending: true }),
@@ -771,6 +768,7 @@ export default function AdminConsolePage() {
       { data: resourceRows, error: resourceError },
       { data: memberRows, error: memberError },
       { data: basePlanRows, error: basePlanError },
+      { data: premiumFeatureRows, error: premiumFeatureError },
       { data: auditRows, error: auditError },
       { data: accessRows, error: accessError },
       { data: featuredRows, error: featuredError },
@@ -780,7 +778,11 @@ export default function AdminConsolePage() {
     if (resourceError) console.error("Failed to load resources:", resourceError.message);
     if (memberError) console.error("Failed to load members:", memberError.message);
     setResources((resourceRows as unknown as AdminResource[] | null) ?? []);
-    setMembers((memberRows as AdminMember[]) ?? []);
+    setMembers((memberRows as AdminMemberListItem[]) ?? []);
+    if (premiumFeatureError) console.error("Failed to load premium plan capabilities (code=" + (premiumFeatureError.code || "unknown") + ")");
+    setPremiumPlanIds(premiumFeatureError
+      ? null
+      : new Set(((premiumFeatureRows ?? []) as { plan_id: string }[]).map((feature) => feature.plan_id)));
     if (basePlanError) console.error("Failed to load plans:", basePlanError.message);
     if (auditError) console.error("Failed to load audit log:", auditError.message);
     setAuditLog(auditRows ?? []);
@@ -962,6 +964,7 @@ export default function AdminConsolePage() {
     const action = "queue-refresh";
     if (!beginPendingAction(action)) return;
     try {
+      setMemberStatusNow(Date.now());
       const refreshed = await refreshAdminQueues();
       if (!refreshed) {
         window.alert("รีเฟรชข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง");
@@ -1895,12 +1898,12 @@ export default function AdminConsolePage() {
     try {
       const { error } = await supabase.rpc("set_member_plan", { p_user_id: id, p_plan_id: nextPlan, p_reason: "admin_members_table" });
       if (error) {
-        window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error.message}`);
+        window.alert(friendlyErrorMessage(error, "อัปเดตแพ็กไม่สำเร็จ กรุณาลองอีกครั้ง"));
         return;
       }
       await reloadAdminData();
     } catch (error) {
-      window.alert(`อัปเดตแพ็กไม่สำเร็จ: ${error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเชื่อมต่อ"}`);
+      window.alert(friendlyErrorMessage(error, "อัปเดตแพ็กไม่สำเร็จ กรุณาลองอีกครั้ง"));
     } finally {
       setChangingPlanId(null);
     }
@@ -1921,32 +1924,23 @@ export default function AdminConsolePage() {
     openPaymentConfirmation({ kind: "renewal", subscription, amountThb: price, title: `ต่ออายุ ${plan.name}` });
   };
 
-  // Only an owner can reach this at all — the role <select> in the members
-  // table below is only rendered as editable for an owner viewer, and the
+  // Only an owner can reach this at all — the role action in the members
+  // panel is only rendered for an owner viewer, and the
   // server independently enforces the same rule (is_owner() in the
   // prevent_self_privilege_escalation trigger), so this is UX, not the
   // actual security boundary.
-  const handleMemberRoleChange = async (id: string, role: AdminMember["role"]) => {
-    if (mutationBusy) return;
-    if (id === adminId && role === "member" && !window.confirm("นี่คือบัญชีของคุณเอง — ลดสิทธิ์เป็นสมาชิกจะทำให้ออกจากหลังบ้านทันที ยืนยันหรือไม่?")) {
-      return;
-    }
-    if (id === adminId && viewerRole === "owner" && role !== "owner" && !window.confirm("นี่คือบัญชีของคุณเอง — สละสิทธิ์เจ้าของระบบ ยืนยันหรือไม่? ระบบต้องมีเจ้าของระบบอย่างน้อย 1 คนเสมอ")) {
-      return;
-    }
-    setPendingAction(`role:${id}`);
+  const handleMemberRoleChange = async (member: AdminMemberListItem, role: AdminMemberRole): Promise<string | null> => {
+    if (mutationBusy) return "กำลังทำรายการอื่นอยู่ กรุณารอสักครู่แล้วลองใหม่";
+    const action = `role:${member.id}`;
+    if (!beginPendingAction(action)) return "กำลังทำรายการอื่นอยู่ กรุณารอสักครู่แล้วลองใหม่";
     try {
-      const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+      const { error } = await supabase.from("profiles").update({ role }).eq("id", member.id);
       if (error) {
         // Failed (e.g. the last-owner guard rejected it) — nothing actually
         // changed server-side, so local role/UI must stay exactly as it was.
-        const friendly = /last remaining owner/i.test(error.message)
-          ? "ไม่สามารถลดสิทธิ์เจ้าของระบบคนสุดท้ายได้ — ต้องมีเจ้าของระบบอย่างน้อย 1 คนเสมอ"
-          : `อัปเดตบทบาทไม่สำเร็จ: ${error.message}`;
-        window.alert(friendly);
-        return;
+        return friendlyErrorMessage(error, "อัปเดตบทบาทไม่สำเร็จ กรุณาลองอีกครั้ง");
       }
-      if (id === adminId && viewerRole) {
+      if (member.id === adminId && viewerRole) {
         // The update above actually took effect on the viewer's own row —
         // immediately align locally-rendered privileges with the server.
         const effect = applySelfRoleChange(viewerRole, role, view);
@@ -1956,13 +1950,16 @@ export default function AdminConsolePage() {
           if (effect.view) setView(effect.view as View);
           if (effect.redirectToApp) {
             router.push("/app");
-            return;
+            return null;
           }
         }
       }
       await reloadAdminData();
+      return null;
+    } catch (error) {
+      return friendlyErrorMessage(error, "อัปเดตบทบาทไม่สำเร็จ กรุณาลองอีกครั้ง");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -2849,105 +2846,26 @@ export default function AdminConsolePage() {
           )}
 
           {view === "members" && (
-            <div>
-              <h1 style={{ fontSize: "var(--fs-30)" }}>สมาชิก</h1>
-              <p style={{ margin: "var(--sp-3) 0 var(--sp-3)", color: "var(--text-muted)" }}>รายชื่อผู้ใช้ที่สมัครจริง · แพ็กที่แสดงคำนวณจากสิทธิ์ที่ยังมีผล ไม่ใช่ค่าแคชในโปรไฟล์</p>
-              <p style={{ margin: "0 0 var(--sp-6)", color: "var(--text-muted)" }}>
-                ยืนยันชำระ Founder แล้ว: {founderSeatsUsed === null ? "ยังตรวจสอบไม่ได้" : `${founderSeatsUsed}/100`}
-              </p>
-              {membershipDataError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: "var(--sp-5)" }}>{membershipDataError}</p>}
-              {members.length === 0 ? (
-                <EmptyState icon={Users} title="ยังไม่มีสมาชิก" description="" />
-              ) : (
-                <div className="kru-card kru-admin-responsive-table-wrap">
-                  <table className="kru-admin-responsive-table">
-                    <thead>
-                      <tr style={{ background: "var(--surface-sunken)", textAlign: "left" }}>
-                        {["ครู", "แพ็ก", "บทบาท", "การต่ออายุ"].map((h) => (
-                          <th key={h} style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-13)", color: "var(--text-faint)" }}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {members.map((m) => {
-                        const subscription = subscriptionsByUser.get(m.id) ?? null;
-                        const effectivePlan = subscriptions === null ? m.plan : effectiveMemberPlan(subscription);
-                        const renewablePlan = plans.find((plan) => plan.id === subscription?.plan_id && plan.lifecycle_status === "active");
-                        const renewalPrice = subscription && renewablePlan
-                          ? renewalAmountThb(subscription, renewablePlan.renewal_price_amount_thb ?? renewablePlan.price_amount_thb)
-                          : null;
-                        const canRenew = subscriptions !== null && canRenewMember(subscription) && renewalPrice !== null;
-                        return (
-                          <tr key={m.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                          <td data-label="ครู" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-                            <div style={{ fontWeight: "var(--fw-medium)" }}>{m.full_name || "(ยังไม่ระบุชื่อ)"}</div>
-                            <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{m.email}</div>
-                          </td>
-                          <td data-label="แพ็ก" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-                            <select
-                              className="kru-select"
-                              aria-label={`แพ็กของ ${m.full_name || m.email}`}
-                              style={{ minHeight: 44, width: "auto" }}
-                              value={effectivePlan}
-                              disabled={subscriptions === null || mutationBusy}
-                              onChange={(e) => {
-                                const nextPlan = e.currentTarget.value;
-                                // Keep the visible selection unchanged until the confirmed RPC succeeds.
-                                e.currentTarget.value = effectivePlan;
-                                void handleMemberPlanChange(m.id, effectivePlan, nextPlan, subscription);
-                              }}
-                            >
-                              {plans
-                                .filter((plan) => canOfferAdminPlan(plan, effectivePlan))
-                                .map((plan) => (
-                                  <option key={plan.id} value={plan.id}>
-                                    {plan.name}{plan.lifecycle_status === "legacy" ? " — เดิม" : ""}
-                                  </option>
-                                ))}
-                            </select>
-                            {subscriptions === null && <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>แสดงค่าเดิม ยังไม่ยืนยันสิทธิ์</div>}
-                            {subscriptions !== null && effectivePlan === "free" && m.plan !== "free" &&
-                              <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>แพ็กเดิมหมดอายุหรือไม่มีสิทธิ์ที่มีผล</div>}
-                            {subscription?.current_period_end && Number.isFinite(Date.parse(subscription.current_period_end)) &&
-                              <div style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>สิ้นสุด {new Date(subscription.current_period_end).toLocaleDateString("th-TH")}</div>}
-                          </td>
-                          <td data-label="บทบาท" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-                            {isOwner ? (
-                              <select
-                                className="kru-select"
-                                aria-label={`บทบาทของ ${m.full_name || m.email}`}
-                                style={{ minHeight: 44, width: "auto" }}
-                                value={m.role}
-                                disabled={mutationBusy}
-                                onChange={(e) => handleMemberRoleChange(m.id, e.target.value as AdminMember["role"])}
-                              >
-                                <option value="member">สมาชิก</option>
-                                <option value="admin">แอดมิน</option>
-                                <option value="owner">เจ้าของระบบ</option>
-                              </select>
-                            ) : (
-                              <Badge tone={m.role === "member" ? "neutral" : "success"}>{ROLE_LABEL[m.role]}</Badge>
-                            )}
-                          </td>
-                          <td data-label="การต่ออายุ" style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-                            {canRenew && subscription ? (
-                              <Button size="sm" variant="ghost" disabled={!membershipMutationsReady || mutationBusy} onClick={() => handleRenewSubscription(subscription)}>
-                                ยืนยันชำระเพื่อต่ออายุ
-                              </Button>
-                            ) : "—"}
-                          </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <AdminMembersPanel
+              members={members}
+              subscriptions={subscriptions}
+              subscriptionsByUser={subscriptionsByUser}
+              plans={plans}
+              premiumPlanIds={premiumPlanIds}
+              founderSeatsUsed={founderSeatsUsed}
+              membershipDataError={membershipDataError}
+              membershipMutationsReady={membershipMutationsReady}
+              mutationBusy={mutationBusy}
+              isOwner={isOwner}
+              adminId={adminId}
+              referenceNow={memberStatusNow}
+              onMemberPlanChange={(id, currentPlan, nextPlan, subscription) => {
+                void handleMemberPlanChange(id, currentPlan, nextPlan, subscription);
+              }}
+              onRenewSubscription={handleRenewSubscription}
+              onRoleChange={handleMemberRoleChange}
+            />
           )}
-
           {view === "audit" && isOwner && (
             <div>
               <h1 style={{ fontSize: "var(--fs-30)" }}>ประวัติการแก้ไข</h1>
@@ -2970,7 +2888,7 @@ export default function AdminConsolePage() {
                       {auditLog.map((entry) => {
                         const actor = members.find((m) => m.id === entry.actor_id);
                         const target = members.find((m) => m.id === entry.target_id);
-                        const displayValue = (v: string | null) => (v == null ? "—" : entry.field === "role" ? (ROLE_LABEL[v as AdminMember["role"]] ?? v) : v);
+                        const displayValue = (v: string | null) => (v == null ? "—" : entry.field === "role" ? (ROLE_LABEL[v as AdminMemberRole] ?? v) : v);
                         return (
                           <tr key={entry.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
                             <td data-label="ผู้แก้ไข" style={{ padding: "var(--sp-4) var(--sp-5)", fontSize: "var(--fs-14)" }}>{actor?.full_name || actor?.email || "ระบบ"}</td>
