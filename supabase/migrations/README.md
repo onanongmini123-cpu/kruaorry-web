@@ -524,6 +524,21 @@ and verify with `supabase/verification/056-verify.sql`. Run
 aggregate, no-PII, no-write, rollback, and re-apply checks. The frontend fails
 softly while the RPC is absent, leaving every existing admin tool available.
 
+Migration `20261009100000_057_admin_plan_resource_summary.sql` is **pending**
+(not applied by this repository). It adds one read-only aggregate RPC for the
+admin “สื่อกับแพ็ก” tab. It counts published resources by the same four
+access modes used by `can_access_resource()`, returns aggregate Pro-resource
+coverage and the latest five resource titles per plan, and flags published
+`plans` resources that have no plan relation (at most ten titles). The RPC
+checks `is_admin()` before reading data, uses an empty `search_path`, grants
+EXECUTE only to `authenticated`, returns no member data, and performs no
+writes. Apply to a Preview database first; roll back with
+`supabase/rollbacks/20261009100000_057_admin_plan_resource_summary.rollback.sql`
+and verify with `supabase/verification/057-verify.sql`. Run
+`npm run test:admin-plan-resources-sql` for real-chain permission, aggregate,
+no-PII, no-write, rollback, and re-apply checks. The frontend fails softly
+while the RPC is absent and leaves the other three “แพ็กและสิทธิ์” tabs available.
+
 The pending files 052–054 above do not depend on each other: every apply order
 gives the same final state. The hand-off report under `docs/` has the rollout
 runbook (prerequisites, pre-check, apply, verification, rollback, post-deploy

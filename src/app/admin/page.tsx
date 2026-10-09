@@ -56,6 +56,7 @@ import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
 import { fetchAdminOverviewInsights, type AdminOverviewInsights as AdminOverviewInsightsData } from "@/lib/adminOverview";
+import { fetchAdminPlanResourceSummary, type AdminPlanResourceSummary } from "@/lib/adminPlanResources";
 import { friendlyErrorMessage } from "@/lib/userMessages";
 import { AdminMobileNav } from "./AdminMobileNav";
 import { AdminOverviewInsights } from "./AdminOverviewInsights";
@@ -329,6 +330,9 @@ export default function AdminConsolePage() {
   const [overviewInsights, setOverviewInsights] = useState<AdminOverviewInsightsData | null>(null);
   const [overviewInsightsLoading, setOverviewInsightsLoading] = useState(true);
   const [overviewInsightsMessage, setOverviewInsightsMessage] = useState<string | null>(null);
+  const [planResourceSummary, setPlanResourceSummary] = useState<AdminPlanResourceSummary | null>(null);
+  const [planResourceSummaryLoading, setPlanResourceSummaryLoading] = useState(true);
+  const [planResourceSummaryMessage, setPlanResourceSummaryMessage] = useState<string | null>(null);
   const [changingPlanId, setChangingPlanId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AdminAuditLogRow[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -736,6 +740,7 @@ export default function AdminConsolePage() {
     setMembershipSchemaReadiness("checking");
     setLineSlipWorkflowReadiness("checking");
     setOverviewInsightsLoading(true);
+    setPlanResourceSummaryLoading(true);
     // Keep the content, moderation and member-directory tools available while
     // the payment-confirmation schema is being rolled out. Only the second
     // batch below touches 048 columns/RPCs, and it cannot run until the shared
@@ -754,6 +759,7 @@ export default function AdminConsolePage() {
     const readinessPromise = fetchMembershipSchemaReadiness(supabase);
     const lineSlipReadinessPromise = fetchMembershipLineSlipWorkflowReadiness(supabase);
     const overviewInsightsPromise = fetchAdminOverviewInsights(supabase);
+    const planResourceSummaryPromise = fetchAdminPlanResourceSummary(supabase);
 
     const [
       { data: resourceRows, error: resourceError },
@@ -796,10 +802,16 @@ export default function AdminConsolePage() {
       ? "ข้อมูลบางส่วนยังโหลดไม่สำเร็จ ระบบจึงซ่อนตัวเลขที่ยังยืนยันไม่ได้ กรุณารีเฟรชข้อมูลแล้วลองอีกครั้ง"
       : null);
 
-    const overviewResult = await overviewInsightsPromise;
+    const [overviewResult, planResourceResult] = await Promise.all([
+      overviewInsightsPromise,
+      planResourceSummaryPromise,
+    ]);
     setOverviewInsights((current) => overviewResult.data ?? (overviewResult.unavailable ? null : current));
     setOverviewInsightsMessage(overviewResult.message);
     setOverviewInsightsLoading(false);
+    setPlanResourceSummary(planResourceResult.data);
+    setPlanResourceSummaryMessage(planResourceResult.message);
+    setPlanResourceSummaryLoading(false);
 
     const [readiness, lineSlipReadiness] = await Promise.all([
       readinessPromise,
@@ -2698,6 +2710,10 @@ export default function AdminConsolePage() {
               referenceNow={memberStatusNow}
               pendingFeatureId={pendingAction?.startsWith("benefit:") ? pendingAction.slice("benefit:".length) : null}
               dataMessage={planOverviewMessage ?? (subscriptions === null ? membershipDataError : null)}
+              resourceSummary={planResourceSummary}
+              resourceSummaryLoading={planResourceSummaryLoading}
+              resourceSummaryMessage={planResourceSummaryMessage}
+              onOpenContent={() => handleNavChange("content")}
               onSaveBenefitCopy={handleBenefitCopy}
             />
           )}
