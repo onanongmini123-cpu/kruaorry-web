@@ -115,6 +115,15 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).not.toContain("minWidth: 560");
   });
 
+  it("warns before changing the viewer's own role and refreshes member status time", () => {
+    expect(pageSource).toContain("adminId={adminId}");
+    expect(pageSource).toContain("referenceNow={memberStatusNow}");
+    expect(pageSource).toContain("setMemberStatusNow(Date.now())");
+    expect(membersSource).toContain("roleTarget?.id === adminId");
+    expect(membersSource).toContain("roleChangeConfirmationCopy(");
+    expect(membersSource).toContain("roleTarget.role, nextRole, roleTargetIsSelf");
+  });
+
   it("searches upgrade requests by reference, name, or email and displays payment workflow status", () => {
     expect(pageSource).toContain('const [upgradeSearch, setUpgradeSearch]');
     expect(pageSource).toContain("matchesAdminUpgradeSearch(request, upgradeSearch)");

@@ -329,6 +329,7 @@ export default function AdminConsolePage() {
   const [benefitRows, setBenefitRows] = useState<PlanBenefitRow[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[] | null>(null);
   const [premiumPlanIds, setPremiumPlanIds] = useState<Set<string> | null>(null);
+  const [memberStatusNow, setMemberStatusNow] = useState(() => Date.now());
   const [membershipSchemaReadiness, setMembershipSchemaReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [lineSlipWorkflowReadiness, setLineSlipWorkflowReadiness] = useState<MembershipSchemaReadiness>("checking");
   const [membershipDataError, setMembershipDataError] = useState<string | null>(null);
@@ -963,6 +964,7 @@ export default function AdminConsolePage() {
     const action = "queue-refresh";
     if (!beginPendingAction(action)) return;
     try {
+      setMemberStatusNow(Date.now());
       const refreshed = await refreshAdminQueues();
       if (!refreshed) {
         window.alert("รีเฟรชข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง");
@@ -2855,6 +2857,8 @@ export default function AdminConsolePage() {
               membershipMutationsReady={membershipMutationsReady}
               mutationBusy={mutationBusy}
               isOwner={isOwner}
+              adminId={adminId}
+              referenceNow={memberStatusNow}
               onMemberPlanChange={(id, currentPlan, nextPlan, subscription) => {
                 void handleMemberPlanChange(id, currentPlan, nextPlan, subscription);
               }}

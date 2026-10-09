@@ -19,6 +19,7 @@ import {
   isActivePremiumSubscription,
   isExpiringWithinThirtyDays,
   memberFilterCounts,
+  roleChangeConfirmationCopy,
   type AdminMemberListItem,
   type AdminMemberRole,
   type MemberFilter,
@@ -36,6 +37,8 @@ interface AdminMembersPanelProps {
   membershipMutationsReady: boolean;
   mutationBusy: boolean;
   isOwner: boolean;
+  adminId: string | null;
+  referenceNow: number;
   onMemberPlanChange: (
     id: string,
     currentPlan: string,
@@ -86,6 +89,8 @@ export function AdminMembersPanel({
   membershipMutationsReady,
   mutationBusy,
   isOwner,
+  adminId,
+  referenceNow,
   onMemberPlanChange,
   onRenewSubscription,
   onRoleChange,
@@ -101,7 +106,7 @@ export function AdminMembersPanel({
   const roleDialogRef = useRef<HTMLElement>(null);
   const roleTriggerRef = useRef<HTMLButtonElement | null>(null);
   const premiumIds = useMemo(() => premiumPlanIds ?? new Set<string>(), [premiumPlanIds]);
-  const [now] = useState(() => Date.now());
+  const now = referenceNow;
   const activeFilter: MemberFilter = premiumPlanIds || filter === "all" || filter === "staff" ? filter : "all";
 
   useEffect(() => {
@@ -161,6 +166,10 @@ export function AdminMembersPanel({
     [activeFilter, members, now, premiumIds, query, sort, subscriptionsByUser],
   );
   const selectedTotal = counts[activeFilter];
+  const roleTargetIsSelf = roleTarget?.id === adminId;
+  const roleConfirmationCopy = roleTarget
+    ? roleChangeConfirmationCopy(roleTarget.role, nextRole, roleTargetIsSelf)
+    : null;
 
   const clearFilters = () => {
     setFilter("all");
@@ -394,6 +403,9 @@ export function AdminMembersPanel({
               }}
             />
             <p className="kru-admin-role-dialog__warning">{roleChangeWarning(nextRole)}</p>
+            {roleConfirmationCopy?.selfWarnings.map((warning) => (
+              <p key={warning} role="alert" className="kru-admin-role-dialog__self-warning">{warning}</p>
+            ))}
             {roleTarget.role === "owner" && nextRole !== "owner" && (
               <p className="kru-admin-role-dialog__warning">ระบบจะปฏิเสธรายการหากบัญชีนี้เป็นเจ้าของระบบคนสุดท้าย</p>
             )}
@@ -407,7 +419,7 @@ export function AdminMembersPanel({
                 onClick={() => void confirmRoleChange()}
                 aria-describedby={roleError ? "role-change-error" : undefined}
               >
-                ยืนยันเปลี่ยนเป็น{ROLE_LABEL[nextRole]}
+                {roleConfirmationCopy?.confirmLabel ?? `ยืนยันเปลี่ยนเป็น${ROLE_LABEL[nextRole]}`}
               </Button>
             </div>
           </section>
@@ -440,6 +452,7 @@ export function AdminMembersPanel({
         .kru-admin-member-role { align-items: flex-start; }
         .kru-admin-role-dialog { display: grid; gap: var(--sp-5); }
         .kru-admin-role-dialog__warning { margin: 0 !important; padding: var(--sp-3); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg) !important; }
+        .kru-admin-role-dialog__self-warning { margin: 0 !important; padding: var(--sp-4); border: 2px solid var(--status-danger-fg); border-radius: var(--r-md); background: var(--status-danger-bg); color: var(--status-danger-fg) !important; font-weight: var(--fw-semibold); }
         @media (min-width: 700px) {
           .kru-admin-member-filters { grid-template-columns: repeat(5, minmax(0, 1fr)); }
           .kru-admin-member-tools { grid-template-columns: minmax(260px, 1fr) minmax(220px, .35fr); align-items: end; }

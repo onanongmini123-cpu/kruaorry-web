@@ -6,6 +6,7 @@ import {
   isExpiringWithinThirtyDays,
   matchesMemberQuery,
   memberFilterCounts,
+  roleChangeConfirmationCopy,
   type AdminMemberListItem,
 } from "./memberList";
 
@@ -95,5 +96,37 @@ describe("member sorting", () => {
 
   it("sorts Thai display names and falls back to email", () => {
     expect(filterAndSortMembers(members, subscriptions, premiumPlans, { sort: "name", now: NOW }).map((member) => member.id)).toEqual(["m1", "m2", "m3"]);
+  });
+});
+
+describe("self role-change confirmation", () => {
+  it("keeps the normal confirmation copy for another account", () => {
+    expect(roleChangeConfirmationCopy("owner", "member", false)).toEqual({
+      confirmLabel: "ยืนยันเปลี่ยนเป็นสมาชิก",
+      selfWarnings: [],
+    });
+  });
+
+  it("warns that an admin changing their own role to member leaves the back office", () => {
+    expect(roleChangeConfirmationCopy("admin", "member", true)).toEqual({
+      confirmLabel: "ยืนยันและออกจากหลังบ้าน",
+      selfWarnings: ["นี่คือบัญชีของคุณเอง — ถ้าลดสิทธิ์เป็นสมาชิก คุณจะออกจากหลังบ้านทันที"],
+    });
+  });
+
+  it("warns that an owner surrendering ownership loses team-role management", () => {
+    expect(roleChangeConfirmationCopy("owner", "admin", true)).toEqual({
+      confirmLabel: "ยืนยันสละสิทธิ์เจ้าของระบบ",
+      selfWarnings: ["นี่คือบัญชีของคุณเอง — หากสละสิทธิ์เจ้าของระบบ คุณจะไม่สามารถเปลี่ยนบทบาททีมงานได้อีก"],
+    });
+  });
+
+  it("shows both effects when an owner changes their own role to member", () => {
+    const copy = roleChangeConfirmationCopy("owner", "member", true);
+    expect(copy.confirmLabel).toBe("ยืนยันและออกจากหลังบ้าน");
+    expect(copy.selfWarnings).toEqual([
+      "นี่คือบัญชีของคุณเอง — ถ้าลดสิทธิ์เป็นสมาชิก คุณจะออกจากหลังบ้านทันที",
+      "นี่คือบัญชีของคุณเอง — หากสละสิทธิ์เจ้าของระบบ คุณจะไม่สามารถเปลี่ยนบทบาททีมงานได้อีก",
+    ]);
   });
 });

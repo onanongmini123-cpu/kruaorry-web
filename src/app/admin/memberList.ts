@@ -30,6 +30,42 @@ export const MEMBER_SORT_OPTIONS: ReadonlyArray<{ value: MemberSort; label: stri
   { value: "name", label: "ชื่อ ก–ฮ" },
 ];
 
+const ROLE_LABEL: Record<AdminMemberRole, string> = {
+  member: "สมาชิก",
+  admin: "แอดมิน",
+  owner: "เจ้าของระบบ",
+};
+
+export interface RoleChangeConfirmationCopy {
+  confirmLabel: string;
+  selfWarnings: string[];
+}
+
+export function roleChangeConfirmationCopy(
+  currentRole: AdminMemberRole,
+  nextRole: AdminMemberRole,
+  isSelf: boolean,
+): RoleChangeConfirmationCopy {
+  if (!isSelf || currentRole === nextRole) {
+    return { confirmLabel: `ยืนยันเปลี่ยนเป็น${ROLE_LABEL[nextRole]}`, selfWarnings: [] };
+  }
+
+  const selfWarnings: string[] = [];
+  if (nextRole === "member") {
+    selfWarnings.push("นี่คือบัญชีของคุณเอง — ถ้าลดสิทธิ์เป็นสมาชิก คุณจะออกจากหลังบ้านทันที");
+  }
+  if (currentRole === "owner" && nextRole !== "owner") {
+    selfWarnings.push("นี่คือบัญชีของคุณเอง — หากสละสิทธิ์เจ้าของระบบ คุณจะไม่สามารถเปลี่ยนบทบาททีมงานได้อีก");
+  }
+
+  const confirmLabel = nextRole === "member"
+    ? "ยืนยันและออกจากหลังบ้าน"
+    : currentRole === "owner" && nextRole !== "owner"
+      ? "ยืนยันสละสิทธิ์เจ้าของระบบ"
+      : `ยืนยันเปลี่ยนเป็น${ROLE_LABEL[nextRole]}`;
+  return { confirmLabel, selfWarnings };
+}
+
 const DAY_MS = 86_400_000;
 const THIRTY_DAYS_MS = 30 * DAY_MS;
 const thaiCollator = new Intl.Collator("th", { sensitivity: "base", numeric: true });
