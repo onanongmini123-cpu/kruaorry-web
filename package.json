@@ -19,7 +19,8 @@
     "test:resource-slug-sql": "node scripts/test-resource-slug-sql.mjs",
     "test:migration-chain-sql": "node scripts/test-migration-chain-sql.mjs",
     "test:admin-save-slug-sql": "node scripts/test-admin-save-resource-slug-sql.mjs",
-    "test:admin-overview-sql": "node scripts/test-admin-overview-insights-sql.mjs"
+    "test:admin-overview-sql": "node scripts/test-admin-overview-insights-sql.mjs",
+    "test:admin-plan-resources-sql": "node scripts/test-admin-plan-resources-sql.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

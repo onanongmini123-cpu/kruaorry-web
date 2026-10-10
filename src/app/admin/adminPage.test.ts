@@ -78,6 +78,16 @@ describe("responsive admin console contracts", () => {
     expect(plansSource).not.toContain("แก้ราคา");
   });
 
+  it("loads the optional plan-resource summary without coupling it to the other package tabs", () => {
+    expect(pageSource).toContain("fetchAdminPlanResourceSummary(supabase)");
+    expect(pageSource).toContain("resourceSummary={planResourceSummary}");
+    expect(plansSource).toContain('resources: "สื่อกับแพ็ก"');
+    expect(plansSource).toContain('id="admin-plans-resources-panel"');
+    expect(plansSource).toContain("ไปแก้สิทธิ์การเข้าถึงที่หน้าจัดการสื่อ");
+    expect(plansSource).toContain("resourceSummaryLoading");
+    expect(plansSource).not.toContain("member.email");
+  });
+
   it("keeps hidden legacy plans selectable for new premium resources", () => {
     expect(pageSource).toContain("{plans.map((plan) => (");
     expect(pageSource).toContain("แพ็กเดิม/ไม่เปิดขาย");

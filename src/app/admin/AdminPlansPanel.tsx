@@ -5,6 +5,7 @@ import { Check, ListChecks, PackageCheck, X } from "lucide-react";
 import { Badge, Button, EmptyState, Input } from "@/components/ui";
 import { customerBenefitCopy, hasFixedCustomerBenefitCopy } from "@/lib/benefitCopy";
 import type { AdminSubscription } from "@/lib/adminMembership";
+import type { AdminPlanResourceSummary } from "@/lib/adminPlanResources";
 import type { AdminMemberListItem } from "./memberList";
 import {
   benefitValueLabel,
@@ -20,7 +21,7 @@ import {
   type PlanMemberCount,
 } from "./planOverview";
 
-type PlansTab = "overview" | "comparison" | "copy";
+type PlansTab = "overview" | "comparison" | "copy" | "resources";
 
 interface AdminPlansPanelProps {
   plans: AdminPlanOverviewItem[];
@@ -33,14 +34,19 @@ interface AdminPlansPanelProps {
   referenceNow: number;
   pendingFeatureId: string | null;
   dataMessage: string | null;
+  resourceSummary: AdminPlanResourceSummary | null;
+  resourceSummaryLoading: boolean;
+  resourceSummaryMessage: string | null;
+  onOpenContent: () => void;
   onSaveBenefitCopy: (featureId: string, name: string, description: string) => Promise<string | null>;
 }
 
-const TAB_ORDER: readonly PlansTab[] = ["overview", "comparison", "copy"];
+const TAB_ORDER: readonly PlansTab[] = ["overview", "comparison", "copy", "resources"];
 const TAB_LABEL: Record<PlansTab, string> = {
   overview: "ภาพรวมแพ็ก",
   comparison: "เปรียบเทียบสิทธิ์",
   copy: "ข้อความที่ลูกค้าเห็น",
+  resources: "สื่อกับแพ็ก",
 };
 
 function statusTone(status: ReturnType<typeof planSaleStatus>): "success" | "warning" | "neutral" {
@@ -176,6 +182,84 @@ function EditableBenefitCard({
   );
 }
 
+const RESOURCE_ACCESS_SUMMARY = [
+  { key: "free", label: "ใช้ฟรี" },
+  { key: "member", label: "สมาชิกฟรี" },
+  { key: "pro", label: "Pro (เฉพาะแพ็ก)" },
+  { key: "locked", label: "ล็อก" },
+] as const;
+
+function PlanResourcesTab({
+  summary,
+  loading,
+  message,
+  onOpenContent,
+}: {
+  summary: AdminPlanResourceSummary | null;
+  loading: boolean;
+  message: string | null;
+  onOpenContent: () => void;
+}) {
+  if (loading) {
+    return <p role="status" className="kru-card kru-admin-plan-resources-message">กำลังโหลดข้อมูลสื่อกับแพ็ก…</p>;
+  }
+  if (!summary) {
+    return <p role={message ? "alert" : "status"} className="kru-card kru-admin-plan-resources-message">{message ?? "ยังโหลดข้อมูลสื่อกับแพ็กไม่ได้ กรุณารีเฟรชข้อมูลแล้วลองอีกครั้ง"}</p>;
+  }
+
+  return (
+    <div className="kru-admin-plan-resources">
+      <div className="kru-admin-resource-tier-grid">
+        {RESOURCE_ACCESS_SUMMARY.map((item) => (
+          <article key={item.key} className="kru-card kru-admin-resource-tier-card">
+            <span>{item.label}</span>
+            <strong>{summary.access_counts[item.key]}</strong>
+            <small>รายการที่เผยแพร่แล้ว</small>
+          </article>
+        ))}
+      </div>
+      <div
+        className="kru-admin-resource-tier-bar"
+        role="img"
+        aria-label={RESOURCE_ACCESS_SUMMARY.map((item) => `${item.label} ${summary.access_counts[item.key]} รายการ`).join(", ")}
+      >
+        {RESOURCE_ACCESS_SUMMARY.map((item) => summary.access_counts[item.key] > 0 && (
+          <span key={item.key} className={`is-${item.key}`} style={{ flexGrow: summary.access_counts[item.key] }} title={`${item.label}: ${summary.access_counts[item.key]} รายการ`} />
+        ))}
+      </div>
+      <p className="kru-admin-resource-pro-summary">สื่อ Pro ตอนนี้มี <strong>{summary.access_counts.pro}</strong> รายการ</p>
+
+      <div className="kru-card kru-admin-plan-resource-table-wrap" tabIndex={0} aria-label="ตารางสื่อ Pro แยกตามแพ็ก เลื่อนแนวนอนได้">
+        <table className="kru-admin-plan-resource-table">
+          <thead><tr><th>แพ็ก</th><th>สื่อที่เข้าถึงได้</th><th>สื่อล่าสุด</th></tr></thead>
+          <tbody>
+            {summary.plans.map((plan) => (
+              <tr key={plan.plan_id}>
+                <th scope="row">{plan.plan_name}</th>
+                <td><strong>{plan.resource_count}</strong> รายการ</td>
+                <td>
+                  {plan.latest_resources.length ? (
+                    <ul>{plan.latest_resources.map((title, index) => <li key={`${title}-${index}`}>{title}</li>)}</ul>
+                  ) : <span className="kru-admin-plan-muted">ยังไม่มีสื่อ Pro ในแพ็กนี้</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {summary.unassigned_plan_resources.count > 0 && (
+        <section role="alert" className="kru-card kru-admin-unassigned-resources">
+          <h2>พบสื่อ Pro ที่ยังไม่ได้ผูกแพ็ก {summary.unassigned_plan_resources.count} รายการ</h2>
+          <p>สื่อเหล่านี้เผยแพร่แล้วแต่ยังไม่มีลูกค้าแพ็กใดเข้าถึงได้</p>
+          <ul>{summary.unassigned_plan_resources.resources.map((title, index) => <li key={`${title}-${index}`}>{title}</li>)}</ul>
+          <Button type="button" size="sm" variant="secondary" onClick={onOpenContent}>ไปแก้สิทธิ์การเข้าถึงที่หน้าจัดการสื่อ</Button>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function AdminPlansPanel({
   plans,
   benefitRows,
@@ -187,6 +271,10 @@ export function AdminPlansPanel({
   referenceNow,
   pendingFeatureId,
   dataMessage,
+  resourceSummary,
+  resourceSummaryLoading,
+  resourceSummaryMessage,
+  onOpenContent,
   onSaveBenefitCopy,
 }: AdminPlansPanelProps) {
   const [tab, setTab] = useState<PlansTab>("overview");
@@ -321,6 +409,10 @@ export function AdminPlansPanel({
         )}
       </div>
 
+      <div id="admin-plans-resources-panel" role="tabpanel" aria-labelledby="admin-plans-resources-tab" hidden={tab !== "resources"}>
+        <PlanResourcesTab summary={resourceSummary} loading={resourceSummaryLoading} message={resourceSummaryMessage} onOpenContent={onOpenContent} />
+      </div>
+
       <style jsx global>{`
         .kru-admin-plans-panel h1 { font-size: var(--fs-30); }
         .kru-admin-plans-panel__intro { margin: var(--sp-3) 0 var(--sp-5); color: var(--text-muted); }
@@ -370,10 +462,34 @@ export function AdminPlansPanel({
         .kru-admin-benefit-copy-comparison div { padding: var(--sp-4); border-radius: var(--r-md); background: var(--surface-sunken); }
         .kru-admin-benefit-copy-comparison dd { display: grid; gap: var(--sp-1); margin: var(--sp-2) 0 0; }
         .kru-admin-benefit-copy-comparison dd span { color: var(--text-muted); }
+        .kru-admin-plan-resources { display: grid; gap: var(--sp-5); }
+        .kru-admin-plan-resources-message { margin: 0; padding: var(--sp-5); color: var(--text-muted); }
+        .kru-admin-resource-tier-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+        .kru-admin-resource-tier-card { display: grid; gap: var(--sp-1); min-width: 0; padding: var(--sp-4); }
+        .kru-admin-resource-tier-card span, .kru-admin-resource-tier-card small { color: var(--text-muted); }
+        .kru-admin-resource-tier-card strong { color: var(--text-strong); font-size: var(--fs-30); line-height: 1.1; }
+        .kru-admin-resource-tier-bar { display: flex; min-height: 16px; overflow: hidden; border-radius: var(--r-pill); background: var(--surface-sunken); }
+        .kru-admin-resource-tier-bar span { min-width: 8px; }
+        .kru-admin-resource-tier-bar .is-free { background: var(--status-success-fg); }
+        .kru-admin-resource-tier-bar .is-member { background: var(--purple-400); }
+        .kru-admin-resource-tier-bar .is-pro { background: var(--purple-700); }
+        .kru-admin-resource-tier-bar .is-locked { background: var(--ink-500); }
+        .kru-admin-resource-pro-summary { margin: 0; color: var(--text-body); }
+        .kru-admin-plan-resource-table-wrap { max-width: 100%; overflow-x: auto; }
+        .kru-admin-plan-resource-table { width: 100%; min-width: 680px; border-collapse: collapse; }
+        .kru-admin-plan-resource-table th, .kru-admin-plan-resource-table td { padding: var(--sp-4); border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
+        .kru-admin-plan-resource-table thead th { background: var(--surface-sunken); color: var(--text-body); }
+        .kru-admin-plan-resource-table tbody th { color: var(--text-strong); }
+        .kru-admin-plan-resource-table ul, .kru-admin-unassigned-resources ul { margin: 0; padding-left: var(--sp-5); }
+        .kru-admin-unassigned-resources { display: grid; gap: var(--sp-3); padding: var(--sp-5); border-color: var(--status-warning-fg); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+        .kru-admin-unassigned-resources h2, .kru-admin-unassigned-resources p { margin: 0; }
+        .kru-admin-unassigned-resources h2 { font-size: var(--fs-18); }
+        .kru-admin-unassigned-resources .kru-btn { justify-self: start; min-height: 44px; }
         @media (min-width: 700px) {
-          .kru-admin-plans-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .kru-admin-plans-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
           .kru-admin-plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .kru-admin-benefit-copy-comparison { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .kru-admin-resource-tier-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         }
         @media (min-width: 1120px) {
           .kru-admin-plan-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
