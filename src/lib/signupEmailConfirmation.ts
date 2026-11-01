@@ -4,11 +4,18 @@ import { SIGNUP_DESTINATION } from "@/lib/authReturnPath";
 export const SIGNUP_CONFIRMATION_COOLDOWN_SECONDS = 60;
 
 export const SIGNUP_PENDING_MESSAGE =
-  "รับคำขอสมัครแล้ว หากอีเมลนี้ใช้สมัครได้ ระบบจะส่งลิงก์ยืนยัน กรุณาตรวจกล่องจดหมายและโฟลเดอร์สแปม";
+  "รับคำขอสมัครแล้ว หากอีเมลนี้ใช้สมัครได้ ระบบจะส่งลิงก์ยืนยัน กรุณาตรวจกล่องจดหมายและโฟลเดอร์สแปม และกดลิงก์จากอีเมลฉบับล่าสุดเท่านั้น";
+// Shown when the callback could not turn a confirmation link into a session.
+// The wording is identical for every cause (already used, expired, replaced by
+// a newer email), so it cannot reveal anything about an account.
+export const CONFIRMATION_LINK_FAILED_MESSAGE =
+  "ลิงก์ยืนยันอีเมลนี้ใช้ไม่ได้ อาจเพราะเคยกดไปแล้ว หมดอายุ หรือมีอีเมลฉบับใหม่กว่า ให้เปิดลิงก์จากอีเมลฉบับล่าสุดเท่านั้น และเปิดด้วย Chrome หรือ Safari ปกติ ไม่ใช่ในแอป ถ้าเคยกดลิงก์สำเร็จแล้ว ลองเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่สมัครไว้ได้เลย หากยังเข้าไม่ได้ ให้กรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง";
+export const CONFIRMATION_LATEST_EMAIL_HINT =
+  "ใช้ลิงก์จากอีเมลฉบับล่าสุดเท่านั้น หากกดส่งซ้ำ ลิงก์ในอีเมลฉบับก่อนหน้าจะใช้ไม่ได้แล้ว และควรเปิดลิงก์ด้วย Chrome หรือ Safari ปกติ";
 export const SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE =
   "ระบบยังเตรียมลิงก์ยืนยันไม่สำเร็จ กรุณาลองใหม่ภายหลังหรือติดต่อทีมงาน";
 export const RESEND_CONFIRMATION_SUCCESS_MESSAGE =
-  "หากอีเมลนี้มีบัญชีที่รอยืนยัน ระบบจะส่งอีเมลยืนยันอีกครั้ง กรุณาตรวจกล่องจดหมายและโฟลเดอร์สแปม";
+  "หากอีเมลนี้มีบัญชีที่รอยืนยัน ระบบจะส่งอีเมลยืนยันอีกครั้ง กรุณาตรวจกล่องจดหมายและโฟลเดอร์สแปม และกดลิงก์จากอีเมลฉบับล่าสุดเท่านั้น (ลิงก์ฉบับก่อนหน้าจะใช้ไม่ได้)";
 export const RESEND_CONFIRMATION_UNAVAILABLE_MESSAGE =
   "ยังส่งอีเมลยืนยันไม่ได้ในขณะนี้ กรุณาลองใหม่ภายหลังหรือติดต่อทีมงาน";
 export const PASSWORD_RESET_REQUEST_MESSAGE =

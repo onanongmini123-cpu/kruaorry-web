@@ -23,6 +23,8 @@ import { isPermanentAuthUser } from "@/lib/authIdentity";
 import {
   buildSignupConfirmationRedirect,
   canResendSignupConfirmation,
+  CONFIRMATION_LATEST_EMAIL_HINT,
+  CONFIRMATION_LINK_FAILED_MESSAGE,
   createSignupConfirmationResendController,
   INITIAL_SIGNUP_CONFIRMATION_RESEND_STATE,
   isPlausibleEmail,
@@ -77,7 +79,7 @@ function LoginForm() {
   const [passwordConfirmationError, setPasswordConfirmationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
-    hasConfirmationError ? "ลิงก์ยืนยันอีเมลนี้เปิดไม่สำเร็จ ถ้าคุณกดลิงก์ในอีเมลแล้ว ลองเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่สมัครไว้ได้เลย หากยังเข้าไม่ได้ ให้กรอกอีเมลแล้วส่งอีเมลยืนยันอีกครั้ง" : null
+    hasConfirmationError ? CONFIRMATION_LINK_FAILED_MESSAGE : null
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -423,6 +425,9 @@ function LoginForm() {
               <p style={{ fontSize: "var(--fs-14)", fontWeight: "var(--fw-semibold)" }}>ยังไม่ได้รับอีเมลยืนยัน?</p>
               <p style={{ margin: "var(--sp-2) 0 var(--sp-4)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
                 กรอกอีเมลด้านบน แล้วลองส่งใหม่ได้โดยไม่ต้องสมัครซ้ำ
+              </p>
+              <p style={{ margin: "0 0 var(--sp-4)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                {CONFIRMATION_LATEST_EMAIL_HINT}
               </p>
               <Button
                 type="button"

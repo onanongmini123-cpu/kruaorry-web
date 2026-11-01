@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUTH_RATE_LIMIT_MESSAGE,
   buildSignupConfirmationRedirect,
+  CONFIRMATION_LATEST_EMAIL_HINT,
+  CONFIRMATION_LINK_FAILED_MESSAGE,
   createSignupConfirmationResendController,
   isAuthRateLimitError,
   isPlausibleEmail,
+  RESEND_CONFIRMATION_SUCCESS_MESSAGE,
   resendSignupConfirmation,
   SIGNUP_CONFIRMATION_LINK_UNAVAILABLE_MESSAGE,
   SIGNUP_CONFIRMATION_COOLDOWN_SECONDS,
@@ -243,5 +246,23 @@ describe("signup email confirmation", () => {
     });
     await expect(controller.requestResend(resend)).resolves.toEqual({ outcome: "blocked" });
     expect(resend).not.toHaveBeenCalled();
+  });
+
+  it("tells people to use only the newest confirmation email, with no account-specific wording", () => {
+    for (const message of [
+      SIGNUP_PENDING_MESSAGE,
+      RESEND_CONFIRMATION_SUCCESS_MESSAGE,
+      CONFIRMATION_LINK_FAILED_MESSAGE,
+      CONFIRMATION_LATEST_EMAIL_HINT,
+    ]) {
+      expect(message).toContain("ฉบับล่าสุด");
+      expect(message).not.toMatch(/@|supabase|token|otp|expired|invalid/i);
+    }
+  });
+
+  it("keeps the sign-in failure copy generic so it never reveals an account's state", () => {
+    const wrongPassword = thaiAuthErrorMessage("signin", { code: "invalid_credentials", status: 400 });
+    const unconfirmed = thaiAuthErrorMessage("signin", { code: "email_not_confirmed", status: 400 });
+    expect(unconfirmed).toBe(wrongPassword);
   });
 });
