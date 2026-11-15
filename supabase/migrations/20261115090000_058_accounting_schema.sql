@@ -99,7 +99,7 @@ create table accounting.transactions (
   approved_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check ((status = 'approved') = (approved_by is not null and approved_at is not null))
+  check ((status in ('approved','voided')) = (approved_by is not null and approved_at is not null))
 );
 create index on accounting.transactions (status, occurred_at desc);
 
@@ -245,20 +245,28 @@ create table accounting.audit_log (
   new_row jsonb
 );
 
--- Audit trigger + immutability of approved rows
-create function accounting.audit_and_guard() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare r_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
-        r_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+-- Immutability of approved rows (BEFORE, so it fires ahead of FK checks)
+create function accounting.guard_approved() returns trigger
+language plpgsql set search_path = '' as $$
+declare r_old jsonb := to_jsonb(old);
+        r_new jsonb := case when tg_op = 'UPDATE' then to_jsonb(new) end;
 begin
-  if tg_op in ('UPDATE','DELETE') and r_old->>'status' in ('approved','voided')
-     and tg_table_name <> 'audit_log' then
+  if r_old->>'status' in ('approved','voided') then
     -- approved rows may only move to voided; never deleted, never edited
     if tg_op = 'DELETE' or r_new->>'status' <> 'voided'
        or (r_old - 'status' - 'updated_at') <> (r_new - 'status' - 'updated_at') then
       raise exception 'approved accounting rows are immutable (%.%)', tg_table_name, r_old->>'ref';
     end if;
   end if;
+  return coalesce(new, old);
+end $$;
+
+-- Audit trail
+create function accounting.audit_row() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare r_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
+        r_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+begin
   insert into accounting.audit_log (table_name, row_id, action, old_row, new_row)
   values (tg_table_name, coalesce(r_new->>'id', r_old->>'id'), tg_op, r_old, r_new);
   return coalesce(new, old);
@@ -270,8 +278,12 @@ begin
   foreach t in array array['transactions','sales','customers','products','expenses','accounts',
     'journal_entries','journal_lines','payments','subscriptions','tax_records','evidence','approvals']
   loop
+    if t in ('transactions','sales','expenses','journal_entries','payments','subscriptions','tax_records') then
+      execute format('create trigger guard_%1$s before update or delete on accounting.%1$s
+                      for each row execute function accounting.guard_approved()', t);
+    end if;
     execute format('create trigger audit_%1$s after insert or update or delete on accounting.%1$s
-                    for each row execute function accounting.audit_and_guard()', t);
+                    for each row execute function accounting.audit_row()', t);
   end loop;
 end $$;
 
