@@ -16,6 +16,7 @@ import { loadPublicResourceViewer, loadRelatedResources, resolvePublicResource }
 import { publicResourceAction, resourceHref } from "../catalog";
 import { resourceAccessCopy } from "../detailCopy";
 import { PublicResourceCover } from "../PublicResourceCover";
+import { HowToPlayVideo } from "./HowToPlayVideo";
 import "./detail.css";
 
 type Props = { params: Promise<{ key: string }> };
@@ -164,6 +165,8 @@ export default async function ResourceDetailPage({ params }: Props) {
             </div>
           </div>
         </div>
+
+        <HowToPlayVideo videoId={item.youtubeVideoId} resourceTitle={item.title} />
 
         <div className="kru-detail__sections">
           {audience && (

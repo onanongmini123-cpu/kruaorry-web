@@ -67,6 +67,9 @@ import type { AdminPlanOverviewItem, PlanBenefitRow } from "./planOverview";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
+import { AdminHomepageVideosPanel } from "./AdminHomepageVideosPanel";
+import { VIDEO_RULE_HELP, VIDEO_UNAVAILABLE_NOTICE, isVideoUnavailable, videoChangeForSave, videoFieldState, videoLinkForId } from "./resourceVideoField";
+import { youtubeThumbnailUrl } from "@/lib/youtube";
 import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
@@ -275,6 +278,7 @@ const EMPTY_FORM = {
   cta_url: "",
   cover_image_url: "",
   slug: "",
+  youtube_url: "",
   access_mode: "locked" as ResourceAccessMode,
   plan_ids: [] as string[],
   file_path: "",
@@ -348,6 +352,10 @@ export default function AdminConsolePage() {
   const [savedSlug, setSavedSlug] = useState("");
   // False while the database can not yet be read or written for slugs (migration 055 not applied).
   const [slugSupported, setSlugSupported] = useState(true);
+  // The YouTube id the resource had when the form opened ("" = none); the video is only saved when the field differs.
+  const [savedVideoId, setSavedVideoId] = useState("");
+  // False while the database can not yet be read or written for videos (migration 058 not applied).
+  const [videoSupported, setVideoSupported] = useState(true);
   // `saving` is the single "an admin mutation is in flight" flag: true for
   // the entire cover-upload + file-upload + row-save + cleanup sequence,
   // and for delete/status changes too. guardAgainstBusyForm(saving) gates
@@ -1009,6 +1017,7 @@ export default function AdminConsolePage() {
     setEditingId(null);
     setPendingResourceId(crypto.randomUUID());
     setSavedSlug("");
+    setSavedVideoId("");
     setForm(EMPTY_FORM);
     setFormBaseline(JSON.stringify(EMPTY_FORM));
     setSelectedFile(null);
@@ -1032,6 +1041,7 @@ export default function AdminConsolePage() {
     setCoverCropMeta(null);
     setFileRemoved(false);
     setSavedSlug("");
+    setSavedVideoId("");
     setForm(EMPTY_FORM);
     setEditingId(null);
     setPendingResourceId(null);
@@ -1047,6 +1057,12 @@ export default function AdminConsolePage() {
     }
     const loadRow = async () => {
       const columns = "title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type";
+      const withVideo = await supabase.from("resources").select(`${columns}, slug, youtube_video_id`).eq("id", id).single();
+      if (!withVideo.error) {
+        setVideoSupported(true);
+        return withVideo;
+      }
+      if (isVideoUnavailable(withVideo.error)) setVideoSupported(false);
       const withSlug = await supabase.from("resources").select(`${columns}, slug`).eq("id", id).single();
       if (withSlug.error && isSlugUnavailable(withSlug.error)) {
         return await supabase.from("resources").select(columns).eq("id", id).single();
@@ -1057,7 +1073,7 @@ export default function AdminConsolePage() {
       loadRow(),
       loadResourceTarget(supabase, id),
     ]);
-    const data = loaded as (typeof loaded & { slug?: string | null }) | null;
+    const data = loaded as (typeof loaded & { slug?: string | null; youtube_video_id?: string | null }) | null;
     if (error || !data || targetError || !resolved) {
       window.alert(`โหลดข้อมูลสื่อไม่สำเร็จ: ${error?.message ?? targetError ?? ""}`);
       return;
@@ -1070,6 +1086,7 @@ export default function AdminConsolePage() {
     setCoverCropMeta(null);
     setFileRemoved(false);
     setSavedSlug(data.slug ?? "");
+    setSavedVideoId(data.youtube_video_id ?? "");
     const nextForm = {
       title: data.title ?? "",
       meta: data.meta ?? "",
@@ -1080,6 +1097,7 @@ export default function AdminConsolePage() {
       cta_url: resolved.cta_url ?? "",
       cover_image_url: data.cover_image_url ?? "",
       slug: data.slug ?? "",
+      youtube_url: videoLinkForId(data.youtube_video_id),
       access_mode: data.access_mode as ResourceAccessMode,
       plan_ids: resourcePlanAccess.get(id) ?? [],
       file_path: resolved.file_path ?? "",
@@ -1321,6 +1339,11 @@ export default function AdminConsolePage() {
       setFormError(slugState.message);
       return;
     }
+    const videoState = videoFieldState(videoSupported ? form.youtube_url : "", savedVideoId);
+    if (videoState.kind === "invalid") {
+      setFormError(videoState.message);
+      return;
+    }
 
     // Fail closed on saving an already-published resource into an invalid
     // state (e.g. clearing its only file/link/cover, or switching delivery
@@ -1442,8 +1465,22 @@ export default function AdminConsolePage() {
         window.alert("บันทึกสำเร็จ แต่ลบไฟล์เดิมไม่สำเร็จ — ระบบเก็บรายการนี้ไว้ให้ลองใหม่ได้จากแบนเนอร์ด้านบน");
       }
 
+      // The video is its own small admin RPC (migration 058), sent only when the
+      // field changed, so the resource itself always saves first and unchanged.
+      const videoChange = videoSupported ? videoChangeForSave(form.youtube_url, savedVideoId) : { changed: false as const };
+      if (videoChange.changed) {
+        const videoResult = await supabase.rpc("admin_set_resource_video", {
+          p_resource_id: resourceId,
+          p_video_id: videoChange.videoId,
+        });
+        if (videoResult.error) {
+          window.alert(`บันทึกสื่อแล้ว แต่บันทึกวิดีโอไม่สำเร็จ: ${videoResult.error.message}`);
+        }
+      }
+
       setSavedNotice(`บันทึก “${payload.title}” แล้ว`);
       setSavedSlug("");
+      setSavedVideoId("");
       setForm(EMPTY_FORM);
       setFormBaseline("");
       setEditingId(null);
@@ -2134,6 +2171,8 @@ export default function AdminConsolePage() {
                 </Button>
               </div>
 
+              <AdminHomepageVideosPanel supabase={supabase} />
+
               {failedCleanups.length > 0 && (
                 <div
                   className="kru-card"
@@ -2221,6 +2260,45 @@ export default function AdminConsolePage() {
                           {state.kind === "changed" && (
                             <span role="status" style={{ color: "var(--status-warning-fg)" }}>
                               ⚠ การเปลี่ยน slug ทำให้ลิงก์เดิม ({resourceAddress(savedSlug)}) ใช้ไม่ได้ ลิงก์ที่แชร์ไว้ไปแล้วจะเปิดไม่ได้ (ลิงก์แบบรหัสยาวยังใช้ได้เสมอ)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
+                    if (!videoSupported) {
+                      return (
+                        <div>
+                          <Input label="ลิงก์วิดีโอ YouTube วิธีเล่น (ไม่บังคับ)" value="" disabled readOnly aria-describedby="resource-video-help" />
+                          <div id="resource-video-help" role="status" style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-13)", color: "var(--status-warning-fg)" }}>
+                            {VIDEO_UNAVAILABLE_NOTICE}
+                          </div>
+                        </div>
+                      );
+                    }
+                    const state = videoFieldState(form.youtube_url, savedVideoId);
+                    const recognized = state.kind === "new" || state.kind === "changed" || state.kind === "unchanged" ? state.videoId : null;
+                    return (
+                      <div>
+                        <Input
+                          label="ลิงก์วิดีโอ YouTube วิธีเล่น (ไม่บังคับ)"
+                          value={form.youtube_url}
+                          onChange={(e) => setForm({ ...form, youtube_url: e.target.value })}
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          inputMode="url"
+                          aria-invalid={state.kind === "invalid" ? true : undefined}
+                          aria-describedby="resource-video-help"
+                        />
+                        <div id="resource-video-help" style={{ display: "grid", gap: 4, marginTop: "var(--sp-2)", fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                          <span>{VIDEO_RULE_HELP}</span>
+                          {state.kind === "invalid" && <span role="alert" style={{ color: "var(--status-danger-fg)" }}>{state.message}</span>}
+                          {state.kind === "empty" && state.hasSaved && <span role="status" style={{ color: "var(--status-warning-fg)" }}>เว้นว่าง = ลบวิดีโอที่ตั้งไว้เมื่อกดบันทึก</span>}
+                          {recognized && (
+                            <span role="status" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={youtubeThumbnailUrl(recognized)} alt="" width={96} height={54} loading="lazy" referrerPolicy="no-referrer" style={{ borderRadius: 6 }} />
+                              ตรวจพบวิดีโอรหัส {recognized}
                             </span>
                           )}
                         </div>

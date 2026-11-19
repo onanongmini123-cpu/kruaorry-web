@@ -219,6 +219,45 @@ describe("public resource listing", () => {
     expect(selects[1]).not.toMatch(/\bslug\b/);
   });
 
+  it("keeps working before the video migration: retries without youtube_video_id but keeps slugs", async () => {
+    const { selects } = anonCatalog((select) => (
+      /youtube_video_id/.test(select)
+        ? { data: null, error: { code: "42703", message: "column resource_catalog.youtube_video_id does not exist" } }
+        : { data: [row(ID_A, { slug: "sentence-train" })], error: null }
+    ));
+
+    const result = await loadPublicResources();
+    expect(result.status).toBe("ready");
+    expect(result.resources[0].slug).toBe("sentence-train");
+    expect(result.resources[0].youtubeVideoId).toBeNull();
+    expect(selects).toHaveLength(2);
+    expect(selects[0]).toMatch(/youtube_video_id/);
+    expect(selects[1]).toMatch(/\bslug\b/);
+    expect(selects[1]).not.toMatch(/youtube_video_id/);
+  });
+
+  it("falls all the way back to the base select before both migrations", async () => {
+    const { selects } = anonCatalog((select) => (
+      /\bslug\b/.test(select)
+        ? { data: null, error: { code: "42703", message: "column resource_catalog.slug does not exist" } }
+        : { data: [row(ID_A)], error: null }
+    ));
+    const result = await loadPublicResources();
+    expect(result.status).toBe("ready");
+    expect(result.resources[0].youtubeVideoId).toBeNull();
+    expect(selects[selects.length - 1]).not.toMatch(/\bslug\b|youtube_video_id/);
+  });
+
+  it("exposes a stored video id, and ignores a malformed one so old resources look exactly as before", async () => {
+    anonCatalog(() => ({
+      data: [row(ID_A, { youtube_video_id: "dQw4w9WgXcQ" }), row(ID_B, { youtube_video_id: "<script>alert(1)</script>" })],
+      error: null,
+    }));
+    const result = await loadPublicResources();
+    expect(result.resources.find((item) => item.id === ID_A)?.youtubeVideoId).toBe("dQw4w9WgXcQ");
+    expect(result.resources.find((item) => item.id === ID_B)?.youtubeVideoId).toBeNull();
+  });
+
   it("does not hide a real outage behind the slug fallback", async () => {
     anonCatalog(() => ({ data: null, error: { code: "57P01", message: "terminating connection" } }));
     vi.spyOn(console, "error").mockImplementation(() => {});

@@ -1,10 +1,13 @@
 import { unstable_cache } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchFounderCapacity, fetchPlans, type Plan, type Resource } from "@/lib/data";
 import { loadPublicResources } from "@/app/resources/data";
 import type { PublicResource } from "@/app/resources/catalog";
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import { fetchMembershipSchemaReadiness, type MembershipSchemaReadiness } from "@/lib/membershipSchemaReadiness";
 import { createAnonClient } from "@/lib/supabase/anon";
+import { parseHomepageVideos, type HomepageVideo } from "@/lib/homepageVideos";
+import { withTimeout } from "@/lib/asyncTimeout";
 
 /**
  * Public, viewer-independent data for the landing page. It is rendered on the
@@ -19,6 +22,8 @@ export interface LandingData {
   resources: Resource[];
   founderCapacity: FounderCapacity | null;
   readiness: MembershipSchemaReadiness;
+  /** Admin-chosen homepage videos (0–3). Empty hides the section. */
+  videos: HomepageVideo[];
 }
 
 export const EMPTY_LANDING_DATA: LandingData = {
@@ -27,6 +32,7 @@ export const EMPTY_LANDING_DATA: LandingData = {
   resources: [],
   founderCapacity: null,
   readiness: "checking",
+  videos: [],
 };
 
 export const LANDING_REVALIDATE_SECONDS = 300;
@@ -60,14 +66,30 @@ export function toLandingResource(item: PublicResource): Resource {
   };
 }
 
+/** Never throws: before migration 058 (or on any failure) there are simply no videos. */
+async function readHomepageVideos(supabase: SupabaseClient): Promise<HomepageVideo[]> {
+  try {
+    const outcome = await withTimeout(Promise.resolve(supabase
+      .from("homepage_videos")
+      .select("position, youtube_video_id, title")
+      .order("position", { ascending: true })
+      .limit(10)), "homepage videos");
+    if (!outcome.ok || outcome.value.error) return [];
+    return parseHomepageVideos(outcome.value.data);
+  } catch {
+    return [];
+  }
+}
+
 async function readLandingData(): Promise<LandingData> {
   const supabase = createAnonClient();
   if (!supabase) return EMPTY_LANDING_DATA;
   try {
-    const [plans, catalogue, readiness] = await Promise.all([
+    const [plans, catalogue, readiness, videos] = await Promise.all([
       fetchPlans(supabase),
       loadPublicResources(),
       fetchMembershipSchemaReadiness(supabase),
+      readHomepageVideos(supabase),
     ]);
     const resources = catalogue.status === "ready" ? catalogue.resources.map(toLandingResource) : [];
     const founderCapacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
@@ -75,7 +97,7 @@ async function readLandingData(): Promise<LandingData> {
     // and no resources" as not loaded so a transient outage is retried by the
     // client rather than cached as the truth.
     const loaded = plans.length > 0 || resources.length > 0;
-    return { loaded, plans, resources, founderCapacity, readiness };
+    return { loaded, plans, resources, founderCapacity, readiness, videos };
   } catch {
     return EMPTY_LANDING_DATA;
   }
