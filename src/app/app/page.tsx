@@ -480,6 +480,7 @@ export default function TeacherAppPage() {
           accessTier={accessTier(resource.accessMode)}
           coverImageUrl={resource.coverImageUrl}
           isNew={resource.isNew}
+          trialAvailable={resource.trialAvailable}
           locked={!canAccess(resource)}
           saved={saved.includes(resource.id)}
           savePending={savingIds.includes(resource.id)}

@@ -59,6 +59,7 @@ export function toLandingResource(item: PublicResource): Resource {
     requiredPlanNames: item.requiredPlanNames,
     free: item.isFree,
     isNew: item.isNew,
+    trialAvailable: item.trialAvailable,
     fileSize: null,
     featuredRank: item.featuredRank,
     reviewAverage: item.reviewAverage,

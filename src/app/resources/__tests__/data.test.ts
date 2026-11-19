@@ -176,14 +176,18 @@ function row(id: string, over: Record<string, unknown> = {}) {
 }
 
 /** A fake anon client whose catalogue query answers from `answer(select)`. */
-function anonCatalog(answer: (select: string) => { data: unknown[] | null; error: unknown }) {
+function anonCatalog(answer: (select: string) => { data: unknown[] | null; error: unknown }, previewAnswer: { data: unknown[] | null; error: unknown } = { data: [], error: null }) {
   const selects: string[] = [];
   const query = {
     select: vi.fn((select: string) => { selects.push(select); return query; }),
     order: vi.fn().mockReturnThis(),
     range: vi.fn(async () => answer(selects[selects.length - 1])),
   };
-  vi.mocked(createAnonClient).mockReturnValue({ from: vi.fn(() => query) } as never);
+  // Only the catalogue is under test here: the preview view answers with no rows.
+  const previewQuery = { select: vi.fn(() => previewQuery), limit: vi.fn(async () => previewAnswer) };
+  vi.mocked(createAnonClient).mockReturnValue({
+    from: vi.fn((table: string) => (table === "resource_preview_catalog" ? previewQuery : query)),
+  } as never);
   return { query, selects };
 }
 
@@ -256,6 +260,37 @@ describe("public resource listing", () => {
     const result = await loadPublicResources();
     expect(result.resources.find((item) => item.id === ID_A)?.youtubeVideoId).toBe("dQw4w9WgXcQ");
     expect(result.resources.find((item) => item.id === ID_B)?.youtubeVideoId).toBeNull();
+  });
+
+  const PREVIEW_URL = "https://abc.supabase.co/storage/v1/object/public/resource-covers/previews/x/a.webp";
+
+  it("attaches watermarked previews to Pro resources only, and marks them as trial-able", async () => {
+    anonCatalog(
+      () => ({ data: [row(ID_A, { access_mode: "plans", required_plan_ids: ["teacher"] }), row(ID_B, { access_mode: "public" })], error: null }),
+      { data: [
+        { resource_id: ID_A, position: 2, image_url: PREVIEW_URL.replace("a.webp", "b.webp") },
+        { resource_id: ID_A, position: 1, image_url: PREVIEW_URL },
+        { resource_id: ID_B, position: 1, image_url: PREVIEW_URL },
+      ], error: null },
+    );
+    const result = await loadPublicResources();
+    const pro = result.resources.find((item) => item.id === ID_A);
+    const free = result.resources.find((item) => item.id === ID_B);
+    expect(pro?.trialAvailable).toBe(true);
+    expect(pro?.previewImages).toEqual([PREVIEW_URL, PREVIEW_URL.replace("a.webp", "b.webp")]);
+    expect(free?.trialAvailable).toBe(false);
+    expect(free?.previewImages).toEqual([]);
+  });
+
+  it("is unchanged before migration 059 or when the preview read fails", async () => {
+    anonCatalog(
+      () => ({ data: [row(ID_A, { access_mode: "plans", required_plan_ids: ["teacher"] })], error: null }),
+      { data: null, error: { code: "42P01", message: "relation resource_preview_catalog does not exist" } },
+    );
+    const result = await loadPublicResources();
+    expect(result.status).toBe("ready");
+    expect(result.resources[0].trialAvailable).toBe(false);
+    expect(result.resources[0].previewImages).toEqual([]);
   });
 
   it("does not hide a real outage behind the slug fallback", async () => {

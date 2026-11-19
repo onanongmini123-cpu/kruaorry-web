@@ -12,7 +12,7 @@ function resource(id: string, slug: string | null, accessMode: PublicResource["a
   return {
     id, slug, title: id, meta: "", description: "", category: "", gradeLevels: [], deliveryMode: "web_app",
     coverImageUrl: null, tags: [], accessMode, isFree: true, isNew: false, requiredPlanIds: [],
-    requiredPlanNames: [], featuredRank: null, reviewAverage: null, reviewCount: 0, detail: null, youtubeVideoId: null,
+    requiredPlanNames: [], featuredRank: null, reviewAverage: null, reviewCount: 0, detail: null, youtubeVideoId: null, previewImages: [], trialAvailable: false,
   };
 }
 

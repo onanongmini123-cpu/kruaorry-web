@@ -35,6 +35,10 @@ export type PublicResource = {
   detail: ResourceDetailContent | null;
   /** Optional how-to-play video; null for every resource that has none. */
   youtubeVideoId: string | null;
+  /** Watermarked preview pictures of a Pro resource (migration 059); empty for everything else. */
+  previewImages: string[];
+  /** A Pro resource a visitor can try through its previews: drives the "ทดลองได้" badge. */
+  trialAvailable: boolean;
 };
 
 export interface PublicResourceViewer {
@@ -98,6 +102,8 @@ export function toPublicResource(value: unknown): PublicResource | null {
     reviewCount: Number(row.review_count ?? 0),
     detail: parseDetailContent(row.detail_content),
     youtubeVideoId: isYouTubeVideoId(row.youtube_video_id) ? row.youtube_video_id : null,
+    previewImages: [],
+    trialAvailable: false,
   };
 }
 

@@ -13,10 +13,11 @@ import { DELIVERY_TYPE_LABEL, parseResourceMeta } from "@/lib/resourceMeta";
 import { breadcrumbJsonLd, jsonLdScript, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "@/lib/resourceSeo";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/site";
 import { loadPublicResourceViewer, loadRelatedResources, resolvePublicResource } from "../data";
-import { publicResourceAction, resourceHref } from "../catalog";
+import { membershipUpgradeHref, publicResourceAction, resourceHref } from "../catalog";
 import { resourceAccessCopy } from "../detailCopy";
 import { PublicResourceCover } from "../PublicResourceCover";
 import { HowToPlayVideo } from "./HowToPlayVideo";
+import { TrialPreview } from "./TrialPreview";
 import "./detail.css";
 
 type Props = { params: Promise<{ key: string }> };
@@ -168,6 +169,12 @@ export default async function ResourceDetailPage({ params }: Props) {
 
         <HowToPlayVideo videoId={item.youtubeVideoId} resourceTitle={item.title} />
 
+        {/* Pro resource the viewer cannot open yet: watermarked pictures only. Pro members, free
+            resources and resources without previews render exactly as before. */}
+        {item.accessMode === "plans" && !action.canUse && (
+          <TrialPreview images={item.previewImages} resourceTitle={item.title} upgradeHref={membershipUpgradeHref(item, canonicalPath)} />
+        )}
+
         <div className="kru-detail__sections">
           {audience && (
             <Section title="เหมาะสำหรับ"><p>{audience}</p></Section>
@@ -236,6 +243,7 @@ export default async function ResourceDetailPage({ params }: Props) {
                   accessTier={accessTier(other.accessMode)}
                   coverImageUrl={other.coverImageUrl}
                   isNew={other.isNew}
+                  trialAvailable={other.trialAvailable}
                   locked={publicResourceAction(other, viewer).locked}
                   href={resourceHref(other)}
                 />

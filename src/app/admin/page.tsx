@@ -70,6 +70,7 @@ import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResour
 import { AdminHomepageVideosPanel } from "./AdminHomepageVideosPanel";
 import { VIDEO_RULE_HELP, VIDEO_UNAVAILABLE_NOTICE, isVideoUnavailable, videoChangeForSave, videoFieldState, videoLinkForId } from "./resourceVideoField";
 import { youtubeThumbnailUrl } from "@/lib/youtube";
+import { AdminResourcePreviewsField } from "./AdminResourcePreviewsField";
 import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
@@ -2440,6 +2441,10 @@ export default function AdminConsolePage() {
                     )}
                   </div>
 
+                  </section>
+                  <section className="kru-res-section" aria-labelledby="res-sec-previews">
+                    <h3 id="res-sec-previews">รูปตัวอย่างมีลายน้ำ (ทดลองก่อนสมัคร)</h3>
+                    <AdminResourcePreviewsField supabase={supabase} resourceId={editingId} />
                   </section>
                   <section className="kru-res-section" aria-labelledby="res-sec-access">
                     <h3 id="res-sec-access">สิทธิ์การเข้าถึง</h3>

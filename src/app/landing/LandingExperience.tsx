@@ -339,6 +339,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
                     accessTier={accessTier(resource.accessMode)}
                     coverImageUrl={resource.coverImageUrl}
                     isNew={resource.isNew}
+                    trialAvailable={resource.trialAvailable}
                     href={resourceHref(resource)}
                   />
                 ))}
