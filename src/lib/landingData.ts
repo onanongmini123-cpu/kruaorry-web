@@ -1,10 +1,13 @@
 import { unstable_cache } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchFounderCapacity, fetchPlans, type Plan, type Resource } from "@/lib/data";
 import { loadPublicResources } from "@/app/resources/data";
 import type { PublicResource } from "@/app/resources/catalog";
 import type { FounderCapacity } from "@/lib/founderCapacity";
 import { fetchMembershipSchemaReadiness, type MembershipSchemaReadiness } from "@/lib/membershipSchemaReadiness";
 import { createAnonClient } from "@/lib/supabase/anon";
+import { parseHomepageRankings, RANKING_ROW_LIMIT, type HomepageRankings } from "@/lib/homepageRankings";
+import { withTimeout } from "@/lib/asyncTimeout";
 
 /**
  * Public, viewer-independent data for the landing page. It is rendered on the
@@ -19,6 +22,8 @@ export interface LandingData {
   resources: Resource[];
   founderCapacity: FounderCapacity | null;
   readiness: MembershipSchemaReadiness;
+  /** Homepage ranking rows (ids and counts only); null until migration 060 or on failure. */
+  rankings: HomepageRankings | null;
 }
 
 export const EMPTY_LANDING_DATA: LandingData = {
@@ -27,6 +32,7 @@ export const EMPTY_LANDING_DATA: LandingData = {
   resources: [],
   founderCapacity: null,
   readiness: "checking",
+  rankings: null,
 };
 
 export const LANDING_REVALIDATE_SECONDS = 300;
@@ -60,14 +66,26 @@ export function toLandingResource(item: PublicResource): Resource {
   };
 }
 
+/** Never throws: before migration 060 (or on any failure) there is simply no ranking. */
+async function readRankings(supabase: SupabaseClient): Promise<HomepageRankings | null> {
+  try {
+    const outcome = await withTimeout(Promise.resolve(supabase.rpc("get_homepage_rankings", { p_limit: RANKING_ROW_LIMIT })), "homepage rankings");
+    if (!outcome.ok || outcome.value.error) return null;
+    return parseHomepageRankings(outcome.value.data);
+  } catch {
+    return null;
+  }
+}
+
 async function readLandingData(): Promise<LandingData> {
   const supabase = createAnonClient();
   if (!supabase) return EMPTY_LANDING_DATA;
   try {
-    const [plans, catalogue, readiness] = await Promise.all([
+    const [plans, catalogue, readiness, rankings] = await Promise.all([
       fetchPlans(supabase),
       loadPublicResources(),
       fetchMembershipSchemaReadiness(supabase),
+      readRankings(supabase),
     ]);
     const resources = catalogue.status === "ready" ? catalogue.resources.map(toLandingResource) : [];
     const founderCapacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
@@ -75,7 +93,7 @@ async function readLandingData(): Promise<LandingData> {
     // and no resources" as not loaded so a transient outage is retried by the
     // client rather than cached as the truth.
     const loaded = plans.length > 0 || resources.length > 0;
-    return { loaded, plans, resources, founderCapacity, readiness };
+    return { loaded, plans, resources, founderCapacity, readiness, rankings };
   } catch {
     return EMPTY_LANDING_DATA;
   }

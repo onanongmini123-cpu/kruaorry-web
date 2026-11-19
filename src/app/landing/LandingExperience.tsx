@@ -25,6 +25,8 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
+import { HomepageRankings } from "@/app/landing/HomepageRankings";
+import { buildRankingRows } from "@/lib/homepageRankings";
 import { PricingSection, type PricingCta } from "@/app/landing/PricingSection";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { TrackOnVisible } from "@/components/analytics/TrackOnVisible";
@@ -356,6 +358,11 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             </Link>
           ))}
         </nav>
+
+        <HomepageRankings
+          rows={buildRankingRows(initial.rankings, resources)}
+          heartCounts={initial.rankings?.heartCounts ?? {}}
+        />
 
         <section className="kru-free-showcase">
           <div className="kru-free-showcase__heading">

@@ -165,3 +165,16 @@
 .kru-resource-card__cta .kru-btn {
   min-height: var(--tap-min, 44px);
 }
+
+.kru-resource-card__hearts {
+  min-height: 25px;
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-pill);
+  background: var(--pink-50, #fdeef5);
+  color: var(--pink-600, #c0356f);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+}

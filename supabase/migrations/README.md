@@ -555,3 +555,16 @@ current entitled Founder usage. Pending migration `048` restores the durable
 ledger as the cumulative source of truth only after any unproven legacy grants
 have been separately audited and reconciled, then hardens it as an irreversible
 first-100 promotion record; once `048` is applied, places are never recycled.
+
+Migration `20261012090000_060_homepage_rankings.sql` is **pending** (not applied
+by this repository). It is additive: `resource_view_daily` (one anonymous row per
+resource, random viewer key and Bangkok day; no browser privilege), the
+`record_resource_view(uuid, text)` and `get_homepage_rankings(integer)`
+SECURITY DEFINER functions (ids and counts only, published catalogue only). It
+only READS `saved_resources` and `resource_catalog`. The application reads it
+defensively: without it the homepage shows no ranking rows and no views are
+recorded. Roll back with
+`supabase/rollbacks/20261012090000_060_homepage_rankings.rollback.sql`, verify
+with `supabase/verification/060-verify.sql`, and run
+`npm run test:homepage-rankings-sql` first. View counts are indicative, not
+tamper-proof; do not use them for payments or rewards.
