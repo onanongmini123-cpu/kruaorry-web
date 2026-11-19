@@ -8,6 +8,9 @@ import { Mascot } from "@/components/Mascot";
 import { Badge, Button } from "@/components/ui";
 import { PlanBenefits } from "@/app/landing/PlanBenefits";
 import { LINE_OA_URL } from "@/lib/config";
+import { lineSlipHref } from "@/lib/lineSlipLink";
+import { membershipStepNumber } from "@/lib/membershipSteps";
+import { MembershipStepper, PromptPayCard } from "./PaymentFlow";
 import { trackEvent } from "@/lib/analytics";
 import {
   convertFounderApplicationToTeacher,
@@ -259,6 +262,18 @@ function MembershipContent() {
   const applicationFounderHistoryError = founderChecksBlockPlan(applicationPlanId, founderHistoryError);
   const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable);
   const applicationAmount = applicationPlanId === "founder" ? 299 : 599;
+  const stepNumber = membershipStepNumber({
+    hasPendingApplication: hasOpenApplication,
+    lineSlipReceived: Boolean(pendingApplication?.lineSlipReceivedAt),
+    membershipActive: hasCurrentMembership,
+  });
+  const slipLineHref = latestApplication?.status === "pending"
+    ? lineSlipHref(process.env.NEXT_PUBLIC_LINE_OA_ID, {
+        planName: membershipApplicationPlanLabel(latestApplication.planId),
+        referenceCode: latestApplication.referenceCode,
+        amountThb: latestApplication.quotedAmountThb,
+      })
+    : LINE_OA_URL;
   const selectedPlan = plans.find((plan) => plan.id === applicationPlanId) ?? null;
   const membershipNeedsRenewal = canRequestMembershipRenewal(subscription);
   const membershipStatusPlanId = subscription && (hasCurrentMembership || membershipNeedsRenewal)
@@ -648,6 +663,7 @@ function MembershipContent() {
       </header>
 
       <main>
+        <MembershipStepper current={stepNumber} />
         <section className="kru-membership-hero">
           <div className="kru-membership-hero__copy">
             <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> {noSelectablePlanForResource ? "สิทธิ์เฉพาะสมาชิกเดิม" : applicationPlanId === "founder" ? "สิทธิ์เปิดตัว Founder 100" : "แพ็ก Teacher Pro"}</span>
@@ -956,13 +972,13 @@ function MembershipContent() {
           ) : (
             <section id="how-to-pay" className="kru-card kru-membership-payment" aria-labelledby="membership-payment-title">
               <span className="kru-membership-step">ขั้นตอนที่ 2</span>
-              <h2 id="membership-payment-title">ส่งเลขอ้างอิงและสลิปทาง LINE OA</h2>
+              <h2 id="membership-payment-title">โอนเงินแล้วส่งสลิปทาง LINE</h2>
               <ol>
-                <li>ส่งเลขอ้างอิงจากเว็บไซต์ให้ครูอรรี่ทาง LINE</li>
-                <li>รอรับรายละเอียดการชำระจากครูอรรี่ก่อนโอน</li>
-                <li>หลังชำระแล้ว ส่งเลขอ้างอิงพร้อมสลิปในแชตเดิม</li>
+                <li>สแกน QR พร้อมเพย์ด้านล่างเพื่อโอนตามยอดในใบสมัคร</li>
+                <li>กดปุ่ม “ส่งสลิปทาง LINE” ข้อความพร้อมเลขอ้างอิงจะถูกเตรียมไว้ให้ แนบสลิปแล้วส่ง</li>
+                <li>ตรวจสอบและอนุมัติภายใน 1 วันทำการ</li>
               </ol>
-              <p className="kru-membership-payment__notice">ส่งทุกอย่างใน LINE ได้เลย ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ สถานะจะอัปเดตโดยทีมงาน และยังไม่นับสิทธิ์จนกว่าจะแสดง “ยืนยันชำระแล้ว”</p>
+              <p className="kru-membership-payment__notice">ไม่เก็บสลิปบนเว็บไซต์ ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ ส่งสลิปทาง LINE เท่านั้น สถานะจะอัปเดตโดยทีมงาน และยังไม่นับสิทธิ์จนกว่าจะแสดง “ยืนยันชำระแล้ว”</p>
               {schemaReadiness !== "ready" ? (
                 <p role="status" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
               ) : hasUnlockedMembership ? (
@@ -977,16 +993,21 @@ function MembershipContent() {
                 </p>
               ) : latestApplication?.status === "pending" ? (
                 <>
+                  <PromptPayCard
+                    applicationId={latestApplication.id}
+                    copied={copied === latestApplication.referenceCode}
+                    onCopyReference={(referenceCode) => void handleCopyReference(referenceCode)}
+                  />
                   <a
                     className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block"
-                    href={LINE_OA_URL}
+                    href={slipLineHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     referrerPolicy="no-referrer"
                     onClick={() => handleLineCtaClick(latestApplication.referenceCode)}
                     aria-describedby="membership-line-status"
                   >
-                    <MessageCircle size={19} aria-hidden="true" /> ส่งเลขอ้างอิงและสลิปทาง LINE
+                    <MessageCircle size={19} aria-hidden="true" /> ส่งสลิปทาง LINE
                   </a>
                   <p id="membership-line-status" role="status" className="kru-membership-alert">
                     {lineCtaFeedback

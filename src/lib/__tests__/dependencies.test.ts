@@ -27,6 +27,7 @@ describe("dependencies", () => {
       "@supabase/supabase-js",
       "lucide-react",
       "next",
+      "qrcode",
       "react",
       "react-dom",
       "tus-js-client",
