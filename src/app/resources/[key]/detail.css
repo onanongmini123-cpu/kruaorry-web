@@ -222,3 +222,26 @@
     top: var(--sp-5);
   }
 }
+
+.kru-detail__trial {
+  margin-top: var(--sp-6);
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.kru-detail__trial h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kru-detail__trial .kru-btn {
+  justify-self: start;
+}
+
+@media (max-width: 480px) {
+  .kru-detail__trial .kru-btn {
+    justify-self: stretch;
+    justify-content: center;
+  }
+}

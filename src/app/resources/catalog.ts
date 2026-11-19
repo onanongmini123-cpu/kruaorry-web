@@ -32,6 +32,10 @@ export type PublicResource = {
   reviewCount: number;
   /** Optional structured teaching notes; every section hides when absent. */
   detail: ResourceDetailContent | null;
+  /** Watermarked preview pictures of a Pro resource (migration 059); empty for everything else. */
+  previewImages: string[];
+  /** A Pro resource a visitor can try through its previews: drives the "ทดลองได้" badge. */
+  trialAvailable: boolean;
 };
 
 export interface PublicResourceViewer {
@@ -94,6 +98,8 @@ export function toPublicResource(value: unknown): PublicResource | null {
       : Number(row.review_average),
     reviewCount: Number(row.review_count ?? 0),
     detail: parseDetailContent(row.detail_content),
+    previewImages: [],
+    trialAvailable: false,
   };
 }
 

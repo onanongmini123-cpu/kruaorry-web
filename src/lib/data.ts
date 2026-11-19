@@ -41,6 +41,8 @@ export interface Resource {
   requiredPlanNames: string[];
   free: boolean;
   isNew: boolean;
+  /** Pro resource with watermarked previews anyone can look at (public catalogue only). */
+  trialAvailable?: boolean;
   fileSize: number | null;
   featuredRank: number | null;
   reviewAverage: number | null;

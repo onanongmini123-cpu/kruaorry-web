@@ -43,6 +43,8 @@ export interface ResourceCardProps {
   requiredPlanNames?: readonly string[];
   coverImageUrl?: string | null;
   isNew?: boolean;
+  /** A Pro resource with watermarked previews anyone can look at: shows the "ทดลองได้" badge. */
+  trialAvailable?: boolean;
   /** The viewer cannot open it yet: adds a lock to the cover. Never changes the badge. */
   locked?: boolean;
   /** Detail page link (public pages). */
@@ -71,6 +73,7 @@ export function ResourceCard({
   requiredPlanNames = [],
   coverImageUrl = null,
   isNew,
+  trialAvailable,
   locked,
   href,
   onSelect,
@@ -135,6 +138,7 @@ export function ResourceCard({
             {ACCESS_TIER_LABEL[accessTier]}
             {planNames.length > 0 && <span style={VISUALLY_HIDDEN}> (ใช้ได้กับแพ็ก {planNames.join(" / ")})</span>}
           </Badge>
+          {trialAvailable && accessTier === "pro" && <Badge tone="info">ทดลองได้</Badge>}
         </div>
 
         <Heading className="kru-resource-card__title">
