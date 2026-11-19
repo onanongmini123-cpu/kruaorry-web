@@ -17,7 +17,7 @@ export default function PrivacyPage() {
         <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)" }}>KruAorry</span>
       </Link>
       <h1 style={{ marginTop: "var(--sp-7)", fontSize: "var(--fs-30)" }}>นโยบายความเป็นส่วนตัว</h1>
-      <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)" }}>ปรับปรุงล่าสุด: ตุลาคม 2569</p>
+      <p style={{ marginTop: "var(--sp-3)", color: "var(--text-muted)" }}>ปรับปรุงล่าสุด: พฤศจิกายน 2569</p>
 
       <div style={{ marginTop: "var(--sp-7)", display: "grid", gap: "var(--sp-6)", fontSize: "var(--fs-16)", lineHeight: "var(--lh-loose)" }}>
         <section>
