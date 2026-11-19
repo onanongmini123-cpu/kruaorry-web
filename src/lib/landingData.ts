@@ -7,6 +7,7 @@ import type { FounderCapacity } from "@/lib/founderCapacity";
 import { fetchMembershipSchemaReadiness, type MembershipSchemaReadiness } from "@/lib/membershipSchemaReadiness";
 import { createAnonClient } from "@/lib/supabase/anon";
 import { parseHomepageVideos, type HomepageVideo } from "@/lib/homepageVideos";
+import { parseHomepageRankings, RANKING_ROW_LIMIT, type HomepageRankings } from "@/lib/homepageRankings";
 import { withTimeout } from "@/lib/asyncTimeout";
 
 /**
@@ -24,6 +25,8 @@ export interface LandingData {
   readiness: MembershipSchemaReadiness;
   /** Admin-chosen homepage videos (0–3). Empty hides the section. */
   videos: HomepageVideo[];
+  /** Homepage ranking rows (ids and counts only); null until migration 060 or on failure. */
+  rankings: HomepageRankings | null;
 }
 
 export const EMPTY_LANDING_DATA: LandingData = {
@@ -33,6 +36,7 @@ export const EMPTY_LANDING_DATA: LandingData = {
   founderCapacity: null,
   readiness: "checking",
   videos: [],
+  rankings: null,
 };
 
 export const LANDING_REVALIDATE_SECONDS = 300;
@@ -82,15 +86,27 @@ async function readHomepageVideos(supabase: SupabaseClient): Promise<HomepageVid
   }
 }
 
+/** Never throws: before migration 060 (or on any failure) there is simply no ranking. */
+async function readRankings(supabase: SupabaseClient): Promise<HomepageRankings | null> {
+  try {
+    const outcome = await withTimeout(Promise.resolve(supabase.rpc("get_homepage_rankings", { p_limit: RANKING_ROW_LIMIT })), "homepage rankings");
+    if (!outcome.ok || outcome.value.error) return null;
+    return parseHomepageRankings(outcome.value.data);
+  } catch {
+    return null;
+  }
+}
+
 async function readLandingData(): Promise<LandingData> {
   const supabase = createAnonClient();
   if (!supabase) return EMPTY_LANDING_DATA;
   try {
-    const [plans, catalogue, readiness, videos] = await Promise.all([
+    const [plans, catalogue, readiness, videos, rankings] = await Promise.all([
       fetchPlans(supabase),
       loadPublicResources(),
       fetchMembershipSchemaReadiness(supabase),
       readHomepageVideos(supabase),
+      readRankings(supabase),
     ]);
     const resources = catalogue.status === "ready" ? catalogue.resources.map(toLandingResource) : [];
     const founderCapacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
@@ -98,7 +114,7 @@ async function readLandingData(): Promise<LandingData> {
     // and no resources" as not loaded so a transient outage is retried by the
     // client rather than cached as the truth.
     const loaded = plans.length > 0 || resources.length > 0;
-    return { loaded, plans, resources, founderCapacity, readiness, videos };
+    return { loaded, plans, resources, founderCapacity, readiness, videos, rankings };
   } catch {
     return EMPTY_LANDING_DATA;
   }

@@ -45,6 +45,8 @@ export interface ResourceCardProps {
   isNew?: boolean;
   /** A Pro resource with watermarked previews anyone can look at: shows the "ทดลองได้" badge. */
   trialAvailable?: boolean;
+  /** How many teachers hearted it; shown only when above zero. */
+  heartCount?: number;
   /** The viewer cannot open it yet: adds a lock to the cover. Never changes the badge. */
   locked?: boolean;
   /** Detail page link (public pages). */
@@ -74,6 +76,7 @@ export function ResourceCard({
   coverImageUrl = null,
   isNew,
   trialAvailable,
+  heartCount,
   locked,
   href,
   onSelect,
@@ -139,6 +142,11 @@ export function ResourceCard({
             {planNames.length > 0 && <span style={VISUALLY_HIDDEN}> (ใช้ได้กับแพ็ก {planNames.join(" / ")})</span>}
           </Badge>
           {trialAvailable && accessTier === "pro" && <Badge tone="info">ทดลองได้</Badge>}
+          {typeof heartCount === "number" && heartCount > 0 && (
+            <span className="kru-resource-card__hearts" aria-label={`ครูกดหัวใจ ${heartCount.toLocaleString("th-TH")} คน`}>
+              <Heart size={14} fill="currentColor" aria-hidden="true" /> {heartCount.toLocaleString("th-TH")}
+            </span>
+          )}
         </div>
 
         <Heading className="kru-resource-card__title">
