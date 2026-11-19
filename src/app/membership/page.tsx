@@ -59,6 +59,13 @@ import {
   requestedMembershipPlan,
 } from "@/lib/membershipJourney";
 import { createLatestRefreshRunner } from "@/lib/latestRefresh";
+import {
+  failedMembershipChecks,
+  failedMembershipChecksMessage,
+  membershipChecksLoading,
+  onlyFounderChecksFailed,
+  planCheckLabel,
+} from "@/lib/membershipChecks";
 import { planDisplayName } from "@/lib/planDisplay";
 import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
@@ -161,6 +168,9 @@ function MembershipContent() {
   const [entitlements, setEntitlements] = useState<EntitlementSnapshot>(EMPTY_ENTITLEMENTS);
   const [subscription, setSubscription] = useState<MemberSubscription | null>(null);
   const [memberStatusError, setMemberStatusError] = useState(false);
+  // Which of the two reads behind memberStatusError failed (for the message only).
+  const [entitlementsFailed, setEntitlementsFailed] = useState(false);
+  const [subscriptionFailed, setSubscriptionFailed] = useState(false);
   const [memberStatusLoaded, setMemberStatusLoaded] = useState(!isSupabaseConfigured);
   const [submitting, setSubmitting] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -188,6 +198,28 @@ function MembershipContent() {
     || !capacityLoaded
     || capacity === null
     || (Boolean(userId) && !founderHistoryKnown);
+  const checksInput = {
+    isConfigured: isSupabaseConfigured,
+    schemaReadiness,
+    authLoaded,
+    signedIn: Boolean(userId),
+    memberStatusLoaded,
+    capacityLoaded,
+    founderHistoryLoaded,
+    founderChecksNeeded: shouldLoadFounderChecks,
+    capacityMissing: capacity === null,
+    founderHistoryError,
+    applicationsError,
+    entitlementsError: entitlementsFailed,
+    subscriptionError: subscriptionFailed,
+  };
+  const checksLoading = membershipChecksLoading(checksInput);
+  const failedChecks = failedMembershipChecks(checksInput);
+  const failedChecksKey = failedChecks.join(",");
+  // Names of the failed reads only (never data), so a support screenshot of the console says which one.
+  useEffect(() => {
+    if (failedChecksKey) console.error(`membership checks failed: ${failedChecksKey}`);
+  }, [failedChecksKey]);
   const founderOfferUnavailable = Boolean(userId) && (!founderHistoryKnown || hasFounderHistory);
   const returnResourceState = membershipReturnResourceState(returnResourceId, returnResourceRead);
   const returnResourceLoaded = returnResourceState.loaded;
@@ -359,6 +391,8 @@ function MembershipContent() {
         setEntitlements(EMPTY_ENTITLEMENTS);
         setSubscription(null);
         setMemberStatusError(false);
+        setEntitlementsFailed(false);
+        setSubscriptionFailed(false);
         setMemberStatusLoaded(true);
         setAuthLoaded(true);
         return;
@@ -385,6 +419,8 @@ function MembershipContent() {
       if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
       if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
       setMemberStatusError(entitlementResult.error || subscriptionResult.error);
+      setEntitlementsFailed(entitlementResult.error);
+      setSubscriptionFailed(subscriptionResult.error);
       setMemberStatusLoaded(true);
       setAuthLoaded(true);
     };
@@ -422,6 +458,8 @@ function MembershipContent() {
         if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
         if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
         setMemberStatusError(entitlementResult.error || subscriptionResult.error);
+        setEntitlementsFailed(entitlementResult.error);
+        setSubscriptionFailed(subscriptionResult.error);
         setMemberStatusLoaded(true);
       },
     );
@@ -469,6 +507,8 @@ function MembershipContent() {
       setEntitlements(EMPTY_ENTITLEMENTS);
       setSubscription(null);
       setMemberStatusError(false);
+      setEntitlementsFailed(false);
+      setSubscriptionFailed(false);
       setMemberStatusLoaded(true);
       return;
     }
@@ -499,6 +539,8 @@ function MembershipContent() {
     if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
     if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
     setMemberStatusError(entitlementResult.error || subscriptionResult.error);
+    setEntitlementsFailed(entitlementResult.error);
+    setSubscriptionFailed(subscriptionResult.error);
     setMemberStatusLoaded(true);
   };
 
@@ -774,11 +816,25 @@ function MembershipContent() {
                         <strong>{plan.name}</strong>
                         <span>{plan.priceLabel}</span>
                         {unavailable && (
-                          <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? "กำลังตรวจสอบสิทธิ์" : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
+                          <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? planCheckLabel(checksLoading) : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
                         )}
                       </button>
                     );
                   })}
+                </div>
+              )}
+              {checksLoading && schemaReadiness !== "unavailable" && (
+                <p role="status" className="kru-membership-alert">กำลังตรวจสอบสิทธิ์ของบัญชี…</p>
+              )}
+              {failedChecks.length > 0 && schemaReadiness === "ready" && (
+                <div role="alert" className="kru-membership-alert kru-membership-alert--warning" style={{ display: "grid", gap: "var(--sp-3)" }}>
+                  <strong>{failedMembershipChecksMessage(failedChecks)}</strong>
+                  <span>
+                    {onlyFounderChecksFailed(failedChecks)
+                      ? "ยังเลือก Teacher Pro ได้ตามปกติ ส่วน Founder ต้องตรวจสอบให้สำเร็จก่อน"
+                      : "เกิดจากการเชื่อมต่อไม่สำเร็จ ไม่ได้แปลว่าสิทธิ์ของคุณหายไป ระบบยังไม่แก้ไขข้อมูลใด ๆ"}
+                  </span>
+                  <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองอีกครั้ง</Button>
                 </div>
               )}
               {selectedPlan && !noSelectablePlanForResource && (
