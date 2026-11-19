@@ -222,3 +222,7 @@
     top: var(--sp-5);
   }
 }
+
+.kru-detail__video {
+  margin-top: var(--sp-6);
+}

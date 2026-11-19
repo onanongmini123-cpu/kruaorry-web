@@ -7,7 +7,7 @@ import { relatedResources } from "@/lib/relatedResources";
 import { isResourceUuid, isValidSlug } from "@/lib/resourceSlug";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
-import { PUBLIC_RESOURCE_SELECT, PUBLIC_RESOURCE_SELECT_WITH_SLUG, resourceHref, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
+import { PUBLIC_RESOURCE_SELECT, PUBLIC_RESOURCE_SELECT_WITH_SLUG, PUBLIC_RESOURCE_SELECT_WITH_VIDEO, resourceHref, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
 import { collectResourcePages } from "./pagination";
 
 type LoadResult = { status: "ready"; resources: PublicResource[] } | { status: "unavailable"; resources: [] };
@@ -48,11 +48,19 @@ const CATALOG_REVALIDATE_SECONDS = 300;
 
 type CatalogRead = { resources: PublicResource[]; slugsLive: boolean };
 
-function isMissingSlugColumn(error: unknown): boolean {
+function isMissingColumn(error: unknown, column: RegExp): boolean {
   if (!error || typeof error !== "object") return false;
   const { code, message } = error as { code?: unknown; message?: unknown };
   const text = typeof message === "string" ? message : "";
-  return (code === "42703" || code === "PGRST204" || code === "PGRST200") && /slug/i.test(text);
+  return (code === "42703" || code === "PGRST204" || code === "PGRST200") && column.test(text);
+}
+
+function isMissingSlugColumn(error: unknown): boolean {
+  return isMissingColumn(error, /slug/i);
+}
+
+function isMissingVideoColumn(error: unknown): boolean {
+  return isMissingColumn(error, /youtube_video_id/i);
 }
 
 /** Every published row, newest first. Resolves `{ error }` instead of throwing. */
@@ -89,7 +97,10 @@ async function readCatalog(): Promise<CatalogRead> {
   if (!client) throw new Error("catalog unavailable: no Supabase configuration");
 
   let slugsLive = true;
-  let result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT_WITH_SLUG);
+  let result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT_WITH_VIDEO);
+  if (!result.rows && isMissingVideoColumn(result.error)) {
+    result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT_WITH_SLUG);
+  }
   if (!result.rows && isMissingSlugColumn(result.error)) {
     slugsLive = false;
     result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT);

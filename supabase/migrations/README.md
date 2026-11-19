@@ -555,3 +555,17 @@ current entitled Founder usage. Pending migration `048` restores the durable
 ledger as the cumulative source of truth only after any unproven legacy grants
 have been separately audited and reconciled, then hardens it as an irreversible
 first-100 promotion record; once `048` is applied, places are never recycled.
+
+Migration `20261010090000_058_resource_youtube_video.sql` is **pending** (not
+applied by this repository). It is additive: a nullable
+`resources.youtube_video_id` (format-checked), the same id as the last column of
+`resource_catalog`, the admin-only `admin_set_resource_video(uuid, text)`, a
+read-only `homepage_videos` table (at most three rows) and the admin-only
+`admin_set_homepage_videos(jsonb)`. It does not modify `admin_save_resource` or
+any existing row. The application reads these defensively, so it can be
+deployed before or after the migration; until the migration exists no video and
+no homepage section is shown. Roll back with
+`supabase/rollbacks/20261010090000_058_resource_youtube_video.rollback.sql`
+(leaves an always-NULL view column) and verify with
+`supabase/verification/058-verify.sql`. Run `npm run test:youtube-video-sql`
+and `npm run test:migration-chain-sql` before applying.

@@ -25,6 +25,7 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
+import { HomepageVideosSection } from "@/app/landing/HomepageVideosSection";
 import { PricingSection, type PricingCta } from "@/app/landing/PricingSection";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { TrackOnVisible } from "@/components/analytics/TrackOnVisible";
@@ -356,6 +357,8 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             </Link>
           ))}
         </nav>
+
+        <HomepageVideosSection videos={initial.videos} />
 
         <section className="kru-free-showcase">
           <div className="kru-free-showcase__heading">

@@ -9,6 +9,7 @@ import { planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 import { parseDetailContent, type ResourceDetailContent } from "@/lib/resourceDetail";
 import { isValidSlug } from "@/lib/resourceSlug";
+import { isYouTubeVideoId } from "@/lib/youtube";
 
 export type PublicResource = {
   id: string;
@@ -32,6 +33,8 @@ export type PublicResource = {
   reviewCount: number;
   /** Optional structured teaching notes; every section hides when absent. */
   detail: ResourceDetailContent | null;
+  /** Optional how-to-play video; null for every resource that has none. */
+  youtubeVideoId: string | null;
 };
 
 export interface PublicResourceViewer {
@@ -94,6 +97,7 @@ export function toPublicResource(value: unknown): PublicResource | null {
       : Number(row.review_average),
     reviewCount: Number(row.review_count ?? 0),
     detail: parseDetailContent(row.detail_content),
+    youtubeVideoId: isYouTubeVideoId(row.youtube_video_id) ? row.youtube_video_id : null,
   };
 }
 
@@ -114,6 +118,13 @@ export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, d
  * PUBLIC_RESOURCE_SELECT until the slug migration is applied.
  */
 export const PUBLIC_RESOURCE_SELECT_WITH_SLUG = `${PUBLIC_RESOURCE_SELECT}, slug`;
+
+/**
+ * Same again plus the how-to-play video id (migration 058). Tried first; the
+ * loader falls back to the slug-only and then the base select while the column
+ * does not exist yet, so the app is safe to deploy before the migration.
+ */
+export const PUBLIC_RESOURCE_SELECT_WITH_VIDEO = `${PUBLIC_RESOURCE_SELECT_WITH_SLUG}, youtube_video_id`;
 
 export function signupHref(): string {
   // Account creation always lands at the member-app root. Opening a resource
