@@ -12,6 +12,7 @@ import {
   MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE,
 } from "@/lib/membershipSchemaReadiness";
 import { planDisplayName, planDisplayNames } from "@/lib/planDisplay";
+import { groupPreviewRows } from "@/lib/resourcePreviews";
 import { friendlyErrorMessage } from "@/lib/userMessages";
 import { customerBenefitCopy } from "@/lib/benefitCopy";
 import type { IssueContext } from "@/lib/issueContext";
@@ -104,6 +105,24 @@ function resourceAccessMode(value: unknown): ResourceAccessMode {
   return RESOURCE_ACCESS_MODES.has(value as ResourceAccessMode) ? value as ResourceAccessMode : "locked";
 }
 
+/**
+ * Ids of Pro resources that have watermarked previews (migration 059). Only the
+ * public preview view is read, so no destination is involved. Never throws:
+ * before the migration, or on any failure, nothing gets a "ทดลองได้" badge.
+ */
+async function fetchResourcesWithPreviews(supabase: SupabaseClient): Promise<Set<string>> {
+  try {
+    const outcome = await withTimeout(
+      Promise.resolve(supabase.from("resource_preview_catalog").select("resource_id, position, image_url").limit(2000)),
+      "resource previews",
+    );
+    if (!outcome.ok || outcome.value.error) return new Set();
+    return new Set(groupPreviewRows(outcome.value.data).keys());
+  } catch {
+    return new Set();
+  }
+}
+
 export async function fetchPublishedResources(supabase: SupabaseClient): Promise<Resource[]> {
   const pageSize = 500;
   const rows: ResourceCatalogRow[] = [];
@@ -126,10 +145,13 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
     if (data.length < pageSize) break;
   }
 
+  const withPreviews = await fetchResourcesWithPreviews(supabase);
+
   return rows.map((r) => {
     const accessMode = resourceAccessMode(r.access_mode);
     return {
       id: r.id,
+      trialAvailable: accessMode === "plans" && withPreviews.has(r.id),
       title: r.title,
       meta: r.meta ?? "",
       description: r.description,
