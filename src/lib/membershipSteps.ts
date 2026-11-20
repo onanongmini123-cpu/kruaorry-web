@@ -24,3 +24,34 @@ export function membershipStepNumber({ hasPendingApplication, lineSlipReceived, 
   if (!hasPendingApplication) return 1;
   return lineSlipReceived ? 4 : 2;
 }
+
+export interface MembershipStepperVisibilityInput {
+  /** The sign-in check has finished. */
+  authLoaded: boolean;
+  signedIn: boolean;
+  /** Entitlements, subscription and applications have all answered. */
+  memberStatusLoaded: boolean;
+  /** The member already has a paid plan (Teacher Pro / Founder) active. */
+  membershipActive: boolean;
+  /** The member has an application waiting for approval. */
+  hasPendingApplication: boolean;
+}
+
+/**
+ * The 4-step bar is for people who are still joining: visitors who are not
+ * signed in, free members, and anyone with an application waiting for
+ * approval. Members with an active paid plan do not see it. While the status
+ * is still loading it stays hidden, so an active member never sees it flash.
+ */
+export function shouldShowMembershipStepper({
+  authLoaded,
+  signedIn,
+  memberStatusLoaded,
+  membershipActive,
+  hasPendingApplication,
+}: MembershipStepperVisibilityInput): boolean {
+  if (!authLoaded) return false;
+  if (!signedIn) return true;
+  if (!memberStatusLoaded) return false;
+  return hasPendingApplication || !membershipActive;
+}
