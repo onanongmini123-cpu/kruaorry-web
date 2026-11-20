@@ -9,7 +9,7 @@ import { Badge, Button } from "@/components/ui";
 import { PlanBenefits } from "@/app/landing/PlanBenefits";
 import { LINE_OA_URL } from "@/lib/config";
 import { lineSlipHref } from "@/lib/lineSlipLink";
-import { membershipStepNumber } from "@/lib/membershipSteps";
+import { membershipStepNumber, shouldShowMembershipStepper } from "@/lib/membershipSteps";
 import { MembershipStepper, PromptPayCard } from "./PaymentFlow";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -297,7 +297,14 @@ function MembershipContent() {
   const stepNumber = membershipStepNumber({
     hasPendingApplication: hasOpenApplication,
     lineSlipReceived: Boolean(pendingApplication?.lineSlipReceivedAt),
+    membershipActive: hasCurrentMembership && !hasOpenApplication,
+  });
+  const showStepper = shouldShowMembershipStepper({
+    authLoaded,
+    signedIn: Boolean(userId),
+    memberStatusLoaded,
     membershipActive: hasCurrentMembership,
+    hasPendingApplication: hasOpenApplication,
   });
   const slipLineHref = latestApplication?.status === "pending"
     ? lineSlipHref(process.env.NEXT_PUBLIC_LINE_OA_ID, {
@@ -705,7 +712,7 @@ function MembershipContent() {
       </header>
 
       <main>
-        <MembershipStepper current={stepNumber} />
+        {showStepper && <MembershipStepper current={stepNumber} />}
         <section className="kru-membership-hero">
           <div className="kru-membership-hero__copy">
             <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> {noSelectablePlanForResource ? "สิทธิ์เฉพาะสมาชิกเดิม" : applicationPlanId === "founder" ? "สิทธิ์เปิดตัว Founder 100" : "แพ็ก Teacher Pro"}</span>
