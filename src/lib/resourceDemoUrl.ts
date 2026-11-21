@@ -6,12 +6,14 @@
  * is never an authorization decision. The full version keeps going through
  * resolve_resource_target / the open and download routes unchanged.
  *
- * These rules are mirrored by public.resource_demo_url_is_safe (migration 058);
+ * These rules are mirrored by public.resource_demo_url_is_safe (migration 061);
  * src/lib/__tests__/fixtures/demo-url-corpus.json is run against both so the
  * two cannot drift apart. The link is only ever rendered as an <a href> that an
  * administrator typed — it is never built from visitor input, so there is no
  * open redirect — but it is still held to HTTPS and a public host.
  */
+
+import { friendlyErrorMessage } from "@/lib/userMessages";
 
 export const DEMO_URL_MAX_LENGTH = 2048;
 
@@ -72,7 +74,7 @@ export const DEMO_MODE_OPTIONS: ReadonlyArray<{ value: DemoMode; label: string }
 ];
 
 export const DEMO_UNAVAILABLE_NOTICE =
-  "ยังตั้งหรือดูเดโมจากหน้านี้ไม่ได้ เพราะฐานข้อมูลยังไม่ได้ติดตั้ง migration 058 — บันทึกสื่อด้วยช่องอื่นได้ตามปกติ";
+  "ยังตั้งหรือดูเดโมจากหน้านี้ไม่ได้ เพราะฐานข้อมูลยังไม่ได้ติดตั้ง migration 061 — บันทึกสื่อด้วยช่องอื่นได้ตามปกติ";
 
 export function demoModeFromUrl(url: string): DemoMode {
   return url.trim() ? "url" : "none";
@@ -80,7 +82,7 @@ export function demoModeFromUrl(url: string): DemoMode {
 
 /**
  * What to send to admin_set_resource_demo, or `undefined` for "do not call it"
- * (the field is unchanged, or the database does not have 058 yet).
+ * (the field is unchanged, or the database does not have 061 yet).
  * `null` means "remove the demo".
  */
 export function demoParamForSave(
@@ -95,12 +97,25 @@ export function demoParamForSave(
   return next || null;
 }
 
-/** Thai message for a database refusal of the demo link. */
+/** Thai message for a database refusal of the demo link we know about, else null. */
 export function thaiDemoSaveError(message: string): string | null {
   if (/Resource demo URL is invalid/i.test(message)) return `ลิงก์เดโมไม่ถูกต้อง: ${DEMO_URL_HELP}`;
   if (/Resource demo URL must differ/i.test(message)) return "ลิงก์เดโมต้องไม่ซ้ำกับลิงก์ฉบับเต็มของสื่อ";
   if (/Admin access required/i.test(message)) return "ต้องเป็นแอดมินจึงจะตั้งเดโมได้";
   return null;
+}
+
+export const DEMO_SAVE_FALLBACK = "บันทึกเดโมไม่สำเร็จ กรุณาลองอีกครั้ง หากยังไม่ได้ให้แจ้งทีมงาน";
+
+/**
+ * The sentence the admin sees when saving the demo fails. Known refusals get
+ * their own Thai text; anything else goes through friendlyErrorMessage, which
+ * never echoes a raw (English/database) message.
+ */
+export function demoSaveErrorMessage(error: unknown): string {
+  const raw = error && typeof error === "object" ? (error as { message?: unknown }).message : error;
+  const known = typeof raw === "string" ? thaiDemoSaveError(raw) : null;
+  return known ?? friendlyErrorMessage(error, DEMO_SAVE_FALLBACK);
 }
 
 export function isDemoUnavailable(error: { code?: string; message?: string } | null | undefined): boolean {

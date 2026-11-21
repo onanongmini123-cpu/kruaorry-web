@@ -29,7 +29,7 @@ https เท่านั้น, ไม่มีรหัสผ่าน/พอ�
 | 058, 059 | `20261115…_accounting_*` (คนละเรื่อง) | `claude/wonderful-planck-dixufx` |
 
 งานนี้จึงใช้ **061** (`20261013090000_061_resource_demo_url`) ไม่ใช้ 058 และ **ไม่แก้ `resource_catalog`** (058 ของ youtube แก้ view นี้เช่นกัน; ถ้าสองไฟล์ต่างทำ `create or replace view` จะ apply ทั้งสองลำดับไม่ได้) เดโมอ่านจาก view แยก `resource_demo_catalog`
-ทดสอบแล้วว่า 061 apply ได้บนสาย 001–057 + 058–060 ของ release branch และ `resource_catalog` ไม่เปลี่ยนแม้แต่ไบต์เดียว
+**ลำดับที่ต้องใช้: merge/apply 058–060 ก่อน แล้วค่อย 061** (ledger ของ Supabase CLI เรียงตามเวอร์ชัน apply เวอร์ชันต่ำหลังเวอร์ชันสูงไม่ได้ถ้าไม่ใช้ `--include-all`) ทดสอบแล้วว่า 061 apply ได้บนสาย 001–057 + 058–060 ของ release branch และ `resource_catalog` ไม่เปลี่ยนแม้แต่ไบต์เดียว
 แผนก่อน merge: (1) merge release batch 058–060 → (2) rebase PR นี้ ถ้า batch เปลี่ยนเลข ให้เลื่อน 061 ต่อท้ายเลขสุดท้าย (3) ชุด accounting ต้องเปลี่ยนเลขของตัวเองให้ไม่ซ้ำ (4) รัน `npm run test:resource-demo-sql` และ `test:migration-chain-sql` ใหม่ (5) apply staging → `supabase/verification/061-verify.sql` → production — **โดยเจ้าของระบบ ไม่ใช่ PR นี้**
 ความซ้อนทางฟีเจอร์: 059 `try-before-buy` คือรูปพรีวิวมีลายน้ำของสื่อ Pro; งานนี้คือลิงก์เดโมเล่นได้ — ควรตัดสินใจว่าหน้ารายละเอียดจะวางสองอย่างอย่างไรเมื่อ merge รวมกัน (ปัจจุบันไม่ได้แตะไฟล์เดียวกันนอกจาก `page.tsx` และ `catalog.ts`/`data.ts` ซึ่งอาจมี conflict ข้อความ)
 

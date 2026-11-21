@@ -67,7 +67,7 @@ import type { AdminPlanOverviewItem, PlanBenefitRow } from "./planOverview";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
-import { DEMO_MODE_OPTIONS, DEMO_UNAVAILABLE_NOTICE, DEMO_URL_HELP, demoModeFromUrl, demoParamForSave, demoSameAsFullVersion, demoUrlProblem, isDemoUnavailable, thaiDemoSaveError, type DemoMode } from "@/lib/resourceDemoUrl";
+import { DEMO_MODE_OPTIONS, DEMO_UNAVAILABLE_NOTICE, DEMO_URL_HELP, demoModeFromUrl, demoParamForSave, demoSameAsFullVersion, demoSaveErrorMessage, demoUrlProblem, isDemoUnavailable, type DemoMode } from "@/lib/resourceDemoUrl";
 import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
@@ -1483,7 +1483,7 @@ export default function AdminConsolePage() {
           // The resource itself is saved: keep the form open on it so a retry updates instead of creating again.
           setEditingId(resourceId);
           setPendingResourceId(null);
-          setFormError(`บันทึกสื่อแล้ว แต่บันทึกเดโมไม่สำเร็จ: ${thaiDemoSaveError(demoResult.error.message) ?? demoResult.error.message}`);
+          setFormError(`บันทึกสื่อแล้ว แต่บันทึกเดโมไม่สำเร็จ: ${demoSaveErrorMessage(demoResult.error)}`);
           await reloadAdminData();
           return;
         }

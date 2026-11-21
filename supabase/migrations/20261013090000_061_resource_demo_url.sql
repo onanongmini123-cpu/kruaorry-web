@@ -27,10 +27,15 @@
 -- NUMBERING / ORDER
 --   Written against main (057). origin has unmerged 058 (youtube video), 059
 --   (previews), 060 (homepage rankings) on release/pro-features-batch-1, and a
---   different 058/059 (accounting) on claude/wonderful-planck-dixufx. This file is
---   numbered 061 and touches none of their objects, so it can be applied before or
---   after any of them. The owner must still renumber whichever file loses the
---   race for 058/059 before merging.
+--   different 058/059 (accounting) on claude/wonderful-planck-dixufx.
+--   REQUIRED ORDER: merge and apply 058-060 FIRST, then this file (061). The
+--   Supabase CLI keeps a ledger ordered by version; applying a lower version after
+--   a higher one is applied is refused or needs --include-all, so 061 must not be
+--   applied ahead of them. (The SQL itself does not depend on 058-060: it touches
+--   none of their objects, which is why renumbering is the only thing to do if
+--   that batch changes its numbers - 061 must stay after the last of them.)
+--   The accounting 058/059 must be renumbered by their owner before either lands.
+--   Plan: docs/resource-demo-preview.md.
 --
 -- WHAT IT DOES NOT DO
 --   * No new Storage bucket or policy. A downloadable sample file is NOT part of
@@ -44,7 +49,7 @@
 --   console and the public page both work (without a demo) on a database without it.
 --
 -- ROLLBACK
---   supabase/rollbacks/20261010090000_061_resource_demo_url.rollback.sql
+--   supabase/rollbacks/20261013090000_061_resource_demo_url.rollback.sql
 --   (drops the view, function, constraints and column; any saved
 --   demo URLs are lost - they are not part of the full version).
 

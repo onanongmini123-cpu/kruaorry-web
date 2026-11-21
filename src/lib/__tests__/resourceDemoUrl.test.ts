@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  DEMO_URL_MAX_LENGTH, demoModeFromUrl, demoParamForSave, demoSameAsFullVersion, demoUrlProblem,
+  DEMO_SAVE_FALLBACK, DEMO_URL_MAX_LENGTH, demoModeFromUrl, demoSaveErrorMessage, demoParamForSave, demoSameAsFullVersion, demoUrlProblem,
   isDemoUnavailable, publicDemoUrl, thaiDemoSaveError,
 } from "../resourceDemoUrl";
 
@@ -79,5 +79,29 @@ describe("what the admin form sends", () => {
     expect(isDemoUnavailable({ code: "PGRST202", message: "Could not find the function public.admin_set_resource_demo" })).toBe(true);
     expect(isDemoUnavailable({ code: "57P01", message: "terminating connection" })).toBe(false);
     expect(isDemoUnavailable(null)).toBe(false);
+  });
+});
+
+describe("demo save error shown to the admin", () => {
+  it("uses our Thai text for known refusals", () => {
+    expect(demoSaveErrorMessage({ message: "Resource demo URL is invalid" })).toMatch(/ไม่ถูกต้อง/);
+    expect(demoSaveErrorMessage({ message: "Resource demo URL must differ from the full version URL" })).toMatch(/ไม่ซ้ำ/);
+  });
+
+  it("never echoes a raw database or English message", () => {
+    for (const raw of [
+      'new row for relation "resources" violates check constraint "resources_demo_url_safe"',
+      "permission denied for function admin_set_resource_demo_internal",
+      "FATAL: password authentication failed for user postgres",
+      "Something unexpected in English",
+      "Resource not found",
+    ]) {
+      const shown = demoSaveErrorMessage({ message: raw });
+      expect(shown).toMatch(/[฀-๿]/);
+      expect(shown).not.toContain(raw);
+      expect(shown).not.toMatch(/violates|constraint|postgres|relation|function|FATAL/i);
+    }
+    expect(demoSaveErrorMessage(null)).toBe(DEMO_SAVE_FALLBACK);
+    expect(demoSaveErrorMessage("raw string error")).not.toContain("raw string error");
   });
 });

@@ -10,7 +10,7 @@
 //   * only admins can set a demo; anon and members are refused
 //   * the demo is public (resource_demo_catalog, anon) but cta_url / file_path stay private
 //     and resource_catalog is not touched (unmerged 058-060 also change it)
-//   * it applies cleanly on top of the unmerged 058-060 files of release/pro-features-batch-1
+//   * it applies cleanly AFTER the unmerged 058-060 files of release/pro-features-batch-1 (the required order)
 //   * a Pro resource's full version is untouched: resolve_resource_target, every RLS
 //     policy (including Storage) and admin_save_resource are byte-for-byte the same
 //   * a demo can never equal the full version's own URL
@@ -232,7 +232,7 @@ await check("rollback drops the view, column and functions, and 061 re-applies",
   });
 });
 
-await check("applies cleanly after the unmerged 058-060 of release/pro-features-batch-1 (any order of those, resource_catalog untouched)", async () => {
+await check("applies cleanly after the unmerged 058-060 of release/pro-features-batch-1 (required order; resource_catalog untouched)", async () => {
   const { execFileSync } = await import("node:child_process");
   const ref = "origin/release/pro-features-batch-1";
   let files;

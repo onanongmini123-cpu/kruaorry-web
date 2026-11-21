@@ -30,6 +30,11 @@ describe("admin resource form: ทดลองเล่น/ดูตัวอย
     expect(drawer).toContain('export const UNSAVED_CONFIRM_MESSAGE = "มีการแก้ไขที่ยังไม่ได้บันทึก ต้องการปิดโดยไม่บันทึกหรือไม่?"');
   });
 
+  it("never puts a raw database message into the form error", () => {
+    expect(page).toContain("demoSaveErrorMessage(demoResult.error)");
+    expect(page).not.toMatch(/demoResult\.error\.message/);
+  });
+
   it("blocks saving an invalid demo and one equal to the full version before any upload starts", () => {
     const validate = page.indexOf("demoUrlProblem(demoInput)");
     const firstUpload = page.indexOf("runCoverUpload(selectedCoverFile)");
