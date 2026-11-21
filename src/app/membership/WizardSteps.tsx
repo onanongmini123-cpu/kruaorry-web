@@ -339,7 +339,7 @@ export function WaitingStep({
   focusHeading: boolean;
 }) {
   return (
-    <StepFrame title="รอครูอรรี่ตรวจสลิป" lead="ถ้าส่งสลิปใน LINE แล้ว ครูอรรี่จะอนุมัติภายใน 1 วันทำการ หน้านี้จะอัปเดตเอง" focusHeading={focusHeading}>
+    <StepFrame title="รอครูอรรี่ตรวจสลิป" lead="ถ้าส่งสลิปใน LINE แล้ว ครูอรรี่จะตรวจสอบภายใน 1 วันทำการ หน้านี้จะอัปเดตเอง" focusHeading={focusHeading}>
       <div className="kru-wait__icon" aria-hidden="true">⏳</div>
       {slipReceivedAt ? (
         <p role="status" className="kru-wait__received">ทีมงานบันทึกสลิปจาก LINE ไว้เมื่อ {formatThaiDate(slipReceivedAt)} · กำลังตรวจยอดจริง</p>

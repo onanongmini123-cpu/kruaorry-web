@@ -212,7 +212,7 @@ describe("step 4: waiting", () => {
     const text = textOf(html);
     expect(html).toContain("⏳");
     expect(text).toContain("รอครูอรรี่ตรวจสลิป");
-    expect(text).toContain("ถ้าส่งสลิปใน LINE แล้ว ครูอรรี่จะอนุมัติภายใน 1 วันทำการ หน้านี้จะอัปเดตเอง");
+    expect(text).toContain("ถ้าส่งสลิปใน LINE แล้ว ครูอรรี่จะตรวจสอบภายใน 1 วันทำการ หน้านี้จะอัปเดตเอง");
     expect(count(text, "KA-00000005")).toBe(1);
     expect(text).toContain("ยังไม่ได้แนบสลิปในแชต? กลับไปส่ง");
   });
@@ -222,6 +222,15 @@ describe("step 4: waiting", () => {
       const t = textOf(html);
       expect(t).not.toContain("ได้รับแล้ว");
       expect(t).not.toContain("รับสลิปแล้ว");
+    }
+  });
+
+  it("promises a check within one business day, never an approval", () => {
+    expect(textOf(wait())).toContain("ครูอรรี่จะตรวจสอบภายใน 1 วันทำการ");
+    for (const f of ["WizardSteps.tsx", "PaymentFlow.tsx", "page.tsx"]) {
+      const src = readFileSync(path.join(__dirname, f), "utf8");
+      expect(src, f).not.toMatch(/อนุมัติ\s*ภายใน/);
+      expect(src, f).not.toMatch(/จะอนุมัติ/);
     }
   });
 
