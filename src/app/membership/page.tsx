@@ -3,14 +3,18 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Check, Clipboard, ExternalLink, Home, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, Home, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Badge, Button } from "@/components/ui";
 import { PlanBenefits } from "@/app/landing/PlanBenefits";
 import { LINE_OA_URL } from "@/lib/config";
-import { lineSlipHref } from "@/lib/lineSlipLink";
-import { membershipStepNumber, shouldShowMembershipStepper } from "@/lib/membershipSteps";
-import { MembershipStepper, PromptPayCard } from "./PaymentFlow";
+import { lineSlipAction, lineSlipMessage } from "@/lib/lineSlipLink";
+import { resolveWizardStep, shouldShowMembershipStepper, type WizardStep } from "@/lib/membershipSteps";
+import { formatThaiDate, membershipApplicationPlanLabel } from "@/lib/membershipCopy";
+import { readSlipSent, writeSlipSent } from "@/lib/slipSentMark";
+import { resolveMembershipBodyMode } from "@/lib/membershipBodyMode";
+import { MembershipStepper } from "./PaymentFlow";
+import { ApplicationHistory, ApprovedPanel, SlipStep, TransferStep, WaitingStep, StepFrame } from "./WizardSteps";
 import { trackEvent } from "@/lib/analytics";
 import {
   convertFounderApplicationToTeacher,
@@ -74,57 +78,6 @@ const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && pro
 
 type MembershipPlanId = "founder" | "teacher";
 
-function membershipApplicationPlanLabel(planId: string): string {
-  return planDisplayName(planId, planId === "founder" ? "Founder" : null);
-}
-
-function isTestCleanupReason(reasonCode: string | null): boolean {
-  return ["owner_test_cleanup", "test_application_cleanup"].includes(reasonCode ?? "");
-}
-
-function resolvedStatusCopy(application: UpgradeRequest): { label: string; tone: "success" | "neutral"; detail: string } {
-  if (application.status === "approved") return {
-    label: "ยืนยันชำระแล้ว",
-    tone: "success",
-    detail: "ครูอรรี่ยืนยันการชำระแล้ว สิทธิ์สมาชิกจะนับจากรายการที่อนุมัตินี้",
-  };
-  if (isTestCleanupReason(application.resolutionReasonCode)) return {
-    label: "ยกเลิกรายการทดสอบ",
-    tone: "neutral",
-    detail: "รายการนี้เป็นข้อมูลทดสอบของเจ้าของระบบและถูกยกเลิกแล้ว ไม่มีการให้สิทธิ์หรือใช้โควตา Founder",
-  };
-  return {
-    label: "ไม่ผ่านการตรวจสอบ",
-    tone: "neutral",
-    detail: "รายการนี้ไม่ได้รับสิทธิ์ หากต้องการสอบถามรายละเอียด กรุณาติดต่อครูอรรี่ทาง LINE",
-  };
-}
-
-function pendingStatusCopy(application: UpgradeRequest) {
-  if (application.lineSlipReceivedAt) return {
-    label: "รับสลิปทาง LINE แล้ว · รอตรวจยอด",
-    tone: "info" as const,
-    detail: "ทีมงานบันทึกรับสลิปจากแชต LINE แล้ว และกำลังตรวจยอดเงินเข้าจริงก่อนออกสิทธิ์สมาชิก",
-  };
-  if (application.paymentReportedAt) return {
-    label: "มีสถานะแจ้งชำระเดิม · รอยืนยันยอด",
-    tone: "info" as const,
-    detail: "รายการนี้มีสถานะจากขั้นตอนเดิม ซึ่งยังไม่ถือว่าทีมงานรับสลิป สถานะบนเว็บเป็นแบบอ่านอย่างเดียว และทีมงานจะยืนยันยอดจริงก่อนออกสิทธิ์",
-  };
-  return {
-    label: "รอส่งเลขอ้างอิงและสลิปทาง LINE",
-    tone: "warning" as const,
-    detail: "ใบสมัครนี้ยังไม่จองสิทธิ์ ส่งเลขอ้างอิงและสลิปในแชต LINE ได้เลย สถานะบนเว็บเป็นแบบอ่านอย่างเดียวและจะอัปเดตโดยทีมงาน",
-  };
-}
-
-function formatThaiDate(value: string): string {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })
-    : "—";
-}
-
 export default function MembershipPage() {
   return (
     <Suspense fallback={<div className="kru-membership-page" aria-busy="true" />}>
@@ -176,7 +129,16 @@ function MembershipContent() {
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [lineCtaFeedback, setLineCtaFeedback] = useState<string | null>(null);
+  // Wizard: the step the member moved to with next / back in this visit, and
+  // whether "ส่งสลิปแล้ว" was pressed for the current reference (kept per
+  // reference in this browser only, never in the database).
+  const [requestedStep, setRequestedStep] = useState<WizardStep | null>(null);
+  const [slipMark, setSlipMark] = useState<{ referenceCode: string; sent: boolean } | null>(null);
+  const [slipFeedback, setSlipFeedback] = useState<string | null>(null);
+  const [messageCopied, setMessageCopied] = useState(false);
+  const [focusStepHeading, setFocusStepHeading] = useState(false);
+  const [sawPendingApplication, setSawPendingApplication] = useState(false);
+  const [stepScope, setStepScope] = useState<string | null | undefined>(undefined);
 
   // A legacy account can legitimately have an older pending application and a
   // newer resolved record. Keep the still-actionable request visible instead
@@ -294,25 +256,30 @@ function MembershipContent() {
   const applicationFounderHistoryError = founderChecksBlockPlan(applicationPlanId, founderHistoryError);
   const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable);
   const applicationAmount = applicationPlanId === "founder" ? 299 : 599;
-  const stepNumber = membershipStepNumber({
-    hasPendingApplication: hasOpenApplication,
-    lineSlipReceived: Boolean(pendingApplication?.lineSlipReceivedAt),
-    membershipActive: hasCurrentMembership && !hasOpenApplication,
-  });
-  const showStepper = shouldShowMembershipStepper({
-    authLoaded,
-    signedIn: Boolean(userId),
-    memberStatusLoaded,
-    membershipActive: hasCurrentMembership,
-    hasPendingApplication: hasOpenApplication,
-  });
-  const slipLineHref = latestApplication?.status === "pending"
-    ? lineSlipHref(process.env.NEXT_PUBLIC_LINE_OA_ID, {
-        planName: membershipApplicationPlanLabel(latestApplication.planId),
-        referenceCode: latestApplication.referenceCode,
-        amountThb: latestApplication.quotedAmountThb,
-      })
-    : LINE_OA_URL;
+  const pendingReference = pendingApplication?.referenceCode ?? null;
+  // A different (or new) application starts from its own state: step 2 unless its
+  // slip was sent. Adjusting state while rendering (not in an effect) avoids a
+  // flash of the wrong step.
+  if (stepScope !== pendingReference) {
+    setStepScope(pendingReference);
+    if (pendingReference) setSawPendingApplication(true);
+    setRequestedStep(null);
+    setSlipFeedback(null);
+    setMessageCopied(false);
+    setSlipMark(pendingReference ? { referenceCode: pendingReference, sent: readSlipSent(pendingReference) } : null);
+  }
+  const slipMarkReady = pendingReference === null || slipMark?.referenceCode === pendingReference;
+  const slipSent = Boolean(pendingApplication?.lineSlipReceivedAt)
+    || (slipMark?.referenceCode === pendingReference && slipMark.sent);
+  const slipMessageInput = pendingApplication
+    ? {
+        planName: membershipApplicationPlanLabel(pendingApplication.planId),
+        referenceCode: pendingApplication.referenceCode,
+        amountThb: pendingApplication.quotedAmountThb,
+      }
+    : null;
+  const slipMessage = slipMessageInput ? lineSlipMessage(slipMessageInput) : "";
+  const slipAction = slipMessageInput ? lineSlipAction(process.env.NEXT_PUBLIC_LINE_OA_ID, slipMessageInput) : null;
   const selectedPlan = plans.find((plan) => plan.id === applicationPlanId) ?? null;
   const membershipNeedsRenewal = canRequestMembershipRenewal(subscription);
   const membershipStatusPlanId = subscription && (hasCurrentMembership || membershipNeedsRenewal)
@@ -320,7 +287,7 @@ function MembershipContent() {
     : currentPlanId;
   const currentMembershipPlanName = plans.find((plan) => plan.id === membershipStatusPlanId)?.name
     ?? planDisplayName(membershipStatusPlanId, subscription?.planName);
-  const returnActionLabel = returnTarget.canAutoReturn ? "กลับไปเปิดสื่อ" : "ไปพื้นที่สมาชิก";
+  const returnActionLabel = returnTarget.canAutoReturn ? "กลับไปเปิดสื่อ" : "ไปที่คลังสื่อ";
   const planChoices = plans.filter((plan): plan is Plan & { id: MembershipPlanId } => (
     (plan.id === "founder" || plan.id === "teacher")
     && (!returnResourceId || !returnResourceLoaded || returnResourcePlanIds.includes(plan.id))
@@ -354,12 +321,40 @@ function MembershipContent() {
     || pendingPlanMismatch
     || pendingResourceEligibilityUnknown
     || noSelectablePlanForResource;
-  const showLegacySupportOnly = noSelectablePlanForResource
-    && !hasUnlockedMembership
-    && pendingApplication === null;
   const legacyReturnQuery = new URLSearchParams({ returnTo });
   const signInHref = `/login?next=${encodeURIComponent(`/membership?${legacyReturnQuery.toString()}`)}`;
   const signupHref = FREE_SIGNUP_HREF;
+  // After signing in, come back to this page with the chosen plan (and where to go next).
+  const wizardReturnQuery = new URLSearchParams({ plan: selectedPlanId, returnTo });
+  const wizardSignInHref = `/login?next=${encodeURIComponent(`/membership?${wizardReturnQuery.toString()}`)}`;
+  const wizardStep = resolveWizardStep({
+    hasPendingApplication: hasOpenApplication,
+    slipSent,
+    paymentBlocked: pendingPaymentBlocked,
+    requested: requestedStep,
+  });
+
+  const bodyMode = resolveMembershipBodyMode({
+    supabaseConfigured: isSupabaseConfigured,
+    schemaReadiness,
+    authLoaded,
+    signedIn: Boolean(userId),
+    noSelectablePlanForResource,
+    hasUnlockedMembership,
+    hasOpenApplication: latestApplication !== null && hasOpenApplication,
+    memberStatusError,
+    activeMembershipStillSettling: hasCurrentMembership && !requestedPlanMismatch && !returnResourceError && !memberStatusError,
+    readsFailed: memberStatusError || applicationsError || applicationFounderHistoryError || returnResourceError || applicationFounderChecksUnavailable,
+  });
+  const wizardMode = bodyMode === "signedOut" || bodyMode === "create" || (bodyMode === "pending" && slipMarkReady);
+  const showStepper = wizardMode && shouldShowMembershipStepper({
+    authLoaded,
+    signedIn: Boolean(userId),
+    memberStatusLoaded,
+    membershipActive: hasCurrentMembership,
+    hasPendingApplication: hasOpenApplication,
+  });
+  const stepperCurrent = bodyMode === "pending" ? wizardStep : 1;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -622,6 +617,7 @@ function MembershipContent() {
       return;
     }
     const application = result.application;
+    setFocusStepHeading(true);
     setApplications((current) => [application, ...current.filter((item) => item.id !== application.id)]);
     setApplicationsError(false);
     if (applicationPlanId === "founder") setCapacity(await fetchFounderCapacity(supabase));
@@ -666,30 +662,127 @@ function MembershipContent() {
     }
   };
 
-  const handleLineCtaClick = (referenceCode: string) => {
+  const goToStep = (step: WizardStep) => {
     setError(null);
-    // Payment is sent by LINE, so opening it with the reference is the step
-    // this site can see; whether the slip was sent is only known to staff.
-    trackEvent("payment_submit", { plan_id: latestApplication?.planId ?? applicationPlanId, stage: "line_opened" });
-    setLineCtaFeedback(`กำลังเปิด LINE — ส่งเลขอ้างอิง ${referenceCode} พร้อมสลิปในแชตนี้`);
+    setRequestedStep(step);
+    setFocusStepHeading(true);
+  };
 
+  // "ส่งสลิปแล้ว": remember it for this reference in this browser (no database write).
+  const handleSlipSent = () => {
+    if (!pendingApplication) return;
+    writeSlipSent(pendingApplication.referenceCode, true);
+    setSlipMark({ referenceCode: pendingApplication.referenceCode, sent: true });
+    goToStep(4);
+  };
+
+  const handleBackToSlip = () => {
+    if (!pendingApplication) return;
+    writeSlipSent(pendingApplication.referenceCode, false);
+    setSlipMark({ referenceCode: pendingApplication.referenceCode, sent: false });
+    goToStep(3);
+  };
+
+  const MESSAGE_NOT_COPIED = "คัดลอกข้อความอัตโนมัติไม่สำเร็จ กดปุ่ม “คัดลอกข้อความ” แล้ววางในแชตพร้อมแนบสลิป";
+
+  const handleCopySlipMessage = async () => {
     try {
-      const clipboardWrite = navigator.clipboard?.writeText(referenceCode);
-      if (!clipboardWrite) {
-        setLineCtaFeedback(`เปิด LINE ต่อได้เลย — กรุณาคัดลอกเลขอ้างอิง ${referenceCode} จากด้านบนและส่งพร้อมสลิป`);
-        return;
-      }
-      void clipboardWrite.then(() => {
-        setCopied(referenceCode);
-        setLineCtaFeedback(`คัดลอกเลขอ้างอิง ${referenceCode} แล้ว — วางใน LINE และส่งพร้อมสลิปได้เลย`);
-        window.setTimeout(() => setCopied((current) => current === referenceCode ? null : current), 2500);
-      }, () => {
-        setLineCtaFeedback(`เปิด LINE ต่อได้เลย — กรุณาคัดลอกเลขอ้างอิง ${referenceCode} จากด้านบนและส่งพร้อมสลิป`);
-      });
+      await navigator.clipboard.writeText(slipMessage);
+      setMessageCopied(true);
+      setSlipFeedback("คัดลอกข้อความแล้ว วางในแชตแล้วแนบสลิป");
+      window.setTimeout(() => setMessageCopied(false), 2500);
     } catch {
-      setLineCtaFeedback(`เปิด LINE ต่อได้เลย — กรุณาคัดลอกเลขอ้างอิง ${referenceCode} จากด้านบนและส่งพร้อมสลิป`);
+      setSlipFeedback(MESSAGE_NOT_COPIED);
     }
   };
+
+  // Payment is sent by LINE, so opening it is the step this site can see; whether
+  // the slip was sent is only known to staff. With no LINE OA ID configured the
+  // message cannot be pre-filled, so it is copied first and the member pastes it.
+  const handleOpenLine = () => {
+    if (!pendingApplication || !slipAction) return;
+    setError(null);
+    trackEvent("payment_submit", { plan_id: pendingApplication.planId, stage: "line_opened" });
+    if (!slipAction.copyFirst) {
+      setSlipFeedback("กำลังเปิด LINE — ข้อความถูกเตรียมไว้ในแชตแล้ว แนบสลิปแล้วกดส่ง");
+      return;
+    }
+    setSlipFeedback("กำลังเปิด LINE…");
+    try {
+      const write = navigator.clipboard?.writeText(slipMessage);
+      if (!write) {
+        setSlipFeedback(MESSAGE_NOT_COPIED);
+        return;
+      }
+      void write.then(
+        () => setSlipFeedback("คัดลอกข้อความแล้ว วางในแชตแล้วแนบสลิป"),
+        () => setSlipFeedback(MESSAGE_NOT_COPIED),
+      );
+    } catch {
+      setSlipFeedback(MESSAGE_NOT_COPIED);
+    }
+  };
+
+  const pendingBlockedBox = pendingPaymentBlocked && latestApplication ? (
+
+        <div role="alert" className="kru-membership-conversion">
+          <strong>
+            {memberStatusError
+              ? "ยังตรวจสอบสิทธิ์สมาชิกไม่ได้"
+              : applicationsError
+              ? "ยังตรวจสอบใบสมัครล่าสุดไม่ได้"
+              : pendingFounderChecksUnavailable
+              ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้"
+              : pendingResourceEligibilityUnknown
+              ? "กำลังตรวจสอบแพ็กที่ใช้เปิดสื่อนี้"
+              : pendingPlanMismatch
+                ? `ใบสมัคร ${membershipApplicationPlanLabel(latestApplication.planId)} นี้ไม่สามารถเปิดสื่อที่เลือกได้`
+                : noSelectablePlanForResource
+                  ? "สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายรองรับ"
+                : hasFounderHistory
+                  ? "บัญชีนี้ใช้สิทธิ์ Founder ปีแรกแล้ว"
+                  : "Founder ครบ 100 สิทธิ์ก่อนการยืนยันยอด"}
+          </strong>
+          {memberStatusError ? (
+            <>
+              <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กไว้จนกว่าจะตรวจสอบสิทธิ์สมาชิกสำเร็จ</p>
+              <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+            </>
+          ) : applicationsError ? (
+            <>
+              <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กเพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว</p>
+              <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+            </>
+          ) : pendingFounderChecksUnavailable ? (
+            <>
+              <p>ระบบปิดปุ่ม LINE และการแจ้งชำระสำหรับใบสมัคร Founder ไว้จนกว่าจะตรวจสอบข้อมูลสำเร็จ</p>
+              {teacherRequestedForPendingFounder && (
+                <Button size="lg" block loading={converting} onClick={() => void handleConvertToTeacher()}>
+                  ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี
+                </Button>
+              )}
+              {!teacherRequestedForPendingFounder && (
+                <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+              )}
+            </>
+          ) : pendingResourceEligibilityUnknown ? (
+            <p>ระบบปิดการแจ้งชำระไว้จนกว่าจะตรวจสอบสิทธิ์ของสื่อสำเร็จ กรุณาลองใหม่อีกครั้ง</p>
+          ) : noSelectablePlanForResource ? (
+            <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็ก เพราะไม่มีแพ็กที่เปิดจำหน่ายใดเปิดสื่อนี้ได้</p>
+          ) : latestApplication.planId === "founder" && canConvertPendingFounderToTeacher ? (
+            <>
+              <p>ใบสมัคร Founder นี้ไม่สามารถส่งต่อเพื่อยืนยันได้ เปลี่ยนเป็น Teacher Pro 599 บาท/ปีโดยใช้เลขอ้างอิงเดิมได้</p>
+              <Button size="lg" block loading={converting} onClick={() => void handleConvertToTeacher()}>
+                ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี
+              </Button>
+            </>
+          ) : pendingPlanMismatch ? (
+            <p>ระบบปิดการแจ้งชำระเพื่อป้องกันการชำระแพ็กที่เปิดสื่อนี้ไม่ได้ กรุณาติดต่อทีมงานเพื่อจัดการใบสมัครเดิมก่อนเลือกแพ็กที่รองรับ</p>
+          ) : (
+            <p>สื่อที่ต้องการรองรับเฉพาะ Founder จึงไม่เสนอให้เปลี่ยนเป็น Teacher Pro ซึ่งจะเปิดสื่อนี้ไม่ได้ กรุณาใช้ขั้นตอนต่ออายุ 599 บาท/ปีหากมีสิทธิ์ Founder เดิม</p>
+          )}
+        </div>
+  ) : null;
 
   return (
     <div className="kru-membership-page">
@@ -712,396 +805,277 @@ function MembershipContent() {
       </header>
 
       <main>
-        {showStepper && <MembershipStepper current={stepNumber} />}
-        <section className="kru-membership-hero">
-          <div className="kru-membership-hero__copy">
-            <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> {noSelectablePlanForResource ? "สิทธิ์เฉพาะสมาชิกเดิม" : applicationPlanId === "founder" ? "สิทธิ์เปิดตัว Founder 100" : "แพ็ก Teacher Pro"}</span>
-            <h1>{noSelectablePlanForResource ? "แพ็กสำหรับสื่อนี้ยังไม่เปิดรับสมัคร" : selectedPlan?.priceLabel ?? (applicationPlanId === "founder" ? "299 บาทเฉพาะปีแรก" : "599 บาท/ปี")}</h1>
-            <p className="kru-membership-hero__lead">
-              {noSelectablePlanForResource
-                ? "สื่อนี้ใช้สิทธิ์แพ็กเดิมหรือแพ็กเฉพาะที่ไม่มีจำหน่ายในหน้าสมัครสมาชิกปัจจุบัน"
-                : applicationPlanId === "founder"
-                ? "สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง"
-                : "แพ็กสมาชิกรายปีสำหรับครู เปิดใช้สื่อและไฟล์ Teacher Pro ได้ครบ"}
-            </p>
-            <div className="kru-membership-renewal"><ShieldCheck size={20} aria-hidden="true" /><strong>{noSelectablePlanForResource ? "เข้าสู่ระบบด้วยบัญชีเดิมเพื่อตรวจสอบสิทธิ์" : applicationPlanId === "founder" ? "ต่ออายุปีถัดไป 599 บาท/ปี" : "ต่ออายุ 599 บาท/ปี"}</strong></div>
-            <p className="kru-membership-rule">{noSelectablePlanForResource ? "ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้" : "การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์ ต้องรอทีมงานตรวจและยืนยันยอดเงินเข้าจริง"}</p>
-          </div>
-
-          {noSelectablePlanForResource ? (
-            <aside className="kru-membership-capacity" aria-live="polite">
-              <span>สิทธิ์ของสื่อรายการนี้</span>
-              <strong>ใช้สิทธิ์สมาชิกเดิม</strong>
-              <p>เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์ Plus, Lifetime หรือสิทธิ์เฉพาะที่เคยได้รับ</p>
-            </aside>
-          ) : applicationPlanId === "founder" ? (
-            <aside className="kru-membership-capacity" aria-live="polite" aria-busy={!capacityLoaded}>
-              <span>สิทธิ์ราคาเปิดตัว Founder</span>
-              {schemaReadiness === "unavailable" ? (
-                <strong>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</strong>
-              ) : capacity ? (
-                <strong>{founderPublicNotice(capacity)}</strong>
-              ) : (
-                <strong>{schemaReadiness === "checking" || !capacityLoaded ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ตรวจสอบจำนวนสิทธิ์ไม่ได้ในขณะนี้"}</strong>
-              )}
-            </aside>
-          ) : (
-            <aside className="kru-membership-capacity" aria-live="polite">
-              <span>แพ็กสมาชิกรายปี</span>
-              <strong>Teacher Pro</strong>
-              <p>599 บาท/ปี</p>
-            </aside>
-          )}
-        </section>
-
-        <section className="kru-membership-layout" aria-labelledby="membership-application-title">
-          <div className="kru-card kru-membership-application">
-            <div>
-              <span className="kru-membership-step">{noSelectablePlanForResource ? "สิทธิ์ของคุณ" : "ขั้นตอนที่ 1"}</span>
-              <h2 id="membership-application-title">{noSelectablePlanForResource ? "ตรวจสอบสิทธิ์สมาชิกเดิม" : "กรอกใบสมัครในระบบก่อน"}</h2>
-              <p>{noSelectablePlanForResource ? "ระบบจะตรวจสิทธิ์จากบัญชีเดิมโดยไม่สร้างใบสมัครแพ็กใหม่ที่เปิดสื่อนี้ไม่ได้" : "ระบบจะสร้างเลขอ้างอิงที่ใช้จับคู่บัญชีเว็บไซต์กับหลักฐานการชำระใน LINE"}</p>
+        {showStepper && <MembershipStepper current={stepperCurrent} />}
+        {bodyMode === "pending" || bodyMode === "approved" ? (
+          bodyMode === "pending" ? (
+            <p className="kru-membership-planbar"><Sparkles size={16} aria-hidden="true" /> {membershipApplicationPlanLabel(applicationPlanId)} · {selectedPlan?.priceLabel ?? (applicationPlanId === "founder" ? "299 บาทเฉพาะปีแรก" : "599 บาท/ปี")}</p>
+          ) : null
+        ) : (
+          <section className="kru-membership-hero">
+            <div className="kru-membership-hero__copy">
+              <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> {noSelectablePlanForResource ? "สิทธิ์เฉพาะสมาชิกเดิม" : applicationPlanId === "founder" ? "สิทธิ์เปิดตัว Founder 100" : "แพ็ก Teacher Pro"}</span>
+              <h1>{noSelectablePlanForResource ? "แพ็กสำหรับสื่อนี้ยังไม่เปิดรับสมัคร" : selectedPlan?.priceLabel ?? (applicationPlanId === "founder" ? "299 บาทเฉพาะปีแรก" : "599 บาท/ปี")}</h1>
+              <p className="kru-membership-hero__lead">
+                {noSelectablePlanForResource
+                  ? "สื่อนี้ใช้สิทธิ์แพ็กเดิมหรือแพ็กเฉพาะที่ไม่มีจำหน่ายในหน้าสมัครสมาชิกปัจจุบัน"
+                  : applicationPlanId === "founder"
+                  ? "สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง"
+                  : "แพ็กสมาชิกรายปีสำหรับครู เปิดใช้สื่อและไฟล์ Teacher Pro ได้ครบ"}
+              </p>
+              <div className="kru-membership-renewal"><ShieldCheck size={20} aria-hidden="true" /><strong>{noSelectablePlanForResource ? "เข้าสู่ระบบด้วยบัญชีเดิมเพื่อตรวจสอบสิทธิ์" : applicationPlanId === "founder" ? "ต่ออายุปีถัดไป 599 บาท/ปี" : "ต่ออายุ 599 บาท/ปี"}</strong></div>
+              <p className="kru-membership-rule">{noSelectablePlanForResource ? "ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้" : "การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์ ต้องรอทีมงานตรวจและยืนยันยอดเงินเข้าจริง"}</p>
             </div>
 
-            {userId && memberStatusLoaded && (hasCurrentMembership || membershipNeedsRenewal) && (
-              <section className="kru-membership-current" aria-live="polite">
-                <div>
-                  <Badge tone={membershipNeedsRenewal ? "warning" : "success"}>
-                    {membershipNeedsRenewal ? "ต้องต่ออายุสมาชิก" : "สิทธิ์สมาชิกใช้งานอยู่"}
-                  </Badge>
-                  <strong>แพ็กปัจจุบัน: {currentMembershipPlanName}</strong>
-                  {subscription?.currentPeriodEnd && (
-                    <span>สิ้นสุดรอบสมาชิก {formatThaiDate(subscription.currentPeriodEnd)}</span>
-                  )}
-                </div>
-                <div className="kru-membership-current__actions">
-                  {hasUnlockedMembership && (
-                    <Link className="kru-btn kru-btn--primary" href={returnTo}>{returnActionLabel}</Link>
-                  )}
-                  {membershipNeedsRenewal && !noSelectablePlanForResource && schemaReadiness === "ready" && !applicationsError && !founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable) && (
-                    <a className="kru-btn kru-btn--soft" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
-                      <MessageCircle size={17} aria-hidden="true" /> ขอเลขอ้างอิงต่ออายุ
-                    </a>
-                  )}
-                </div>
-              </section>
-            )}
-
-            <section className="kru-membership-plan" aria-labelledby="membership-plan-title">
-              <div className="kru-membership-plan__heading">
-                <h3 id="membership-plan-title">{noSelectablePlanForResource ? "สิทธิ์ที่ใช้เปิดสื่อ" : "แพ็กที่ต้องการสมัคร"}</h3>
-                {noSelectablePlanForResource ? (
-                  <Badge tone="neutral">ไม่มีแพ็กที่เปิดขายสำหรับสื่อนี้</Badge>
-                ) : hasOpenApplication ? (
-                  <Badge tone="neutral">ยึดตามใบสมัครที่รอดำเนินการ</Badge>
-                ) : hasCurrentMembership && !requestedPlanMismatch ? (
-                  <Badge tone="success">แพ็กปัจจุบัน</Badge>
-                ) : requestedPlanMismatch ? (
-                  <Badge tone="info">เปลี่ยนแพ็กเพื่อปลดล็อก</Badge>
-                ) : null}
-              </div>
-              {planChoices.length > 0 && (
-                <div className="kru-membership-plan__choices" role="group" aria-label="เลือกแพ็กสมาชิก">
-                  {planChoices.map((plan) => {
-                    const active = applicationPlanId === plan.id;
-                    const founderChecksDeferred = plan.id === "founder" && !shouldLoadFounderChecks;
-                    const founderUnavailable = plan.id === "founder" && (
-                      founderChecksBlockPlanSelection(plan.id, founderChecksUnavailable, founderChecksDeferred)
-                      || ((capacity?.isFull === true || founderOfferUnavailable)
-                        && !hasOpenApplication
-                        && currentPlanId !== "founder")
-                    );
-                    const unavailable = schemaReadiness !== "ready" || memberStatusError || applicationsError || founderUnavailable;
-                    return (
-                      <button
-                        key={plan.id}
-                        type="button"
-                        className={active ? "is-active" : ""}
-                        aria-pressed={active}
-                        disabled={hasOpenApplication || (hasCurrentMembership && !requestedPlanMismatch) || unavailable}
-                        onClick={() => selectPlan(plan.id)}
-                      >
-                        <strong>{plan.name}</strong>
-                        <span>{plan.priceLabel}</span>
-                        {unavailable && (
-                          <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? planCheckLabel(checksLoading) : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {checksLoading && schemaReadiness !== "unavailable" && (
-                <p role="status" className="kru-membership-alert">กำลังตรวจสอบสิทธิ์ของบัญชี…</p>
-              )}
-              {failedChecks.length > 0 && schemaReadiness === "ready" && (
-                <div role="alert" className="kru-membership-alert kru-membership-alert--warning" style={{ display: "grid", gap: "var(--sp-3)" }}>
-                  <strong>{failedMembershipChecksMessage(failedChecks)}</strong>
-                  <span>
-                    {onlyFounderChecksFailed(failedChecks)
-                      ? "ยังเลือก Teacher Pro ได้ตามปกติ ส่วน Founder ต้องตรวจสอบให้สำเร็จก่อน"
-                      : "เกิดจากการเชื่อมต่อไม่สำเร็จ ไม่ได้แปลว่าสิทธิ์ของคุณหายไป ระบบยังไม่แก้ไขข้อมูลใด ๆ"}
-                  </span>
-                  <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองอีกครั้ง</Button>
-                </div>
-              )}
-              {selectedPlan && !noSelectablePlanForResource && (
-                <div className="kru-membership-plan__details">
-                  {selectedPlan.note && <p>{selectedPlan.note}</p>}
-                  <PlanBenefits benefits={selectedPlan.benefits ?? []} />
-                </div>
-              )}
-            </section>
-
-            {!isSupabaseConfigured ? (
-              <p role="status" className="kru-membership-alert kru-membership-alert--warning">ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณากลับมาใหม่ภายหลัง</p>
-            ) : schemaReadiness === "checking" ? (
-              <p role="status" className="kru-membership-alert">กำลังตรวจสอบความพร้อมของระบบสมัครสมาชิก…</p>
-            ) : schemaReadiness === "unavailable" ? (
-              <div className="kru-membership-action-block">
-                <p role="alert" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
-                <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
-              </div>
-            ) : !authLoaded ? (
-              <p role="status" className="kru-membership-alert">กำลังตรวจสอบบัญชีสมาชิก…</p>
-            ) : !userId && noSelectablePlanForResource ? (
-              <div className="kru-membership-action-block">
-                <p>สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายซึ่งใช้ปลดล็อกได้ เข้าสู่ระบบด้วยบัญชีสมาชิกเดิมเพื่อตรวจสอบสิทธิ์ Plus, Lifetime หรือสิทธิ์เฉพาะของคุณ</p>
-                <Link href={signInHref} className="kru-btn kru-btn--primary kru-btn--lg">เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม</Link>
-              </div>
-            ) : !userId ? (
-              <div className="kru-membership-action-block">
-                <p>เข้าสู่ระบบหรือสมัครบัญชีฟรีก่อน หลังยืนยันอีเมลให้กลับมาเลือกแพ็กจากพื้นที่สมาชิก</p>
-                <Link href={signupHref} className="kru-btn kru-btn--primary kru-btn--lg">เข้าสู่ระบบเพื่อกรอกใบสมัคร</Link>
-              </div>
-            ) : hasUnlockedMembership ? (
-              <div className="kru-membership-action-block">
-                {latestApplication?.status === "approved" && (
-                  <ApplicationStatus
-                    application={latestApplication}
-                    copied={copied === latestApplication.referenceCode}
-                    onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
-                  />
-                )}
-                <p role="status" className="kru-membership-alert">
-                  สิทธิ์ {currentMembershipPlanName} พร้อมใช้งานแล้ว ไม่ต้องส่งใบสมัครซ้ำ
-                </p>
-                <Link className="kru-btn kru-btn--primary kru-btn--lg" href={returnTo}>{returnActionLabel}</Link>
-              </div>
-            ) : latestApplication && hasOpenApplication ? (
-              <>
-                <ApplicationStatus
-                  application={latestApplication}
-                  copied={copied === latestApplication.referenceCode}
-                  onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
-                />
-                {pendingPaymentBlocked && (
-                  <div role="alert" className="kru-membership-conversion">
-                    <strong>
-                      {memberStatusError
-                        ? "ยังตรวจสอบสิทธิ์สมาชิกไม่ได้"
-                        : applicationsError
-                        ? "ยังตรวจสอบใบสมัครล่าสุดไม่ได้"
-                        : pendingFounderChecksUnavailable
-                        ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้"
-                        : pendingResourceEligibilityUnknown
-                        ? "กำลังตรวจสอบแพ็กที่ใช้เปิดสื่อนี้"
-                        : pendingPlanMismatch
-                          ? `ใบสมัคร ${membershipApplicationPlanLabel(latestApplication.planId)} นี้ไม่สามารถเปิดสื่อที่เลือกได้`
-                          : noSelectablePlanForResource
-                            ? "สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายรองรับ"
-                          : hasFounderHistory
-                            ? "บัญชีนี้ใช้สิทธิ์ Founder ปีแรกแล้ว"
-                            : "Founder ครบ 100 สิทธิ์ก่อนการยืนยันยอด"}
-                    </strong>
-                    {memberStatusError ? (
-                      <>
-                        <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กไว้จนกว่าจะตรวจสอบสิทธิ์สมาชิกสำเร็จ</p>
-                        <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
-                      </>
-                    ) : applicationsError ? (
-                      <>
-                        <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็กเพื่อไม่ให้ใช้รายการเก่าที่อาจมีสถานะเปลี่ยนไปแล้ว</p>
-                        <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
-                      </>
-                    ) : pendingFounderChecksUnavailable ? (
-                      <>
-                        <p>ระบบปิดปุ่ม LINE และการแจ้งชำระสำหรับใบสมัคร Founder ไว้จนกว่าจะตรวจสอบข้อมูลสำเร็จ</p>
-                        {teacherRequestedForPendingFounder && (
-                          <Button size="lg" block loading={converting} onClick={() => void handleConvertToTeacher()}>
-                            ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี
-                          </Button>
-                        )}
-                        {!teacherRequestedForPendingFounder && (
-                          <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
-                        )}
-                      </>
-                    ) : pendingResourceEligibilityUnknown ? (
-                      <p>ระบบปิดการแจ้งชำระไว้จนกว่าจะตรวจสอบสิทธิ์ของสื่อสำเร็จ กรุณาลองใหม่อีกครั้ง</p>
-                    ) : noSelectablePlanForResource ? (
-                      <p>ระบบปิดปุ่ม LINE การแจ้งชำระ และการเปลี่ยนแพ็ก เพราะไม่มีแพ็กที่เปิดจำหน่ายใดเปิดสื่อนี้ได้</p>
-                    ) : latestApplication.planId === "founder" && canConvertPendingFounderToTeacher ? (
-                      <>
-                        <p>ใบสมัคร Founder นี้ไม่สามารถส่งต่อเพื่อยืนยันได้ เปลี่ยนเป็น Teacher Pro 599 บาท/ปีโดยใช้เลขอ้างอิงเดิมได้</p>
-                        <Button size="lg" block loading={converting} onClick={() => void handleConvertToTeacher()}>
-                          ยืนยันเปลี่ยนเป็น Teacher Pro 599 บาท/ปี
-                        </Button>
-                      </>
-                    ) : pendingPlanMismatch ? (
-                      <p>ระบบปิดการแจ้งชำระเพื่อป้องกันการชำระแพ็กที่เปิดสื่อนี้ไม่ได้ กรุณาติดต่อทีมงานเพื่อจัดการใบสมัครเดิมก่อนเลือกแพ็กที่รองรับ</p>
-                    ) : (
-                      <p>สื่อที่ต้องการรองรับเฉพาะ Founder จึงไม่เสนอให้เปลี่ยนเป็น Teacher Pro ซึ่งจะเปิดสื่อนี้ไม่ได้ กรุณาใช้ขั้นตอนต่ออายุ 599 บาท/ปีหากมีสิทธิ์ Founder เดิม</p>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : noSelectablePlanForResource && !memberStatusError ? (
-              <div className="kru-membership-action-block">
-                <p role="status" className="kru-membership-alert kru-membership-alert--warning">
-                  สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายซึ่งใช้ปลดล็อกได้ ระบบจึงไม่แสดงปุ่มสมัครหรือ LINE สำหรับรายการนี้ กรุณาตรวจสอบด้วยบัญชีที่มีสิทธิ์เดิม
-                </p>
-              </div>
-            ) : hasCurrentMembership && !requestedPlanMismatch && !returnResourceError && !memberStatusError ? (
-              <div className="kru-membership-action-block">
-                {latestApplication?.status === "approved" && (
-                  <ApplicationStatus
-                    application={latestApplication}
-                    copied={copied === latestApplication.referenceCode}
-                    onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
-                  />
-                )}
-                <p role="status" className="kru-membership-alert">ระบบอนุมัติแพ็ก {currentMembershipPlanName} แล้ว กำลังอัปเดตสิทธิ์เปิดสื่อให้บัญชีนี้…</p>
-              </div>
-            ) : memberStatusError || applicationsError || applicationFounderHistoryError || returnResourceError || applicationFounderChecksUnavailable ? (
-              <div className="kru-membership-action-block">
-                <p role="alert" className="kru-membership-alert kru-membership-alert--warning">
-                  {applicationFounderHistoryError || applicationFounderChecksUnavailable
-                    ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ ระบบจึงปิดใบสมัคร การเปลี่ยนแพ็ก และการชำระไว้ชั่วคราว"
-                    : "ยังตรวจสอบสถานะสมาชิกหรือใบสมัครล่าสุดไม่ได้ ระบบจึงปิดการดำเนินการไว้ชั่วคราว"}
-                </p>
-                <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
-              </div>
-            ) : (
-              <div className="kru-membership-action-block">
-                {latestApplication && latestApplication.status !== "pending" && (
-                  <>
-                    <ApplicationStatus
-                      application={latestApplication}
-                      copied={copied === latestApplication.referenceCode}
-                      onCopy={() => void handleCopyReference(latestApplication.referenceCode)}
-                    />
-                    <p className="kru-membership-alert">
-                      {latestApplication.status === "approved"
-                        ? "รายการนี้เป็นประวัติที่อนุมัติแล้ว ไม่ใช่คำขอที่รอดำเนินการ"
-                        : isTestCleanupReason(latestApplication.resolutionReasonCode)
-                          ? "รายการทดสอบถูกยกเลิกแล้ว คุณสามารถส่งใบสมัครจริงได้"
-                          : "ใบสมัครก่อนหน้าไม่ผ่านการตรวจสอบ คุณสามารถส่งใบสมัครใหม่ได้"}
-                    </p>
-                  </>
-                )}
-                {applicationPlanId === "founder" && (capacity?.isFull || hasFounderHistory) ? (
-                  <>
-                    <p className="kru-membership-alert kru-membership-alert--warning">
-                      {hasFounderHistory
-                        ? `สิทธิ์ Founder 299 บาทใช้ได้เฉพาะปีแรกและครั้งแรกเท่านั้น ${founderRenewalOrAlternativeCopy}`
-                        : canConvertPendingFounderToTeacher
-                          ? "Founder ครบ 100 สิทธิ์แล้ว กรุณาเลือก Teacher Pro เพื่อสร้างใบสมัครใหม่"
-                          : "Founder ครบ 100 สิทธิ์แล้ว และ Teacher Pro ไม่สามารถเปิดสื่อรายการนี้ได้"}
-                    </p>
-                    {(!returnResourceId || returnResourcePlanIds.includes("teacher")) && (
-                      <Button size="lg" block onClick={() => selectPlan("teacher")}>เลือก Teacher Pro 599 บาท/ปี</Button>
-                    )}
-                  </>
+            {noSelectablePlanForResource ? (
+              <aside className="kru-membership-capacity" aria-live="polite">
+                <span>สิทธิ์ของสื่อรายการนี้</span>
+                <strong>ใช้สิทธิ์สมาชิกเดิม</strong>
+                <p>เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์ Plus, Lifetime หรือสิทธิ์เฉพาะที่เคยได้รับ</p>
+              </aside>
+            ) : applicationPlanId === "founder" ? (
+              <aside className="kru-membership-capacity" aria-live="polite" aria-busy={!capacityLoaded}>
+                <span>สิทธิ์ราคาเปิดตัว Founder</span>
+                {schemaReadiness === "unavailable" ? (
+                  <strong>ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</strong>
+                ) : capacity ? (
+                  <strong>{founderPublicNotice(capacity)}</strong>
                 ) : (
-                  <>
-                    <p>{applicationPlanId === "founder" ? "ระบบจะสร้างเลขอ้างอิงสำหรับสิทธิ์ปีแรก 299 บาท" : "ระบบจะสร้างเลขอ้างอิงสำหรับแพ็ก Teacher Pro 599 บาท/ปี"}</p>
-                    <Button size="lg" block loading={submitting} onClick={() => void handleCreateApplication()}>
-                      {submitting ? "กำลังสร้างเลขอ้างอิง…" : `สร้างเลขอ้างอิง ${applicationAmount.toLocaleString("th-TH")} บาท`}
-                    </Button>
-                  </>
+                  <strong>{schemaReadiness === "checking" || !capacityLoaded ? "กำลังตรวจสอบความพร้อมของระบบ…" : "ตรวจสอบจำนวนสิทธิ์ไม่ได้ในขณะนี้"}</strong>
                 )}
-              </div>
+              </aside>
+            ) : (
+              <aside className="kru-membership-capacity kru-membership-capacity--plain" aria-live="polite">
+                <span>แพ็กสมาชิกรายปี</span>
+                <strong>Teacher Pro</strong>
+                <p>599 บาท/ปี</p>
+              </aside>
             )}
-
-            {error && <p role="alert" className="kru-membership-alert kru-membership-alert--danger">{error}</p>}
-          </div>
-
-          {showLegacySupportOnly ? (
-            <section id="how-to-pay" className="kru-card kru-membership-payment" aria-labelledby="membership-legacy-support-title">
-              <span className="kru-membership-step">สิทธิ์สมาชิกเดิม</span>
-              <h2 id="membership-legacy-support-title">ตรวจสอบสิทธิ์เดิม</h2>
-              <p>สื่อนี้ไม่ได้เปิดรับสมัครด้วยแพ็ก Founder หรือ Teacher Pro จึงไม่ต้องสร้างใบสมัคร โอนเงิน หรือส่งหลักฐานสำหรับแพ็กอื่น</p>
-              <p className="kru-membership-payment__notice">หากเคยได้รับสิทธิ์ Plus, Lifetime หรือสิทธิ์เฉพาะ กรุณาเข้าสู่ระบบด้วยบัญชีเดิม ระบบไม่แสดงช่องทางสมัครหรือชำระสำหรับสื่อที่ไม่มีแพ็กจำหน่ายรองรับ</p>
-            </section>
-          ) : (
-            <section id="how-to-pay" className="kru-card kru-membership-payment" aria-labelledby="membership-payment-title">
-              <span className="kru-membership-step">ขั้นตอนที่ 2</span>
-              <h2 id="membership-payment-title">โอนเงินแล้วส่งสลิปทาง LINE</h2>
-              <ol>
-                <li>สแกน QR พร้อมเพย์ หรือโอนเข้าบัญชีธนาคารด้านล่าง ตามยอดในใบสมัครให้ตรงทุกบาท</li>
-                <li>กดปุ่ม “ส่งสลิปทาง LINE” ข้อความพร้อมเลขอ้างอิงจะถูกเตรียมไว้ให้ แนบสลิปแล้วส่ง</li>
-                <li>ตรวจสอบและอนุมัติภายใน 1 วันทำการ</li>
-              </ol>
-              <p className="kru-membership-payment__notice">ไม่เก็บสลิปบนเว็บไซต์ ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ ส่งสลิปทาง LINE เท่านั้น สถานะจะอัปเดตโดยทีมงาน และยังไม่นับสิทธิ์จนกว่าจะแสดง “ยืนยันชำระแล้ว”</p>
-              {schemaReadiness !== "ready" ? (
-                <p role="status" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
-              ) : hasUnlockedMembership ? (
-                <Link className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" href={returnTo}>
-                  <Check size={19} aria-hidden="true" /> {returnActionLabel}
-                </Link>
-              ) : pendingPaymentBlocked ? (
-                <p role="alert" className="kru-membership-alert kru-membership-alert--danger">
-                  {pendingResourceEligibilityUnknown
-                    ? "ปิดปุ่ม LINE และการแจ้งหลักฐานไว้จนกว่าจะตรวจสอบแพ็กที่ใช้เปิดสื่อนี้สำเร็จ"
-                    : "ปิดปุ่ม LINE และการแจ้งหลักฐานสำหรับใบสมัครนี้ กรุณาใช้ทางเลือกที่ระบบแสดงด้านบนก่อน"}
-                </p>
-              ) : latestApplication?.status === "pending" ? (
-                <>
-                  <PromptPayCard
-                    applicationId={latestApplication.id}
-                    copied={copied === latestApplication.referenceCode}
-                    onCopyReference={(referenceCode) => void handleCopyReference(referenceCode)}
-                  />
-                  <a
-                    className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block"
-                    href={slipLineHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    referrerPolicy="no-referrer"
-                    onClick={() => handleLineCtaClick(latestApplication.referenceCode)}
-                    aria-describedby="membership-line-status"
-                  >
-                    <MessageCircle size={19} aria-hidden="true" /> ส่งสลิปทาง LINE
-                  </a>
-                  <p id="membership-line-status" role="status" className="kru-membership-alert">
-                    {lineCtaFeedback
-                      ?? (latestApplication.lineSlipReceivedAt
-                        ? `ทีมงานบันทึกรับสลิปจาก LINE เมื่อ ${formatThaiDate(latestApplication.lineSlipReceivedAt)} · อยู่ระหว่างตรวจยอดจริง`
-                        : latestApplication.paymentReportedAt
-                          ? `ระบบมีสถานะแจ้งชำระเดิมเมื่อ ${formatThaiDate(latestApplication.paymentReportedAt)} · ยังไม่ถือว่าทีมงานรับสลิป และยังต้องรอยืนยันยอดจริง`
-                          : "กดปุ่มแล้วส่งเลขอ้างอิงพร้อมสลิปใน LINE จากนั้นรอทีมงานอัปเดตสถานะ ไม่ต้องกดแจ้งซ้ำบนเว็บ")}
-                  </p>
-                </>
-              ) : hasCurrentMembership && !requestedPlanMismatch && !returnResourceError ? (
-                <p role="status" className="kru-membership-alert">อนุมัติแล้ว กำลังอัปเดตสิทธิ์การเข้าถึงสื่อ…</p>
-              ) : (
-                <button type="button" className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" disabled>
-                  สร้างเลขอ้างอิงก่อนเปิด LINE
-                </button>
-              )}
-              <small>LINE Official Account: Kru Aorry Web</small>
-            </section>
-          )}
-        </section>
-
-        {!noSelectablePlanForResource && (
-          <section className="kru-membership-facts" aria-label="เงื่อนไขสำคัญ">
-            <article><Check size={20} aria-hidden="true" /><div><strong>นับจากยอดจริง</strong><p>นับสิทธิ์เมื่อครูอรรี่ตรวจสอบและยืนยันการชำระเงินจริงในระบบเท่านั้น</p></div></article>
-            {applicationPlanId === "founder" && (
-              <article><Check size={20} aria-hidden="true" /><div><strong>จำกัด 100 คน</strong><p>ระบบฐานข้อมูลป้องกันการอนุมัติสิทธิ์ราคา 299 บาทเกิน 100 คน</p></div></article>
-            )}
-            <article><Check size={20} aria-hidden="true" /><div><strong>ไม่เก็บสลิปบนเว็บไซต์</strong><p>ส่งหลักฐานใน LINE OA เว็บไซต์เก็บเฉพาะเลขอ้างอิง ยอด สถานะ และเวลายืนยันเพื่อดูแลสมาชิก</p></div></article>
           </section>
         )}
+
+        <section className="kru-card kru-membership-wizard" aria-busy={bodyMode === "pending" && !slipMarkReady}>
+          {bodyMode === "approved" ? (
+            <ApprovedPanel
+              planName={currentMembershipPlanName}
+              celebrate={sawPendingApplication}
+              periodEnd={subscription?.currentPeriodEnd ?? null}
+              href={returnTo}
+              actionLabel={returnActionLabel}
+            />
+          ) : bodyMode === "pending" && latestApplication && !slipMarkReady ? (
+            <p role="status" className="kru-membership-alert">กำลังตรวจสอบสถานะใบสมัคร…</p>
+          ) : bodyMode === "pending" && latestApplication && wizardStep === 2 ? (
+            <TransferStep
+              application={latestApplication}
+              referenceCopied={copied === latestApplication.referenceCode}
+              legacyReportedAt={latestApplication.lineSlipReceivedAt ? null : latestApplication.paymentReportedAt}
+              onCopyReference={(referenceCode) => void handleCopyReference(referenceCode)}
+              onBack={() => goToStep(1)}
+              onNext={() => goToStep(3)}
+              focusHeading={focusStepHeading}
+            />
+          ) : bodyMode === "pending" && latestApplication && wizardStep === 3 ? (
+            <SlipStep
+              message={slipMessage}
+              href={slipAction?.href ?? ""}
+              copyFirst={slipAction?.copyFirst ?? false}
+              feedback={slipFeedback}
+              messageCopied={messageCopied}
+              onOpenLine={handleOpenLine}
+              onCopyMessage={() => void handleCopySlipMessage()}
+              onSent={handleSlipSent}
+              onBack={() => goToStep(2)}
+              focusHeading={focusStepHeading}
+            />
+          ) : bodyMode === "pending" && latestApplication && wizardStep === 4 ? (
+            <WaitingStep
+              referenceCode={latestApplication.referenceCode}
+              referenceCopied={copied === latestApplication.referenceCode}
+              slipReceivedAt={latestApplication.lineSlipReceivedAt}
+              legacyReportedAt={latestApplication.lineSlipReceivedAt ? null : latestApplication.paymentReportedAt}
+              onCopyReference={(referenceCode) => void handleCopyReference(referenceCode)}
+              onBackToSlip={handleBackToSlip}
+              focusHeading={focusStepHeading}
+            />
+          ) : (
+            <StepFrame
+              title={noSelectablePlanForResource ? "ตรวจสอบสิทธิ์สมาชิกเดิม" : "กรอกใบสมัคร"}
+              lead={bodyMode === "pending" ? "สร้างใบสมัครแล้ว" : noSelectablePlanForResource ? "ระบบจะตรวจสิทธิ์จากบัญชีเดิมโดยไม่สร้างใบสมัครแพ็กใหม่ที่เปิดสื่อนี้ไม่ได้" : "ระบบจะสร้างเลขอ้างอิงที่ใช้จับคู่บัญชีเว็บไซต์กับหลักฐานการชำระใน LINE"}
+              focusHeading={focusStepHeading}
+            >
+              {userId && memberStatusLoaded && (hasCurrentMembership || membershipNeedsRenewal) && (
+                <section className="kru-membership-current" aria-live="polite">
+                  <div>
+                    <Badge tone={membershipNeedsRenewal ? "warning" : "success"}>
+                      {membershipNeedsRenewal ? "ต้องต่ออายุสมาชิก" : "สิทธิ์สมาชิกใช้งานอยู่"}
+                    </Badge>
+                    <strong>แพ็กปัจจุบัน: {currentMembershipPlanName}</strong>
+                    {subscription?.currentPeriodEnd && (
+                      <span>สิ้นสุดรอบสมาชิก {formatThaiDate(subscription.currentPeriodEnd)}</span>
+                    )}
+                  </div>
+                  <div className="kru-membership-current__actions">
+                    {hasUnlockedMembership && (
+                      <Link className="kru-btn kru-btn--primary" href={returnTo}>{returnActionLabel}</Link>
+                    )}
+                    {membershipNeedsRenewal && !noSelectablePlanForResource && schemaReadiness === "ready" && !applicationsError && !founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable) && (
+                      <a className="kru-btn kru-btn--soft" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                        <MessageCircle size={17} aria-hidden="true" /> ขอเลขอ้างอิงต่ออายุ
+                      </a>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {bodyMode === "pending" && latestApplication ? (
+                <div className="kru-membership-action-block">
+                  <div className="kru-membership-summary">
+                    <span>แพ็ก {membershipApplicationPlanLabel(latestApplication.planId)}</span>
+                    <strong>{latestApplication.quotedAmountThb.toLocaleString("th-TH")} บาท</strong>
+                    <small>เลขอ้างอิง {latestApplication.referenceCode}</small>
+                  </div>
+                  {pendingPaymentBlocked ? pendingBlockedBox : (
+                    <Button type="button" size="lg" block onClick={() => goToStep(2)}>ไปขั้นที่ 2: โอนเงิน</Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <section className="kru-membership-plan" aria-labelledby="membership-plan-title">
+                    <div className="kru-membership-plan__heading">
+                      <h3 id="membership-plan-title">{noSelectablePlanForResource ? "สิทธิ์ที่ใช้เปิดสื่อ" : "แพ็กที่ต้องการสมัคร"}</h3>
+                      {noSelectablePlanForResource ? (
+                        <Badge tone="neutral">ไม่มีแพ็กที่เปิดขายสำหรับสื่อนี้</Badge>
+                      ) : hasOpenApplication ? (
+                        <Badge tone="neutral">ยึดตามใบสมัครที่รอดำเนินการ</Badge>
+                      ) : hasCurrentMembership && !requestedPlanMismatch ? (
+                        <Badge tone="success">แพ็กปัจจุบัน</Badge>
+                      ) : requestedPlanMismatch ? (
+                        <Badge tone="info">เปลี่ยนแพ็กเพื่อปลดล็อก</Badge>
+                      ) : null}
+                    </div>
+                    {planChoices.length > 0 && (
+                      <div className="kru-membership-plan__choices" role="group" aria-label="เลือกแพ็กสมาชิก">
+                        {planChoices.map((plan) => {
+                          const active = applicationPlanId === plan.id;
+                          const founderChecksDeferred = plan.id === "founder" && !shouldLoadFounderChecks;
+                          const founderUnavailable = plan.id === "founder" && (
+                            founderChecksBlockPlanSelection(plan.id, founderChecksUnavailable, founderChecksDeferred)
+                            || ((capacity?.isFull === true || founderOfferUnavailable)
+                              && !hasOpenApplication
+                              && currentPlanId !== "founder")
+                          );
+                          const unavailable = schemaReadiness !== "ready" || memberStatusError || applicationsError || founderUnavailable;
+                          return (
+                            <button
+                              key={plan.id}
+                              type="button"
+                              className={active ? "is-active" : ""}
+                              aria-pressed={active}
+                              disabled={hasOpenApplication || (hasCurrentMembership && !requestedPlanMismatch) || unavailable}
+                              onClick={() => selectPlan(plan.id)}
+                            >
+                              <strong>{plan.name}</strong>
+                              <span>{plan.priceLabel}</span>
+                              {unavailable && (
+                                <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? planCheckLabel(checksLoading) : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {checksLoading && schemaReadiness !== "unavailable" && (
+                      <p role="status" className="kru-membership-alert">กำลังตรวจสอบสิทธิ์ของบัญชี…</p>
+                    )}
+                    {failedChecks.length > 0 && schemaReadiness === "ready" && (
+                      <div role="alert" className="kru-membership-alert kru-membership-alert--warning" style={{ display: "grid", gap: "var(--sp-3)" }}>
+                        <strong>{failedMembershipChecksMessage(failedChecks)}</strong>
+                        <span>
+                          {onlyFounderChecksFailed(failedChecks)
+                            ? "ยังเลือก Teacher Pro ได้ตามปกติ ส่วน Founder ต้องตรวจสอบให้สำเร็จก่อน"
+                            : "เกิดจากการเชื่อมต่อไม่สำเร็จ ไม่ได้แปลว่าสิทธิ์ของคุณหายไป ระบบยังไม่แก้ไขข้อมูลใด ๆ"}
+                        </span>
+                        <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองอีกครั้ง</Button>
+                      </div>
+                    )}
+                    {selectedPlan && !noSelectablePlanForResource && (
+                      <div className="kru-membership-plan__details">
+                        {selectedPlan.note && <p>{selectedPlan.note}</p>}
+                        <PlanBenefits benefits={selectedPlan.benefits ?? []} />
+                      </div>
+                    )}
+                  </section>
+
+                  {bodyMode === "unconfigured" ? (
+                    <p role="status" className="kru-membership-alert kru-membership-alert--warning">ระบบสมาชิกยังไม่พร้อมใช้งาน กรุณากลับมาใหม่ภายหลัง</p>
+                  ) : bodyMode === "checking" ? (
+                    <p role="status" className="kru-membership-alert">กำลังตรวจสอบความพร้อมของระบบสมัครสมาชิก…</p>
+                  ) : bodyMode === "unavailable" ? (
+                    <div className="kru-membership-action-block">
+                      <p role="alert" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
+                      <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+                    </div>
+                  ) : bodyMode === "authLoading" ? (
+                    <p role="status" className="kru-membership-alert">กำลังตรวจสอบบัญชีสมาชิก…</p>
+                  ) : bodyMode === "legacySignIn" ? (
+                    <div className="kru-membership-action-block">
+                      <p>สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายซึ่งใช้ปลดล็อกได้ เข้าสู่ระบบด้วยบัญชีสมาชิกเดิมเพื่อตรวจสอบสิทธิ์ Plus, Lifetime หรือสิทธิ์เฉพาะของคุณ</p>
+                      <Link href={signInHref} className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block">เข้าสู่ระบบเพื่อตรวจสอบสิทธิ์เดิม</Link>
+                    </div>
+                  ) : bodyMode === "signedOut" ? (
+                    <div className="kru-membership-action-block">
+                      <Link href={wizardSignInHref} className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block">เข้าสู่ระบบเพื่อสมัคร</Link>
+                      <p className="kru-membership-hint">เข้าสู่ระบบแล้วจะกลับมาที่หน้านี้ ยังไม่มีบัญชี? <Link href={signupHref}>สมัครบัญชีฟรีก่อน</Link> แล้วกลับมาเลือกแพ็กที่หน้านี้</p>
+                    </div>
+                  ) : bodyMode === "legacyNote" ? (
+                    <p role="status" className="kru-membership-alert kru-membership-alert--warning">
+                      สื่อนี้ไม่มีแพ็กที่เปิดจำหน่ายซึ่งใช้ปลดล็อกได้ ระบบจึงไม่แสดงปุ่มสมัครหรือ LINE สำหรับรายการนี้ กรุณาตรวจสอบด้วยบัญชีที่มีสิทธิ์เดิม
+                    </p>
+                  ) : bodyMode === "updating" ? (
+                    <p role="status" className="kru-membership-alert">ระบบอนุมัติแพ็ก {currentMembershipPlanName} แล้ว กำลังอัปเดตสิทธิ์เปิดสื่อให้บัญชีนี้…</p>
+                  ) : bodyMode === "errors" ? (
+                    <div className="kru-membership-action-block">
+                      <p role="alert" className="kru-membership-alert kru-membership-alert--warning">
+                        {applicationFounderHistoryError || applicationFounderChecksUnavailable
+                          ? "ยังตรวจสอบประวัติ Founder หรือจำนวนสิทธิ์ไม่ได้ ระบบจึงปิดใบสมัคร การเปลี่ยนแพ็ก และการชำระไว้ชั่วคราว"
+                          : "ยังตรวจสอบสถานะสมาชิกหรือใบสมัครล่าสุดไม่ได้ ระบบจึงปิดการดำเนินการไว้ชั่วคราว"}
+                      </p>
+                      <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองตรวจสอบอีกครั้ง</Button>
+                    </div>
+                  ) : (
+                    <div className="kru-membership-action-block">
+                      {applicationPlanId === "founder" && (capacity?.isFull || hasFounderHistory) ? (
+                        <>
+                          <p className="kru-membership-alert kru-membership-alert--warning">
+                            {hasFounderHistory
+                              ? `สิทธิ์ Founder 299 บาทใช้ได้เฉพาะปีแรกและครั้งแรกเท่านั้น ${founderRenewalOrAlternativeCopy}`
+                              : canConvertPendingFounderToTeacher
+                                ? "Founder ครบ 100 สิทธิ์แล้ว กรุณาเลือก Teacher Pro เพื่อสร้างใบสมัครใหม่"
+                                : "Founder ครบ 100 สิทธิ์แล้ว และ Teacher Pro ไม่สามารถเปิดสื่อรายการนี้ได้"}
+                          </p>
+                          {(!returnResourceId || returnResourcePlanIds.includes("teacher")) && (
+                            <Button size="lg" block onClick={() => selectPlan("teacher")}>เลือก Teacher Pro 599 บาท/ปี</Button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p>{applicationPlanId === "founder" ? "ระบบจะสร้างเลขอ้างอิงสำหรับสิทธิ์ปีแรก 299 บาท" : "ระบบจะสร้างเลขอ้างอิงสำหรับแพ็ก Teacher Pro 599 บาท/ปี"}</p>
+                          <Button size="lg" block loading={submitting} onClick={() => void handleCreateApplication()}>
+                            {submitting ? "กำลังสร้างเลขอ้างอิง…" : `สร้างเลขอ้างอิง ${applicationAmount.toLocaleString("th-TH")} บาท`}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </StepFrame>
+          )}
+
+          {error && <p role="alert" className="kru-membership-alert kru-membership-alert--danger">{error}</p>}
+        </section>
+
+        {userId ? <ApplicationHistory applications={applications} /> : null}
       </main>
 
       <footer>
@@ -1127,10 +1101,6 @@ function MembershipContent() {
         .kru-membership-capacity > span:first-child { color: var(--text-muted); font-size: var(--fs-13); }
         .kru-membership-capacity strong { color: var(--text-strong); font-family: var(--font-display); font-size: clamp(1.35rem, 4vw, var(--fs-24)); }
         .kru-membership-capacity p { color: var(--purple-700); font-weight: var(--fw-semibold); }
-        .kru-membership-layout { margin-top: var(--sp-8); display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(300px, .88fr); gap: var(--gap-grid); align-items: start; }
-        .kru-membership-application, .kru-membership-payment { min-width: 0; padding: clamp(20px, 4vw, 32px); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }
-        .kru-membership-application h2, .kru-membership-payment h2 { margin-top: var(--sp-2); font-size: var(--fs-24); }
-        .kru-membership-application > div > p, .kru-membership-payment > p { margin-top: var(--sp-3); color: var(--text-muted); }
         .kru-membership-plan { padding: var(--sp-4); display: grid; gap: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-sunken); }
         .kru-membership-plan__heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
         .kru-membership-plan__heading h3 { font-size: var(--fs-18); }
@@ -1147,94 +1117,40 @@ function MembershipContent() {
         .kru-membership-current strong { color: var(--text-strong); font-size: var(--fs-18); }
         .kru-membership-current span { color: var(--text-muted); font-size: var(--fs-13); }
         .kru-membership-current__actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+        .kru-membership-wizard { margin-top: var(--sp-5); padding: clamp(16px, 4vw, 32px); display: grid; gap: var(--sp-5); min-width: 0; max-width: 640px; margin-inline: auto; }
+        .kru-membership-planbar { width: fit-content; max-width: 100%; margin: 0 auto; padding: 8px 14px; display: flex; align-items: center; gap: 7px; border-radius: var(--r-pill); background: var(--purple-50); color: var(--purple-700); font-weight: var(--fw-semibold); font-size: var(--fs-14); }
+        .kru-membership-summary { padding: var(--sp-4); display: grid; gap: 4px; border: 1px solid var(--border-brand); border-radius: var(--r-md); background: var(--purple-50); }
+        .kru-membership-summary strong { font-size: var(--fs-24); color: var(--text-strong); }
+        .kru-membership-summary small, .kru-membership-hint { color: var(--text-muted); }
+        .kru-membership-hint { margin: 0; font-size: var(--fs-14); }
         .kru-membership-action-block { display: grid; gap: var(--sp-4); }
-        .kru-membership-action-block > a { width: fit-content; }
+        .kru-membership-action-block :global(a.kru-btn:hover) { color: var(--white); text-decoration: none; }
         .kru-membership-alert { padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-info-bg); color: var(--status-info-fg); overflow-wrap: anywhere; }
         .kru-membership-alert--warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
         .kru-membership-alert--danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
         .kru-membership-conversion { padding: var(--sp-5); display: grid; gap: var(--sp-3); border: 1px solid color-mix(in srgb, var(--status-danger-fg) 28%, transparent); border-radius: var(--r-card); background: var(--status-danger-bg); color: var(--status-danger-fg); }
         .kru-membership-conversion p { line-height: var(--lh-loose); }
-        .kru-membership-payment { scroll-margin-top: 88px; }
-        .kru-membership-payment ol { margin: 0; padding-left: 1.3rem; display: grid; gap: var(--sp-3); color: var(--text-body); }
-        .kru-membership-payment__notice { padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-warning-bg); color: var(--status-warning-fg) !important; font-size: var(--fs-14); font-weight: var(--fw-semibold); }
-        .kru-membership-payment > small { color: var(--text-muted); text-align: center; }
-        .kru-membership-payment :global(a.kru-btn:hover) { color: var(--white); text-decoration: none; }
-        .kru-membership-facts { margin-top: var(--sp-8); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
-        .kru-membership-facts article { min-width: 0; padding: var(--sp-5); display: flex; align-items: flex-start; gap: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--surface-card); }
-        .kru-membership-facts svg { flex: 0 0 auto; color: var(--status-success-fg); }
-        .kru-membership-facts p { margin-top: 4px; color: var(--text-muted); font-size: var(--fs-14); }
         footer { padding: var(--sp-7) var(--sp-5) calc(var(--sp-7) + env(safe-area-inset-bottom)); display: flex; justify-content: center; gap: var(--sp-5); flex-wrap: wrap; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: var(--fs-13); text-align: center; }
         footer :global(a) { min-height: var(--tap-min); padding: 0 var(--sp-2); display: inline-flex; align-items: center; }
         @media (max-width: 820px) {
-          .kru-membership-hero, .kru-membership-layout { grid-template-columns: minmax(0, 1fr); }
-          .kru-membership-facts { grid-template-columns: minmax(0, 1fr); }
+          .kru-membership-hero { grid-template-columns: minmax(0, 1fr); }
         }
         @media (max-width: 620px) {
           .kru-membership-header { align-items: flex-start; }
           .kru-membership-brand strong, .kru-membership-header nav > :global(.kru-btn--ghost) { display: none; }
           .kru-membership-header nav > :global(.kru-btn) { white-space: normal; text-align: center; }
           main { padding-top: var(--sp-5); }
-          .kru-membership-hero { padding: var(--sp-7); }
+          .kru-membership-hero { padding: var(--sp-5); gap: var(--sp-4); }
+          .kru-membership-hero h1 { margin-top: var(--sp-2); font-size: clamp(1.75rem, 9vw, 2.25rem); }
+          .kru-membership-hero__lead { margin-top: var(--sp-2); font-size: var(--fs-16, 1rem); }
+          .kru-membership-capacity { padding: var(--sp-4); }
+          .kru-membership-capacity--plain { display: none; }
           .kru-membership-renewal { width: 100%; align-items: flex-start; border-radius: var(--r-md); }
           .kru-membership-current, .kru-membership-current__actions, .kru-membership-current__actions :global(.kru-btn) { width: 100%; }
           .kru-membership-current__actions :global(.kru-btn) { justify-content: center; }
-          .kru-membership-action-block > a { width: 100%; }
           .kru-membership-plan__choices { grid-template-columns: minmax(0, 1fr); }
         }
       `}</style>
     </div>
-  );
-}
-
-function ApplicationStatus({ application, copied, onCopy }: { application: UpgradeRequest; copied: boolean; onCopy: () => void }) {
-  const copy = application.status === "pending" ? pendingStatusCopy(application) : resolvedStatusCopy(application);
-  return (
-    <section className="kru-membership-status" aria-live="polite">
-      <div className="kru-membership-status__heading">
-        <Badge tone={copy.tone}>{copy.label}</Badge>
-        <span>ส่งเมื่อ {formatThaiDate(application.createdAt)}</span>
-      </div>
-      <div>
-        <span>เลขอ้างอิงใบสมัคร</span>
-        <div className="kru-membership-reference">
-          <strong>{application.referenceCode}</strong>
-          <button type="button" onClick={onCopy} aria-label={`คัดลอกเลขอ้างอิง ${application.referenceCode}`}>
-            {copied ? <Check size={18} aria-hidden="true" /> : <Clipboard size={18} aria-hidden="true" />}
-            {copied ? "คัดลอกแล้ว" : "คัดลอก"}
-          </button>
-        </div>
-      </div>
-      <p>{copy.detail}</p>
-      <small>แพ็กตามใบสมัคร {membershipApplicationPlanLabel(application.planId)}</small>
-      <small>ยอดตามใบสมัคร {application.quotedAmountThb.toLocaleString("th-TH")} บาท</small>
-      {application.status === "approved" && application.paymentConfirmedAt && (
-        <small>ยืนยันในระบบเมื่อ {formatThaiDate(application.paymentConfirmedAt)}</small>
-      )}
-      {application.status === "pending" && application.lineSlipReceivedAt && (
-        <small>ทีมงานบันทึกรับสลิปจาก LINE เมื่อ {formatThaiDate(application.lineSlipReceivedAt)}</small>
-      )}
-      {application.status === "pending" && application.paymentReportedAt && !application.lineSlipReceivedAt && (
-        <small>สถานะแจ้งชำระเดิมในระบบเมื่อ {formatThaiDate(application.paymentReportedAt)} · ยังไม่ใช่การบันทึกรับสลิปโดยทีมงาน</small>
-      )}
-      {application.status === "pending" && (
-        <a href="#how-to-pay">ดูวิธีแจ้งชำระ <ExternalLink size={15} aria-hidden="true" /></a>
-      )}
-      <style jsx>{`
-        .kru-membership-status { padding: var(--sp-5); display: grid; gap: var(--sp-4); border: 1px solid var(--border-brand); border-radius: var(--r-card); background: var(--purple-50); }
-        .kru-membership-status__heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-        .kru-membership-status__heading > span { color: var(--text-muted); font-size: var(--fs-13); }
-        .kru-membership-status > div > span { color: var(--text-muted); font-size: var(--fs-13); }
-        .kru-membership-reference { margin-top: var(--sp-2); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-        .kru-membership-reference strong { min-width: 0; overflow-wrap: anywhere; color: var(--text-strong); font-family: var(--font-mono); font-size: clamp(1.15rem, 5vw, var(--fs-24)); letter-spacing: .04em; }
-        .kru-membership-reference button { min-height: 44px; padding: 0 var(--sp-4); flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-brand); border-radius: var(--r-pill); background: var(--surface-card); color: var(--purple-700); font: inherit; font-weight: var(--fw-semibold); cursor: pointer; }
-        p { color: var(--text-body); }
-        small { color: var(--text-muted); }
-        a { min-height: 44px; display: inline-flex; align-items: center; gap: 7px; font-weight: var(--fw-semibold); }
-        @media (max-width: 420px) {
-          .kru-membership-reference { align-items: stretch; flex-direction: column; }
-          .kru-membership-reference button { justify-content: center; }
-        }
-      `}</style>
-    </section>
   );
 }

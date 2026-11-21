@@ -1,61 +1,73 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PaymentDetailsView } from "./PaymentFlow";
+import { PaymentDetailsView, TransferSummary } from "./PaymentFlow";
 import { resolvePaymentView, type BankPayment, type MethodState, type QrPayment } from "@/lib/paymentMethods";
 
-const qr: MethodState<QrPayment> = { status: "ready", amountThb: 599, accountName: "ชื่อพร้อมเพย์", referenceCode: "KA-00000005", qrSvg: "<svg data-qr></svg>" };
-const bank: MethodState<BankPayment> = { status: "ready", bankName: "ธนาคารตัวอย่าง", accountNumber: "123-4-56789-0", accountName: "ชื่อบัญชีธนาคาร", amountThb: 599, referenceCode: "KA-00000005" };
+const qr: MethodState<QrPayment> = { status: "ready", amountThb: 599, accountName: "ชื่อบัญชีเดียวกัน", referenceCode: "KA-00000005", qrSvg: "<svg data-qr></svg>" };
+const bank: MethodState<BankPayment> = { status: "ready", bankName: "ธนาคารตัวอย่าง", accountNumber: "123-4-56789-0", accountName: "ชื่อบัญชีเดียวกัน", amountThb: 599, referenceCode: "KA-00000005" };
 const off = { status: "not_configured" } as const;
 
 const render = (q: MethodState<QrPayment>, b: MethodState<BankPayment>) => renderToStaticMarkup(
-  React.createElement(PaymentDetailsView, { view: resolvePaymentView(q, b), referenceCopied: false, accountCopied: false, onCopyReference: () => {}, onCopyAccount: () => {} }),
+  React.createElement(PaymentDetailsView, { view: resolvePaymentView(q, b), accountCopied: false, onCopyAccount: () => {} }),
 );
+const count = (html: string, text: string) => html.split(text).length - 1;
 
-describe("payment details view", () => {
-  it("PromptPay + bank account: shows the QR first, then the account, with the big amount and the exact-amount warning", () => {
-    const html = render(qr, bank);
-    expect(html).toContain("data-qr");
-    expect(html).toContain("ธนาคารตัวอย่าง");
-    expect(html).toContain("123-4-56789-0");
-    expect(html).toContain("ชื่อบัญชีธนาคาร");
-    expect(html.indexOf("data-qr")).toBeLessThan(html.indexOf("123-4-56789-0"));
+describe("transfer summary (step 2 header): amount and reference, once", () => {
+  const html = renderToStaticMarkup(React.createElement(TransferSummary, { amountThb: 599, referenceCode: "KA-00000005", referenceCopied: false, onCopyReference: () => {} }));
+
+  it("shows the big amount, the exact-amount warning and the reference with a copy button", () => {
     expect(html).toContain("599 บาท");
     expect(html).toContain("กรุณาโอนยอดนี้ให้ตรงทุกบาท");
     expect(html).toContain("KA-00000005");
-    expect(html).toContain("คัดลอกเลขบัญชี");
-    expect(html).toContain("คัดลอกเลขอ้างอิง");
+    expect(html).toContain("คัดลอกเลขอ้างอิง KA-00000005");
+  });
+});
+
+describe("transfer methods", () => {
+  it("PromptPay + bank account: the QR first, then the account; shared account name printed once", () => {
+    const html = render(qr, bank);
+    expect(html).toContain("data-qr");
+    expect(html).toContain("123-4-56789-0");
+    expect(html.indexOf("data-qr")).toBeLessThan(html.indexOf("123-4-56789-0"));
     expect(html).toContain("หรือโอนเข้าบัญชีธนาคาร");
+    expect(html).toContain("คัดลอกเลขบัญชี");
+    expect(count(html, "ชื่อบัญชีเดียวกัน")).toBe(1);
+    expect(count(html, "123-4-56789-0")).toBe(2); // the number and its copy button label
   });
 
-  it("bank account only: no QR, account shown with copy button and the amount", () => {
+  it("two different account names are both shown (the QR owner is not hidden)", () => {
+    const html = render({ ...qr, accountName: "ชื่อพร้อมเพย์" } as MethodState<QrPayment>, bank);
+    expect(html).toContain("ชื่อพร้อมเพย์");
+    expect(html).toContain("ชื่อบัญชีเดียวกัน");
+  });
+
+  it("bank account only: no QR, account with copy button", () => {
     const html = render(off, bank);
     expect(html).not.toContain("data-qr");
-    expect(html).not.toContain("สแกน QR พร้อมเพย์");
     expect(html).toContain("123-4-56789-0");
     expect(html).toContain("คัดลอกเลขบัญชี");
-    expect(html).toContain("599 บาท");
-    expect(html).toContain("กรุณาโอนยอดนี้ให้ตรงทุกบาท");
     expect(html).not.toContain("หรือโอนเข้าบัญชีธนาคาร");
   });
 
-  it("neither configured: only the LINE message, no account, no amount", () => {
+  it("PromptPay only: the QR and its owner's name, no bank block", () => {
+    const html = render(qr, off);
+    expect(html).toContain("data-qr");
+    expect(html).toContain("ชื่อบัญชีเดียวกัน");
+    expect(html).not.toContain("คัดลอกเลขบัญชี");
+  });
+
+  it("neither configured: only the LINE message", () => {
     const html = render(off, off);
     expect(html).toContain("แจ้งเลขอ้างอิงทาง LINE");
     expect(html).not.toContain("123-4-56789-0");
-    expect(html).not.toContain("บาท");
+    expect(html).not.toContain("data-qr");
   });
 
-  it("PromptPay only keeps working as before", () => {
-    const html = render(qr, off);
-    expect(html).toContain("data-qr");
-    expect(html).not.toContain("คัดลอกเลขบัญชี");
-    expect(html).toContain("599 บาท");
-  });
-
-  it("shows the amount from the application data it is given, not from anywhere else", () => {
-    const html = render({ ...qr, amountThb: 299 } as MethodState<QrPayment>, { ...bank, amountThb: 299 } as MethodState<BankPayment>);
-    expect(html).toContain("299 บาท");
-    expect(html).not.toContain("599 บาท");
+  it("never prints the amount or the reference itself (the summary above owns them)", () => {
+    const html = render(qr, bank);
+    expect(html).not.toContain("transfer-amount");
+    expect(html).not.toContain("ยอดที่ต้องโอน");
+    expect(html).not.toContain("KA-00000005");
   });
 });

@@ -40,7 +40,14 @@ export function parseBankResponse(body: unknown): MethodState<BankPayment> {
   return { status: "unavailable" };
 }
 
-export function resolvePaymentView(qr: MethodState<QrPayment>, bank: MethodState<BankPayment>): PaymentView {
+export interface ExpectedPayment { amountThb: number; referenceCode: string }
+
+/**
+ * `expected` is the amount and reference of the application the page is
+ * showing. A method that answers with anything else is stale (for example the
+ * quote was just changed): show nothing rather than a mismatching amount.
+ */
+export function resolvePaymentView(qr: MethodState<QrPayment>, bank: MethodState<BankPayment>, expected?: ExpectedPayment): PaymentView {
   if (qr.status === "loading" || bank.status === "loading") return { kind: "loading" };
   const qrReady = qr.status === "ready" ? qr : null;
   const bankReady = bank.status === "ready" ? bank : null;
@@ -54,6 +61,9 @@ export function resolvePaymentView(qr: MethodState<QrPayment>, bank: MethodState
     return { kind: "unavailable" };
   }
   const source = (bankReady ?? qrReady)!;
+  if (expected && (source.amountThb !== expected.amountThb || source.referenceCode !== expected.referenceCode)) {
+    return { kind: "unavailable" };
+  }
   return {
     kind: "ready",
     qr: qrReady ? { amountThb: qrReady.amountThb, accountName: qrReady.accountName, referenceCode: qrReady.referenceCode, qrSvg: qrReady.qrSvg } : null,
