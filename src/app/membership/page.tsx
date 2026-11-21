@@ -8,6 +8,9 @@ import { Mascot } from "@/components/Mascot";
 import { Badge, Button } from "@/components/ui";
 import { PlanBenefits } from "@/app/landing/PlanBenefits";
 import { LINE_OA_URL } from "@/lib/config";
+import { lineSlipHref } from "@/lib/lineSlipLink";
+import { membershipStepNumber, shouldShowMembershipStepper } from "@/lib/membershipSteps";
+import { MembershipStepper, PromptPayCard } from "./PaymentFlow";
 import { trackEvent } from "@/lib/analytics";
 import {
   convertFounderApplicationToTeacher,
@@ -56,6 +59,13 @@ import {
   requestedMembershipPlan,
 } from "@/lib/membershipJourney";
 import { createLatestRefreshRunner } from "@/lib/latestRefresh";
+import {
+  failedMembershipChecks,
+  failedMembershipChecksMessage,
+  membershipChecksLoading,
+  onlyFounderChecksFailed,
+  planCheckLabel,
+} from "@/lib/membershipChecks";
 import { planDisplayName } from "@/lib/planDisplay";
 import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
@@ -158,6 +168,9 @@ function MembershipContent() {
   const [entitlements, setEntitlements] = useState<EntitlementSnapshot>(EMPTY_ENTITLEMENTS);
   const [subscription, setSubscription] = useState<MemberSubscription | null>(null);
   const [memberStatusError, setMemberStatusError] = useState(false);
+  // Which of the two reads behind memberStatusError failed (for the message only).
+  const [entitlementsFailed, setEntitlementsFailed] = useState(false);
+  const [subscriptionFailed, setSubscriptionFailed] = useState(false);
   const [memberStatusLoaded, setMemberStatusLoaded] = useState(!isSupabaseConfigured);
   const [submitting, setSubmitting] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -185,6 +198,28 @@ function MembershipContent() {
     || !capacityLoaded
     || capacity === null
     || (Boolean(userId) && !founderHistoryKnown);
+  const checksInput = {
+    isConfigured: isSupabaseConfigured,
+    schemaReadiness,
+    authLoaded,
+    signedIn: Boolean(userId),
+    memberStatusLoaded,
+    capacityLoaded,
+    founderHistoryLoaded,
+    founderChecksNeeded: shouldLoadFounderChecks,
+    capacityMissing: capacity === null,
+    founderHistoryError,
+    applicationsError,
+    entitlementsError: entitlementsFailed,
+    subscriptionError: subscriptionFailed,
+  };
+  const checksLoading = membershipChecksLoading(checksInput);
+  const failedChecks = failedMembershipChecks(checksInput);
+  const failedChecksKey = failedChecks.join(",");
+  // Names of the failed reads only (never data), so a support screenshot of the console says which one.
+  useEffect(() => {
+    if (failedChecksKey) console.error(`membership checks failed: ${failedChecksKey}`);
+  }, [failedChecksKey]);
   const founderOfferUnavailable = Boolean(userId) && (!founderHistoryKnown || hasFounderHistory);
   const returnResourceState = membershipReturnResourceState(returnResourceId, returnResourceRead);
   const returnResourceLoaded = returnResourceState.loaded;
@@ -259,6 +294,25 @@ function MembershipContent() {
   const applicationFounderHistoryError = founderChecksBlockPlan(applicationPlanId, founderHistoryError);
   const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable);
   const applicationAmount = applicationPlanId === "founder" ? 299 : 599;
+  const stepNumber = membershipStepNumber({
+    hasPendingApplication: hasOpenApplication,
+    lineSlipReceived: Boolean(pendingApplication?.lineSlipReceivedAt),
+    membershipActive: hasCurrentMembership && !hasOpenApplication,
+  });
+  const showStepper = shouldShowMembershipStepper({
+    authLoaded,
+    signedIn: Boolean(userId),
+    memberStatusLoaded,
+    membershipActive: hasCurrentMembership,
+    hasPendingApplication: hasOpenApplication,
+  });
+  const slipLineHref = latestApplication?.status === "pending"
+    ? lineSlipHref(process.env.NEXT_PUBLIC_LINE_OA_ID, {
+        planName: membershipApplicationPlanLabel(latestApplication.planId),
+        referenceCode: latestApplication.referenceCode,
+        amountThb: latestApplication.quotedAmountThb,
+      })
+    : LINE_OA_URL;
   const selectedPlan = plans.find((plan) => plan.id === applicationPlanId) ?? null;
   const membershipNeedsRenewal = canRequestMembershipRenewal(subscription);
   const membershipStatusPlanId = subscription && (hasCurrentMembership || membershipNeedsRenewal)
@@ -344,6 +398,8 @@ function MembershipContent() {
         setEntitlements(EMPTY_ENTITLEMENTS);
         setSubscription(null);
         setMemberStatusError(false);
+        setEntitlementsFailed(false);
+        setSubscriptionFailed(false);
         setMemberStatusLoaded(true);
         setAuthLoaded(true);
         return;
@@ -370,6 +426,8 @@ function MembershipContent() {
       if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
       if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
       setMemberStatusError(entitlementResult.error || subscriptionResult.error);
+      setEntitlementsFailed(entitlementResult.error);
+      setSubscriptionFailed(subscriptionResult.error);
       setMemberStatusLoaded(true);
       setAuthLoaded(true);
     };
@@ -407,6 +465,8 @@ function MembershipContent() {
         if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
         if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
         setMemberStatusError(entitlementResult.error || subscriptionResult.error);
+        setEntitlementsFailed(entitlementResult.error);
+        setSubscriptionFailed(subscriptionResult.error);
         setMemberStatusLoaded(true);
       },
     );
@@ -454,6 +514,8 @@ function MembershipContent() {
       setEntitlements(EMPTY_ENTITLEMENTS);
       setSubscription(null);
       setMemberStatusError(false);
+      setEntitlementsFailed(false);
+      setSubscriptionFailed(false);
       setMemberStatusLoaded(true);
       return;
     }
@@ -484,6 +546,8 @@ function MembershipContent() {
     if (!entitlementResult.error) setEntitlements(entitlementResult.entitlements);
     if (!subscriptionResult.error) setSubscription(subscriptionResult.subscription);
     setMemberStatusError(entitlementResult.error || subscriptionResult.error);
+    setEntitlementsFailed(entitlementResult.error);
+    setSubscriptionFailed(subscriptionResult.error);
     setMemberStatusLoaded(true);
   };
 
@@ -648,6 +712,7 @@ function MembershipContent() {
       </header>
 
       <main>
+        {showStepper && <MembershipStepper current={stepNumber} />}
         <section className="kru-membership-hero">
           <div className="kru-membership-hero__copy">
             <span className="kru-membership-eyebrow"><Sparkles size={16} aria-hidden="true" /> {noSelectablePlanForResource ? "สิทธิ์เฉพาะสมาชิกเดิม" : applicationPlanId === "founder" ? "สิทธิ์เปิดตัว Founder 100" : "แพ็ก Teacher Pro"}</span>
@@ -758,11 +823,25 @@ function MembershipContent() {
                         <strong>{plan.name}</strong>
                         <span>{plan.priceLabel}</span>
                         {unavailable && (
-                          <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? "กำลังตรวจสอบสิทธิ์" : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
+                          <small>{schemaReadiness !== "ready" || memberStatusError || applicationsError || (plan.id === "founder" && founderChecksUnavailable) ? planCheckLabel(checksLoading) : hasFounderHistory ? "ใช้สิทธิ์ปีแรกแล้ว" : "ครบ 100 สิทธิ์แล้ว"}</small>
                         )}
                       </button>
                     );
                   })}
+                </div>
+              )}
+              {checksLoading && schemaReadiness !== "unavailable" && (
+                <p role="status" className="kru-membership-alert">กำลังตรวจสอบสิทธิ์ของบัญชี…</p>
+              )}
+              {failedChecks.length > 0 && schemaReadiness === "ready" && (
+                <div role="alert" className="kru-membership-alert kru-membership-alert--warning" style={{ display: "grid", gap: "var(--sp-3)" }}>
+                  <strong>{failedMembershipChecksMessage(failedChecks)}</strong>
+                  <span>
+                    {onlyFounderChecksFailed(failedChecks)
+                      ? "ยังเลือก Teacher Pro ได้ตามปกติ ส่วน Founder ต้องตรวจสอบให้สำเร็จก่อน"
+                      : "เกิดจากการเชื่อมต่อไม่สำเร็จ ไม่ได้แปลว่าสิทธิ์ของคุณหายไป ระบบยังไม่แก้ไขข้อมูลใด ๆ"}
+                  </span>
+                  <Button type="button" variant="secondary" onClick={() => void handleRetrySchemaReadiness()}>ลองอีกครั้ง</Button>
                 </div>
               )}
               {selectedPlan && !noSelectablePlanForResource && (
@@ -956,13 +1035,13 @@ function MembershipContent() {
           ) : (
             <section id="how-to-pay" className="kru-card kru-membership-payment" aria-labelledby="membership-payment-title">
               <span className="kru-membership-step">ขั้นตอนที่ 2</span>
-              <h2 id="membership-payment-title">ส่งเลขอ้างอิงและสลิปทาง LINE OA</h2>
+              <h2 id="membership-payment-title">โอนเงินแล้วส่งสลิปทาง LINE</h2>
               <ol>
-                <li>ส่งเลขอ้างอิงจากเว็บไซต์ให้ครูอรรี่ทาง LINE</li>
-                <li>รอรับรายละเอียดการชำระจากครูอรรี่ก่อนโอน</li>
-                <li>หลังชำระแล้ว ส่งเลขอ้างอิงพร้อมสลิปในแชตเดิม</li>
+                <li>สแกน QR พร้อมเพย์ หรือโอนเข้าบัญชีธนาคารด้านล่าง ตามยอดในใบสมัครให้ตรงทุกบาท</li>
+                <li>กดปุ่ม “ส่งสลิปทาง LINE” ข้อความพร้อมเลขอ้างอิงจะถูกเตรียมไว้ให้ แนบสลิปแล้วส่ง</li>
+                <li>ตรวจสอบและอนุมัติภายใน 1 วันทำการ</li>
               </ol>
-              <p className="kru-membership-payment__notice">ส่งทุกอย่างใน LINE ได้เลย ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ สถานะจะอัปเดตโดยทีมงาน และยังไม่นับสิทธิ์จนกว่าจะแสดง “ยืนยันชำระแล้ว”</p>
+              <p className="kru-membership-payment__notice">ไม่เก็บสลิปบนเว็บไซต์ ไม่ต้องอัปโหลดสลิปหรือกดแจ้งซ้ำบนเว็บ ส่งสลิปทาง LINE เท่านั้น สถานะจะอัปเดตโดยทีมงาน และยังไม่นับสิทธิ์จนกว่าจะแสดง “ยืนยันชำระแล้ว”</p>
               {schemaReadiness !== "ready" ? (
                 <p role="status" className="kru-membership-alert kru-membership-alert--warning">{MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE}</p>
               ) : hasUnlockedMembership ? (
@@ -977,16 +1056,21 @@ function MembershipContent() {
                 </p>
               ) : latestApplication?.status === "pending" ? (
                 <>
+                  <PromptPayCard
+                    applicationId={latestApplication.id}
+                    copied={copied === latestApplication.referenceCode}
+                    onCopyReference={(referenceCode) => void handleCopyReference(referenceCode)}
+                  />
                   <a
                     className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block"
-                    href={LINE_OA_URL}
+                    href={slipLineHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     referrerPolicy="no-referrer"
                     onClick={() => handleLineCtaClick(latestApplication.referenceCode)}
                     aria-describedby="membership-line-status"
                   >
-                    <MessageCircle size={19} aria-hidden="true" /> ส่งเลขอ้างอิงและสลิปทาง LINE
+                    <MessageCircle size={19} aria-hidden="true" /> ส่งสลิปทาง LINE
                   </a>
                   <p id="membership-line-status" role="status" className="kru-membership-alert">
                     {lineCtaFeedback
