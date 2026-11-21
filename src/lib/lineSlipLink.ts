@@ -27,3 +27,18 @@ export function lineSlipHref(oaId: unknown, message: LineSlipMessageInput): stri
   if (!id) return LINE_OA_URL;
   return `https://line.me/R/oaMessage/${id}/?${encodeURIComponent(lineSlipMessage(message))}`;
 }
+
+export interface LineSlipAction {
+  href: string;
+  /** No OA ID is configured, so the message must be copied before LINE opens. */
+  copyFirst: boolean;
+}
+
+/**
+ * What the "open LINE" button does. With a configured OA ID the message is
+ * already typed into the chat. Without one it opens the plain LINE link and
+ * the page copies the message to the clipboard first, so the member can paste.
+ */
+export function lineSlipAction(oaId: unknown, message: LineSlipMessageInput): LineSlipAction {
+  return { href: lineSlipHref(oaId, message), copyFirst: normalizeLineOaId(oaId) === null };
+}

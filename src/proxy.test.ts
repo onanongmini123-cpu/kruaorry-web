@@ -81,14 +81,15 @@ describe("application proxy", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
-  it("sends an authenticated visitor away from signup to the member app", async () => {
+  it("sends an authenticated visitor away from signup to the member app (or back to the membership page they chose)", async () => {
     mockSession({ id: "member-1", is_anonymous: false });
-    const response = await proxy(new NextRequest(
-      "https://example.com/login?mode=signup&next=%2Fmembership%3Fplan%3Dteacher",
-    ));
-
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("https://example.com/app");
+    const toApp = await proxy(new NextRequest("https://example.com/login?mode=signup&next=%2Fapp%3Fview%3Dlibrary"));
+    expect(toApp.status).toBe(307);
+    expect(toApp.headers.get("location")).toBe("https://example.com/app");
+    const other = await proxy(new NextRequest("https://example.com/login?mode=signup&next=https%3A%2F%2Fevil.example"));
+    expect(other.headers.get("location")).toBe("https://example.com/app");
+    const membership = await proxy(new NextRequest("https://example.com/login?mode=signup&next=%2Fmembership%3Fplan%3Dteacher"));
+    expect(membership.headers.get("location")).toBe("https://example.com/membership?plan=teacher");
     expect(config.matcher).toContain("/login");
   });
 

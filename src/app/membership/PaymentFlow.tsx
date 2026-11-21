@@ -35,20 +35,66 @@ export function MembershipStepper({ current }: { current: number }) {
   );
 }
 
+/** The amount to transfer: big, once, at the top of the transfer step. */
+export function TransferAmount({ amountThb }: { amountThb: number }) {
+  return (
+    <div className="kru-ta" data-testid="transfer-amount">
+      <strong>{amountThb.toLocaleString("th-TH")} บาท</strong>
+      <span>โอนให้ตรงทุกบาท</span>
+      <style jsx>{`
+        .kru-ta { display: grid; gap: 2px; justify-items: center; text-align: center; padding: var(--sp-4); background: var(--purple-50); border: 2px solid var(--purple-700); border-radius: var(--r-md); }
+        .kru-ta strong { font-size: clamp(2rem, 10vw, 2.75rem); line-height: 1.1; color: var(--purple-700); }
+        .kru-ta span { color: var(--text-strong); font-weight: var(--fw-semibold); }
+      `}</style>
+    </div>
+  );
+}
+
+/** "เลขอ้างอิง KA-…" with a copy button: small, once per step (steps 2 and 4). */
+export function ReferenceLine({
+  referenceCode,
+  copied,
+  onCopy,
+}: {
+  referenceCode: string;
+  copied: boolean;
+  onCopy: (referenceCode: string) => void;
+}) {
+  return (
+    <div className="kru-ref">
+      <span>เลขอ้างอิง <strong>{referenceCode}</strong></span>
+      <button type="button" onClick={() => onCopy(referenceCode)} aria-label={`คัดลอกเลขอ้างอิง ${referenceCode}`}>
+        {copied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
+        {copied ? "คัดลอกแล้ว" : "คัดลอก"}
+      </button>
+      <style jsx>{`
+        .kru-ref { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; color: var(--text-muted); font-size: var(--fs-14); }
+        .kru-ref strong { font-family: var(--font-mono); letter-spacing: .04em; color: var(--text-strong); overflow-wrap: anywhere; }
+        .kru-ref button { min-height: 44px; padding: 0 var(--sp-4); display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-brand); border-radius: var(--r-pill); background: var(--surface-card); color: var(--purple-700); font: inherit; font-weight: var(--fw-semibold); cursor: pointer; }
+      `}</style>
+    </div>
+  );
+}
+
 /**
- * Transfer details for the signed-in applicant's own pending application:
+ * The transfer methods for the signed-in applicant's own pending application:
  * the PromptPay QR and/or the bank account, whichever the owner configured.
  * Both are fetched from server routes that check the application belongs to
- * the caller; neither the account number nor the amount is in the page bundle.
+ * the caller; neither the account number nor the QR is in the page bundle.
+ * The expected amount and reference come from the application the page already
+ * shows; if a route ever answers with something different (stale quote), the
+ * methods are withheld instead of showing a mismatching amount. The caller
+ * keys this component by application and amount so a changed quote (for example
+ * Founder → Teacher Pro) remounts it and fetches fresh, never reusing an old QR.
  */
-export function PromptPayCard({
+export function TransferMethods({
   applicationId,
-  copied,
-  onCopyReference,
+  amountThb,
+  referenceCode,
 }: {
   applicationId: string;
-  copied: boolean;
-  onCopyReference: (referenceCode: string) => void;
+  amountThb: number;
+  referenceCode: string;
 }) {
   const [qr, setQr] = useState<MethodState<QrPayment>>({ status: "loading" });
   const [bank, setBank] = useState<MethodState<BankPayment>>({ status: "loading" });
@@ -81,26 +127,21 @@ export function PromptPayCard({
 
   return (
     <PaymentDetailsView
-      view={resolvePaymentView(qr, bank)}
-      referenceCopied={copied}
+      view={resolvePaymentView(qr, bank, { amountThb, referenceCode })}
       accountCopied={accountCopied}
-      onCopyReference={onCopyReference}
       onCopyAccount={(accountNumber) => void copyAccount(accountNumber)}
     />
   );
 }
 
+/** Only the transfer methods: the amount and reference are shown by TransferSummary. */
 export function PaymentDetailsView({
   view,
-  referenceCopied,
   accountCopied,
-  onCopyReference,
   onCopyAccount,
 }: {
   view: PaymentView;
-  referenceCopied: boolean;
   accountCopied: boolean;
-  onCopyReference: (referenceCode: string) => void;
   onCopyAccount: (accountNumber: string) => void;
 }) {
   if (view.kind === "loading") return <p role="status" className="kru-pp-note">กำลังเตรียมช่องทางโอนเงิน…</p>;
@@ -111,21 +152,17 @@ export function PaymentDetailsView({
     return <p role="alert" className="kru-pp-note">แสดงช่องทางโอนเงินไม่ได้ในขณะนี้ กรุณาลองใหม่ หรือแจ้งเลขอ้างอิงทาง LINE เพื่อรับรายละเอียดการโอน</p>;
   }
 
-  const { qr, bank, amountThb, referenceCode } = view;
+  const { qr, bank } = view;
+  // The same person often owns both accounts: print the name once.
+  const showQrName = Boolean(qr) && !(bank && bank.accountName === qr?.accountName);
   return (
     <div className="kru-pp">
-      <div className="kru-pp__amount" data-testid="transfer-amount">
-        <span>ยอดที่ต้องโอน</span>
-        <strong>{amountThb.toLocaleString("th-TH")} บาท</strong>
-        <p>กรุณาโอนยอดนี้ให้ตรงทุกบาท</p>
-      </div>
-
       {qr ? (
         <section className="kru-pp__method" aria-label="โอนผ่านพร้อมเพย์">
           <h3>สแกน QR พร้อมเพย์</h3>
           {/* The SVG is generated on the server from the payload only; it carries no scripts. */}
           <div className="kru-pp__qr" role="img" aria-label={`QR พร้อมเพย์ ยอด ${qr.amountThb} บาท`} dangerouslySetInnerHTML={{ __html: qr.qrSvg }} />
-          <dl><div><dt>ชื่อบัญชี</dt><dd>{qr.accountName}</dd></div></dl>
+          {showQrName ? <dl><div><dt>ชื่อบัญชี</dt><dd>{qr.accountName}</dd></div></dl> : null}
         </section>
       ) : null}
 
@@ -152,25 +189,8 @@ export function PaymentDetailsView({
       {view.partialFailure ? (
         <p role="status" className="kru-pp-note">ช่องทางโอนอีกแบบแสดงไม่ได้ในขณะนี้ ใช้ช่องทางที่แสดงอยู่ หรือแจ้งเลขอ้างอิงทาง LINE</p>
       ) : null}
-
-      <dl>
-        <div>
-          <dt>เลขอ้างอิง</dt>
-          <dd>
-            <strong>{referenceCode}</strong>
-            <button type="button" onClick={() => onCopyReference(referenceCode)} aria-label={`คัดลอกเลขอ้างอิง ${referenceCode}`}>
-              {referenceCopied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
-              {referenceCopied ? "คัดลอกแล้ว" : "คัดลอก"}
-            </button>
-          </dd>
-        </div>
-      </dl>
       <style jsx>{`
         .kru-pp { display: grid; gap: var(--sp-4); }
-        .kru-pp__amount { display: grid; gap: 4px; justify-items: center; text-align: center; padding: var(--sp-4); background: var(--purple-50); border: 2px solid var(--purple-700); border-radius: var(--r-md); }
-        .kru-pp__amount span { color: var(--text-muted); font-size: var(--fs-13); }
-        .kru-pp__amount strong { font-size: clamp(2rem, 9vw, 2.75rem); line-height: 1.1; color: var(--purple-700); }
-        .kru-pp__amount p { margin: 0; font-weight: var(--fw-semibold); color: var(--text-strong); }
         .kru-pp__method { display: grid; gap: var(--sp-3); }
         .kru-pp__method h3 { margin: 0; font-size: var(--fs-16, 1rem); }
         .kru-pp__qr { width: min(260px, 100%); margin: 0 auto; padding: var(--sp-3); background: #fff; border: 1px solid var(--border-brand); border-radius: var(--r-md); }

@@ -23,6 +23,25 @@ The broad production-origin redirect entry can be narrowed to the exact
 hardening task. The application still validates every post-auth destination
 against its internal route allowlist and never accepts an arbitrary URL.
 
+## Returning to the membership page after sign-up
+
+A visitor who chose a plan on `/membership` and is not signed in is sent to
+`/login?next=/membership?plan=…`. After creating the account (confirmation
+email, or an immediate session) they come back to that page instead of `/app`.
+
+- The choice is stored in the new account's own metadata at sign-up
+  (`membership_next`, next to `full_name`). The confirmation link itself is
+  unchanged (`/auth/callback?next=/app`), so the Supabase redirect allowlist is
+  not affected, and the link works when it is opened on another device or
+  browser.
+- `/auth/callback` reads the value back after the code is exchanged and uses it
+  only if it passes `safeMembershipReturn`: the path must be exactly
+  `/membership`, with only `plan` (`founder` or `teacher`) and a safe `returnTo`.
+  Anything else, including a value edited by the user or an external URL, falls
+  back to `/app`. The callback never takes a destination from its own URL.
+- Every other sign-up destination (downloads, resources, other app routes) still
+  ends at `/app`.
+
 ## Application recovery behavior
 
 - Supabase/SMTP error text is never shown to the visitor. Sign-up, sign-in,

@@ -51,6 +51,18 @@ describe("resolvePaymentView", () => {
   });
 });
 
+describe("resolvePaymentView with the application's own amount and reference", () => {
+  it("accepts methods that match the application", () => {
+    expect(resolvePaymentView(qr, bank, { amountThb: 599, referenceCode: "KA-1" }).kind).toBe("ready");
+  });
+
+  it("withholds methods that answer a stale quote or another reference (never shows a mismatching amount)", () => {
+    expect(resolvePaymentView(qr, bank, { amountThb: 299, referenceCode: "KA-1" })).toEqual({ kind: "unavailable" });
+    expect(resolvePaymentView(qr, off, { amountThb: 599, referenceCode: "KA-9" })).toEqual({ kind: "unavailable" });
+    expect(resolvePaymentView(off, bank, { amountThb: 1, referenceCode: "KA-1" })).toEqual({ kind: "unavailable" });
+  });
+});
+
 describe("response parsers", () => {
   it("accept only complete, well-typed answers", () => {
     expect(parseBankResponse({ status: "ready", bankName: "b", accountNumber: "1234567890", accountName: "n", amountThb: 299, referenceCode: "KA-1" }).status).toBe("ready");
