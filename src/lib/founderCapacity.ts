@@ -42,3 +42,12 @@ export const FOUNDER_FULL_NOTICE = "สิทธิ์ราคาเปิด�
 export function founderPublicNotice(capacity: Pick<FounderCapacity, "isFull">): string {
   return capacity.isFull ? FOUNDER_FULL_NOTICE : FOUNDER_LIMIT_NOTICE;
 }
+
+/**
+ * The badge on the Founder plan card: how many places are left, or that it is
+ * full. This is the one place the remaining count is public (the landing and
+ * member pages keep founderPublicNotice); the used count is never shown.
+ */
+export function founderSeatsBadge(capacity: Pick<FounderCapacity, "isFull" | "remaining">): string {
+  return capacity.isFull ? "เต็มแล้ว" : `เหลือ ${capacity.remaining} ที่`;
+}

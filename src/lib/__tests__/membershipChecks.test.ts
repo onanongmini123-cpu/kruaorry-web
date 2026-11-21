@@ -88,6 +88,9 @@ describe("membership page wiring", () => {
   it("does not change prices, seats or approval: the page still never calls payment confirmation", () => {
     expect(page).not.toContain("confirmMembershipPayment");
     expect(page).not.toContain("reportMembershipPayment");
-    expect(page).toContain('const applicationAmount = applicationPlanId === "founder" ? 299 : 599;');
+    // Prices are the fixed card copy (299 first year Founder, 599 Teacher Pro); the application's own quote is what is charged.
+    const copy = readFileSync(join(__dirname, "..", "membershipPlanCopy.ts"), "utf8");
+    expect(copy).toContain('price: "299 บาท ปีแรก"');
+    expect(copy).toContain('price: "599 บาท/ปี"');
   });
 });
