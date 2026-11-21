@@ -173,12 +173,12 @@ describe("step 3: send the slip on LINE", () => {
     return h(el(SlipStep, { href: action.href, copyFirst: action.copyFirst, feedback: null, fallbackMessage: null, onOpenLine: noop, onSent: noop, onBack: noop, focusHeading: false, ...over }));
   };
 
-  it("heading, the one-line explanation, main button, 'ส่งสลิปแล้ว', one privacy line and the small back button", () => {
+  it("heading, the one-line explanation, main button, 'ฉันส่งสลิปใน LINE แล้ว', one privacy line and the small back button", () => {
     const text = textOf(slip("@abc1234d"));
     expect(text).toContain("ส่งสลิปทาง LINE");
     expect(text).toContain("กดปุ่มด้านล่าง แชตจะเปิดพร้อมข้อความ แนบรูปสลิปแล้วกดส่ง");
     expect(text).toContain("เปิด LINE ส่งสลิป");
-    expect(text).toContain("ส่งสลิปแล้ว");
+    expect(text).toContain("ฉันส่งสลิปใน LINE แล้ว");
     expect(count(text, "เว็บไม่เก็บรูปสลิป ส่งทาง LINE ที่เดียว")).toBe(1);
     expect(text).toContain("ย้อนกลับไปดูเลขบัญชี");
   });
@@ -211,15 +211,23 @@ describe("step 4: waiting", () => {
     const html = wait();
     const text = textOf(html);
     expect(html).toContain("⏳");
-    expect(text).toContain("ได้รับแล้ว รอครูอรรี่ตรวจสอบ");
-    expect(text).toContain("อนุมัติภายใน 1 วันทำการ ไม่ต้องกดอะไรเพิ่ม หน้านี้จะอัปเดตเอง");
+    expect(text).toContain("รอครูอรรี่ตรวจสลิป");
+    expect(text).toContain("ถ้าส่งสลิปใน LINE แล้ว ครูอรรี่จะอนุมัติภายใน 1 วันทำการ หน้านี้จะอัปเดตเอง");
     expect(count(text, "KA-00000005")).toBe(1);
-    expect(text).toContain("ยังไม่ได้ส่งสลิป? กลับไปส่ง");
+    expect(text).toContain("ยังไม่ได้แนบสลิปในแชต? กลับไปส่ง");
+  });
+
+  it("never claims the slip was received while waiting", () => {
+    for (const html of [wait(), wait({ slipReceivedAt: "2026-11-20T03:00:00Z" }), wait({ legacyReportedAt: "2026-11-10T03:00:00Z" })]) {
+      const t = textOf(html);
+      expect(t).not.toContain("ได้รับแล้ว");
+      expect(t).not.toContain("รับสลิปแล้ว");
+    }
   });
 
   it("tells when staff recorded the slip, and flags a payment status from the old flow", () => {
-    expect(textOf(wait({ slipReceivedAt: "2026-11-20T03:00:00Z" }))).toContain("ทีมงานบันทึกรับสลิปจาก LINE");
-    expect(textOf(wait())).not.toContain("ทีมงานบันทึกรับสลิปจาก LINE");
+    expect(textOf(wait({ slipReceivedAt: "2026-11-20T03:00:00Z" }))).toContain("ทีมงานบันทึกสลิปจาก LINE");
+    expect(textOf(wait())).not.toContain("ทีมงานบันทึกสลิปจาก LINE");
     expect(textOf(wait({ legacyReportedAt: "2026-11-10T03:00:00Z" }))).toContain("ยังไม่ถือว่าทีมงานรับสลิป");
   });
 });

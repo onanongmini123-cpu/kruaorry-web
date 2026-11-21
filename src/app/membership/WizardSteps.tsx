@@ -303,7 +303,7 @@ export function SlipStep({
         >
           เปิด LINE ส่งสลิป
         </a>
-        <Button type="button" variant="secondary" size="lg" block onClick={onSent}>ส่งสลิปแล้ว</Button>
+        <Button type="button" variant="secondary" size="lg" block onClick={onSent}>ฉันส่งสลิปใน LINE แล้ว</Button>
       </StepActions>
       <p id="kru-slip-feedback" role="status" className="kru-slip__feedback">{feedback ?? ""}</p>
       {fallbackMessage ? <output className="kru-slip__fallback">{fallbackMessage}</output> : null}
@@ -339,14 +339,16 @@ export function WaitingStep({
   focusHeading: boolean;
 }) {
   return (
-    <StepFrame title="ได้รับแล้ว รอครูอรรี่ตรวจสอบ" lead="อนุมัติภายใน 1 วันทำการ ไม่ต้องกดอะไรเพิ่ม หน้านี้จะอัปเดตเอง" focusHeading={focusHeading}>
+    <StepFrame title="รอครูอรรี่ตรวจสลิป" lead="ถ้าส่งสลิปใน LINE แล้ว ครูอรรี่จะอนุมัติภายใน 1 วันทำการ หน้านี้จะอัปเดตเอง" focusHeading={focusHeading}>
       <div className="kru-wait__icon" aria-hidden="true">⏳</div>
       {slipReceivedAt ? (
-        <p role="status" className="kru-wait__received">ทีมงานบันทึกรับสลิปจาก LINE เมื่อ {formatThaiDate(slipReceivedAt)} · กำลังตรวจยอดจริง</p>
+        <p role="status" className="kru-wait__received">ทีมงานบันทึกสลิปจาก LINE ไว้เมื่อ {formatThaiDate(slipReceivedAt)} · กำลังตรวจยอดจริง</p>
       ) : null}
       <LegacyReportNote reportedAt={legacyReportedAt} />
       <ReferenceLine referenceCode={referenceCode} copied={referenceCopied} onCopy={onCopyReference} />
-      <TextAction onClick={onBackToSlip}>ยังไม่ได้ส่งสลิป? กลับไปส่ง</TextAction>
+      <StepActions>
+        <Button type="button" variant="secondary" size="lg" block onClick={onBackToSlip}>ยังไม่ได้แนบสลิปในแชต? กลับไปส่ง</Button>
+      </StepActions>
       <style jsx>{`
         .kru-wait__icon { font-size: 3rem; text-align: center; line-height: 1; }
         .kru-wait__received { margin: 0; padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-info-bg); color: var(--status-info-fg); }

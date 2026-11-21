@@ -57,4 +57,3 @@ export function founderSeatsBadge(capacity: Pick<FounderCapacity, "isFull" | "re
   if (capacity.isFull || capacity.remaining <= 0) return FOUNDER_FULL_BADGE;
   return capacity.remaining <= FOUNDER_LOW_SEATS_THRESHOLD ? `เหลืออีก ${capacity.remaining} ที่` : FOUNDER_LIMIT_NOTICE;
 }
-

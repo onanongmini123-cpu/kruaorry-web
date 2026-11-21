@@ -44,7 +44,7 @@ describe("canonical manual membership flow", () => {
   it("keeps member payment status read-only and safely converts a full pending Founder application", () => {
     expect(membership).toContain("paymentReportedAt");
     expect(membership).toContain("lineSlipReceivedAt");
-    expect(wizardSteps).toContain("ทีมงานบันทึกรับสลิปจาก LINE");
+    expect(wizardSteps).toContain("ทีมงานบันทึกสลิปจาก LINE");
     expect(wizardSteps).toContain("ระบบมีสถานะแจ้งชำระเดิม");
     expect(wizardSteps).toContain("เว็บไม่เก็บรูปสลิป ส่งทาง LINE ที่เดียว");
     expect(membership).not.toContain("reportMembershipPayment");
