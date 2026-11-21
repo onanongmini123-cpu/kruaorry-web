@@ -11,7 +11,9 @@
 
 .kru-detail__back {
   min-height: var(--tap-min, 44px);
-  display: inline-flex;
+  /* Block-level (shrink-wrapped) so it is not judged as a link inside running text. */
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 6px;
   margin-bottom: var(--sp-4);
@@ -221,4 +223,16 @@
     position: sticky;
     top: var(--sp-5);
   }
+}
+
+.kru-detail__demo {
+  margin-top: var(--sp-4);
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.kru-detail__demo-note {
+  color: var(--text-muted);
+  font-size: var(--fs-14);
+  line-height: 1.6;
 }

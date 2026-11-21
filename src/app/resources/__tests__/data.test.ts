@@ -176,15 +176,21 @@ function row(id: string, over: Record<string, unknown> = {}) {
 }
 
 /** A fake anon client whose catalogue query answers from `answer(select)`. */
-function anonCatalog(answer: (select: string) => { data: unknown[] | null; error: unknown }) {
+function anonCatalog(
+  answer: (select: string) => { data: unknown[] | null; error: unknown },
+  demos: () => { data: unknown[] | null; error: unknown } = () => ({ data: [], error: null }),
+) {
   const selects: string[] = [];
   const query = {
     select: vi.fn((select: string) => { selects.push(select); return query; }),
     order: vi.fn().mockReturnThis(),
     range: vi.fn(async () => answer(selects[selects.length - 1])),
   };
-  vi.mocked(createAnonClient).mockReturnValue({ from: vi.fn(() => query) } as never);
-  return { query, selects };
+  // The demo links come from their own view; it never shares the catalogue query.
+  const demoQuery = { select: vi.fn(() => demoQuery), limit: vi.fn(async () => demos()) };
+  const from = vi.fn((table: string) => (table === "resource_demo_catalog" ? demoQuery : query));
+  vi.mocked(createAnonClient).mockReturnValue({ from } as never);
+  return { query, selects, from, demoQuery };
 }
 
 describe("public resource listing", () => {
@@ -217,6 +223,28 @@ describe("public resource listing", () => {
     expect(selects).toHaveLength(2);
     expect(selects[0]).toMatch(/\bslug\b/);
     expect(selects[1]).not.toMatch(/\bslug\b/);
+  });
+
+  it("attaches a validated public demo link from resource_demo_catalog, and drops unsafe ones", async () => {
+    const { from } = anonCatalog(() => ({ data: [row(ID_A), row(ID_B)], error: null }), () => ({
+      data: [
+        { resource_id: ID_A, demo_url: "https://games.kruaorry.com/demo/a" },
+        { resource_id: ID_B, demo_url: "https://abc.vercel.app/preview" },
+      ],
+      error: null,
+    }));
+    const result = await loadPublicResources();
+    const byId = new Map(result.resources.map((item) => [item.id, item.demoUrl]));
+    expect(byId.get(ID_A)).toBe("https://games.kruaorry.com/demo/a");
+    expect(byId.get(ID_B)).toBeNull();
+    expect(from).toHaveBeenCalledWith("resource_demo_catalog");
+  });
+
+  it("keeps the catalogue working when the demo view is missing or fails (migration 061 not applied)", async () => {
+    anonCatalog(() => ({ data: [row(ID_A)], error: null }), () => ({ data: null, error: { code: "42P01", message: 'relation "resource_demo_catalog" does not exist' } }));
+    const result = await loadPublicResources();
+    expect(result.status).toBe("ready");
+    expect(result.resources[0].demoUrl).toBeNull();
   });
 
   it("does not hide a real outage behind the slug fallback", async () => {

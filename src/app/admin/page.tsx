@@ -67,6 +67,7 @@ import type { AdminPlanOverviewItem, PlanBenefitRow } from "./planOverview";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
+import { DEMO_MODE_OPTIONS, DEMO_UNAVAILABLE_NOTICE, DEMO_URL_HELP, demoModeFromUrl, demoParamForSave, demoSameAsFullVersion, demoUrlProblem, isDemoUnavailable, thaiDemoSaveError, type DemoMode } from "@/lib/resourceDemoUrl";
 import { SLUG_RULE_HELP, SLUG_UNAVAILABLE_NOTICE, isSlugUnavailable, resourceAddress, slugFieldState, slugParamForSave, suggestSlug, thaiSlugSaveError } from "./resourceSlugField";
 import {
   EMPTY_ADMIN_ACTION_COUNTS,
@@ -275,6 +276,8 @@ const EMPTY_FORM = {
   cta_url: "",
   cover_image_url: "",
   slug: "",
+  demo_mode: "none" as DemoMode,
+  demo_url: "",
   access_mode: "locked" as ResourceAccessMode,
   plan_ids: [] as string[],
   file_path: "",
@@ -348,6 +351,10 @@ export default function AdminConsolePage() {
   const [savedSlug, setSavedSlug] = useState("");
   // False while the database can not yet be read or written for slugs (migration 055 not applied).
   const [slugSupported, setSlugSupported] = useState(true);
+  // The demo link the resource had when the form opened ("" = none); only sent when it differs.
+  const [savedDemo, setSavedDemo] = useState("");
+  // False while the database has no demo column/function (migration 061 not applied).
+  const [demoSupported, setDemoSupported] = useState(true);
   // `saving` is the single "an admin mutation is in flight" flag: true for
   // the entire cover-upload + file-upload + row-save + cleanup sequence,
   // and for delete/status changes too. guardAgainstBusyForm(saving) gates
@@ -1009,6 +1016,7 @@ export default function AdminConsolePage() {
     setEditingId(null);
     setPendingResourceId(crypto.randomUUID());
     setSavedSlug("");
+    setSavedDemo("");
     setForm(EMPTY_FORM);
     setFormBaseline(JSON.stringify(EMPTY_FORM));
     setSelectedFile(null);
@@ -1032,6 +1040,7 @@ export default function AdminConsolePage() {
     setCoverCropMeta(null);
     setFileRemoved(false);
     setSavedSlug("");
+    setSavedDemo("");
     setForm(EMPTY_FORM);
     setEditingId(null);
     setPendingResourceId(null);
@@ -1053,9 +1062,16 @@ export default function AdminConsolePage() {
       }
       return withSlug;
     };
-    const [{ data: loaded, error }, { target: resolved, error: targetError }] = await Promise.all([
+    // The demo link lives apart from the full version; a database without migration 061 just has none.
+    const loadDemo = async () => {
+      const result = await supabase.from("resources").select("demo_url").eq("id", id).single();
+      if (result.error && isDemoUnavailable(result.error)) return { supported: false, url: "" };
+      return { supported: !result.error, url: (result.data as { demo_url?: string | null } | null)?.demo_url ?? "" };
+    };
+    const [{ data: loaded, error }, { target: resolved, error: targetError }, demo] = await Promise.all([
       loadRow(),
       loadResourceTarget(supabase, id),
+      loadDemo(),
     ]);
     const data = loaded as (typeof loaded & { slug?: string | null }) | null;
     if (error || !data || targetError || !resolved) {
@@ -1070,6 +1086,8 @@ export default function AdminConsolePage() {
     setCoverCropMeta(null);
     setFileRemoved(false);
     setSavedSlug(data.slug ?? "");
+    setSavedDemo(demo.url);
+    setDemoSupported(demo.supported);
     const nextForm = {
       title: data.title ?? "",
       meta: data.meta ?? "",
@@ -1080,6 +1098,8 @@ export default function AdminConsolePage() {
       cta_url: resolved.cta_url ?? "",
       cover_image_url: data.cover_image_url ?? "",
       slug: data.slug ?? "",
+      demo_mode: demoModeFromUrl(demo.url),
+      demo_url: demo.url,
       access_mode: data.access_mode as ResourceAccessMode,
       plan_ids: resourcePlanAccess.get(id) ?? [],
       file_path: resolved.file_path ?? "",
@@ -1322,6 +1342,23 @@ export default function AdminConsolePage() {
       return;
     }
 
+    const demoInput = form.demo_mode === "url" ? form.demo_url : "";
+    if (demoSupported) {
+      if (form.demo_mode === "url" && !form.demo_url.trim()) {
+        setFormError("กรุณากรอกลิงก์เดโม หรือเลือก “ไม่มี”");
+        return;
+      }
+      const demoProblem = demoUrlProblem(demoInput);
+      if (demoProblem) {
+        setFormError(demoProblem);
+        return;
+      }
+      if (demoSameAsFullVersion(demoInput, form.cta_url)) {
+        setFormError("ลิงก์เดโมต้องไม่ซ้ำกับลิงก์ฉบับเต็มของสื่อ (เดโมเปิดให้ทุกคน)");
+        return;
+      }
+    }
+
     // Fail closed on saving an already-published resource into an invalid
     // state (e.g. clearing its only file/link/cover, or switching delivery
     // mode) — checked client-side before any upload starts, so the DB
@@ -1438,12 +1475,26 @@ export default function AdminConsolePage() {
         setFormError(thaiSlugSaveError(result.saveError) ?? result.saveError);
         return;
       }
+      // The demo is its own admin-only call so the full-version save above is never affected by it.
+      const demoParam = demoParamForSave(form.demo_mode, form.demo_url, savedDemo, demoSupported);
+      if (demoParam !== undefined) {
+        const demoResult = await supabase.rpc("admin_set_resource_demo", { p_resource_id: resourceId, p_demo_url: demoParam });
+        if (demoResult.error) {
+          // The resource itself is saved: keep the form open on it so a retry updates instead of creating again.
+          setEditingId(resourceId);
+          setPendingResourceId(null);
+          setFormError(`บันทึกสื่อแล้ว แต่บันทึกเดโมไม่สำเร็จ: ${thaiDemoSaveError(demoResult.error.message) ?? demoResult.error.message}`);
+          await reloadAdminData();
+          return;
+        }
+      }
       if (result.cleanupFailures.length > 0) {
         window.alert("บันทึกสำเร็จ แต่ลบไฟล์เดิมไม่สำเร็จ — ระบบเก็บรายการนี้ไว้ให้ลองใหม่ได้จากแบนเนอร์ด้านบน");
       }
 
       setSavedNotice(`บันทึก “${payload.title}” แล้ว`);
       setSavedSlug("");
+      setSavedDemo("");
       setForm(EMPTY_FORM);
       setFormBaseline("");
       setEditingId(null);
@@ -2042,6 +2093,9 @@ export default function AdminConsolePage() {
 
   const resourceCounts = statusCounts(resources);
   const visibleResources = filterResources(resources, { query: resourceQuery, status: resourceFilter });
+  const demoFieldProblem = form.demo_mode === "url"
+    ? demoUrlProblem(form.demo_url) ?? (demoSameAsFullVersion(form.demo_url, form.cta_url) ? "ลิงก์เดโมต้องไม่ซ้ำกับลิงก์ฉบับเต็มของสื่อ" : null)
+    : null;
   const formDirty = showForm && (JSON.stringify(form) !== formBaseline || Boolean(selectedFile) || Boolean(selectedCoverFile) || Boolean(coverCropSource) || fileRemoved);
 
   return (
@@ -2362,6 +2416,55 @@ export default function AdminConsolePage() {
                     )}
                   </div>
 
+                  </section>
+                  <section className="kru-res-section" aria-labelledby="res-sec-demo">
+                    <h3 id="res-sec-demo">ทดลองเล่น/ดูตัวอย่าง</h3>
+                    {!demoSupported ? (
+                      <p role="status" style={{ fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>{DEMO_UNAVAILABLE_NOTICE}</p>
+                    ) : (
+                      <>
+                        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+                          <legend className="kru-field__label">รูปแบบเดโม (เก็บแยกจากลิงก์/ไฟล์ฉบับเต็ม)</legend>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-4)" }}>
+                            {DEMO_MODE_OPTIONS.map((option) => (
+                              <label key={option.value} style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 44, cursor: "pointer", fontSize: "var(--fs-14)" }}>
+                                <input
+                                  type="radio"
+                                  name="resource-demo-mode"
+                                  value={option.value}
+                                  checked={form.demo_mode === option.value}
+                                  aria-describedby="resource-demo-help"
+                                  onChange={() => setForm({ ...form, demo_mode: option.value })}
+                                />
+                                <span>{option.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        {form.demo_mode === "url" && (
+                          <Input
+                            label="URL เดโม"
+                            value={form.demo_url}
+                            onChange={(e) => setForm({ ...form, demo_url: e.target.value })}
+                            placeholder="https://games.kruaorry.com/demo/ชื่อเกม"
+                            inputMode="url"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            maxLength={2048}
+                            aria-invalid={Boolean(demoFieldProblem)}
+                            aria-describedby="resource-demo-help"
+                          />
+                        )}
+                        <div id="resource-demo-help" style={{ display: "grid", gap: 4, fontSize: "var(--fs-13)", color: "var(--text-muted)" }}>
+                          {demoFieldProblem && <span role="alert" style={{ color: "var(--status-danger-fg)" }}>{demoFieldProblem}</span>}
+                          <span>เดโมเปิดให้ทุกคนเห็นและกดได้โดยไม่ต้องสมัคร — ห้ามใส่ลิงก์หรือไฟล์ฉบับเต็มของสื่อ Pro ที่นี่</span>
+                          <span>{DEMO_URL_HELP}</span>
+                          <span>ปุ่ม “ทดลองเล่น” จะขึ้นในหน้าสื่อที่เผยแพร่แล้ว; เลือก “ไม่มี” แล้วบันทึกเพื่อเอาปุ่มออก</span>
+                          <span>ไฟล์ตัวอย่างยังไม่เปิดให้อัปโหลดจากหน้านี้ (ยังไม่มีที่เก็บไฟล์สาธารณะที่ปลอดภัย) — ใช้ URL เดโมไปก่อน</span>
+                        </div>
+                      </>
+                    )}
                   </section>
                   <section className="kru-res-section" aria-labelledby="res-sec-access">
                     <h3 id="res-sec-access">สิทธิ์การเข้าถึง</h3>
