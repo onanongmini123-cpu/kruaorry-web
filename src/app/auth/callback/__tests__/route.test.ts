@@ -104,4 +104,52 @@ describe("GET /auth/callback", () => {
     expect(response.headers.get("location")).toBe("https://example.com/app");
     expect(response.headers.get("location")).not.toContain("membership");
   });
+
+  describe("returning a visitor who chose a plan to /membership", () => {
+    const confirm = async (metadata: unknown, query = "code=SECRET") => {
+      const exchangeCodeForSession = vi.fn(async () => ({ data: { user: { id: "user-1", user_metadata: metadata } }, error: null }));
+      mockedCreateClient.mockResolvedValue({ auth: { exchangeCodeForSession } } as never);
+      return GET(new Request(`https://example.com/auth/callback?${query}`));
+    };
+
+    it("goes back to the remembered membership page after the code is exchanged", async () => {
+      const response = await confirm({ full_name: "ครู", membership_next: "/membership?plan=teacher&returnTo=%2Fapp" });
+      expect(response.headers.get("location")).toBe("https://example.com/membership?plan=teacher&returnTo=%2Fapp");
+      expect(response.headers.get("location")).not.toContain("SECRET");
+    });
+
+    it("works for a token-hash confirmation link too", async () => {
+      const verifyOtp = vi.fn(async () => ({ data: { user: { id: "user-1", user_metadata: { membership_next: "/membership?plan=founder" } } }, error: null }));
+      mockedCreateClient.mockResolvedValue({ auth: { verifyOtp } } as never);
+      const response = await GET(new Request("https://example.com/auth/callback?token_hash=SECRET&type=email"));
+      expect(response.headers.get("location")).toBe("https://example.com/membership?plan=founder");
+    });
+
+    it("anything outside the membership allowlist falls back to /app (no open redirect)", async () => {
+      for (const evil of [
+        "https://evil.example", "//evil.example/membership", "/admin", "/app", `/download/${id}`, "/membership?plan=teacher&x=1",
+        "/membership?plan=admin", "/membership/../admin", "javascript:alert(1)", "/membership?plan=teacher&returnTo=https%3A%2F%2Fevil.example",
+        42, null, { nested: "/membership" }, ["/membership"],
+      ]) {
+        const response = await confirm({ membership_next: evil });
+        expect(response.headers.get("location"), String(JSON.stringify(evil))).toBe("https://example.com/app");
+      }
+    });
+
+    it("no remembered plan (or no metadata) → /app, as before", async () => {
+      expect((await confirm({ full_name: "ครู" })).headers.get("location")).toBe("https://example.com/app");
+      expect((await confirm(undefined)).headers.get("location")).toBe("https://example.com/app");
+    });
+
+    it("never takes the destination from the callback URL itself", async () => {
+      const response = await confirm({}, `code=SECRET&next=${encodeURIComponent("/membership?plan=teacher")}&membership_next=${encodeURIComponent("/membership?plan=teacher")}`);
+      expect(response.headers.get("location")).toBe("https://example.com/app");
+    });
+
+    it("a failed confirmation still goes to the login page, never to the remembered page", async () => {
+      mockedCreateClient.mockResolvedValue({ auth: { exchangeCodeForSession: async () => ({ data: { user: { id: "u", user_metadata: { membership_next: "/membership?plan=teacher" } } }, error: { message: "x" } }) } } as never);
+      const response = await GET(new Request("https://example.com/auth/callback?code=SECRET"));
+      expect(response.headers.get("location")).toBe("https://example.com/login?next=%2Fapp&error=confirmation");
+    });
+  });
 });

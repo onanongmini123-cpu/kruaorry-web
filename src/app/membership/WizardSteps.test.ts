@@ -32,7 +32,7 @@ const card = (over: Partial<PlanCardView> & { id: "founder" | "teacher" }): Plan
   badge: null, unavailableLabel: null, selected: false, ...over,
 });
 const planStep = (over: Record<string, unknown> = {}) => h(el(PlanStep, {
-  cards: [card({ id: "founder", badge: "เหลือ 90 ที่" }), card({ id: "teacher", selected: true })],
+  cards: [card({ id: "founder", badge: "จำกัด 100 บัญชีแรก" }), card({ id: "teacher", selected: true })],
   benefits: planBenefitLines("teacher"),
   cta: { kind: "button", label: "สมัครแพ็กนี้", loading: false, disabled: false, onClick: noop },
   onSelect: noop, focusHeading: false, ...over,
@@ -66,7 +66,8 @@ describe("step 1: choose a plan", () => {
     expect(text).toContain("Founder 100");
     expect(text).toContain("299 บาท ปีแรก");
     expect(text).toContain("(ปีต่อไป 599)");
-    expect(text).toContain("เหลือ 90 ที่");
+    expect(text).toContain("จำกัด 100 บัญชีแรก");
+    expect(text).not.toMatch(/เหลือ/);
     expect(text).toContain("Teacher Pro");
     expect(text).toContain("599 บาท/ปี");
     expect(count(html, "<li")).toBe(3);
@@ -113,10 +114,11 @@ describe("step 1: choose a plan", () => {
     expect(textOf(html)).not.toContain(START_HINT);
   });
 
-  it("the Founder badge says how many places are left, or that it is full", () => {
-    expect(founderSeatsBadge({ isFull: false, remaining: 90 })).toBe("เหลือ 90 ที่");
-    expect(founderSeatsBadge({ isFull: false, remaining: 1 })).toBe("เหลือ 1 ที่");
-    expect(founderSeatsBadge({ isFull: true, remaining: 0 })).toBe("เต็มแล้ว");
+  it("when 20 or fewer places remain the Founder card says how many, and it is the only place left-count appears", () => {
+    expect(founderSeatsBadge({ isFull: false, remaining: 12 })).toBe("เหลืออีก 12 ที่");
+    const text = textOf(planStep({ cards: [card({ id: "founder", badge: founderSeatsBadge({ isFull: false, remaining: 12 }) }), card({ id: "teacher", selected: true })] }));
+    expect(count(text, "เหลืออีก 12 ที่")).toBe(1);
+    expect(count(text, /จำกัด\s*100/)).toBe(0);
   });
 });
 
@@ -285,7 +287,7 @@ describe("each fact appears at most once on any screen", () => {
     "step 1, not signed in": stepper(1) + planStep({ cta: { kind: "link", href: "/login", label: "เข้าสู่ระบบ / สมัครฟรี เพื่อไปต่อ" } }),
     "step 1, signed in": stepper(1) + planStep() + history,
     "step 1, Founder full": stepper(1) + planStep({ cards: [card({ id: "founder", unavailableLabel: "เต็มแล้ว" }), card({ id: "teacher", selected: true })] }),
-    "step 1, Founder selected": stepper(1) + planStep({ benefits: planBenefitLines("founder"), cards: [card({ id: "founder", selected: true, badge: "เหลือ 5 ที่" }), card({ id: "teacher" })] }),
+    "step 1, Founder selected": stepper(1) + planStep({ benefits: planBenefitLines("founder"), cards: [card({ id: "founder", selected: true, badge: "เหลืออีก 5 ที่" }), card({ id: "teacher" })] }),
     "step 2, QR + account": stepper(2) + s2(qr, bank) + history,
     "step 2, account only": stepper(2) + s2(off, bank),
     "step 2, QR only": stepper(2) + s2(qr, off),

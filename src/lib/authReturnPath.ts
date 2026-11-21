@@ -66,6 +66,25 @@ export function safeUpgradeReturnPath(raw: string | null | undefined): string {
   return safeAppPath(url) ?? safeResourceDetailPath(url) ?? "/app";
 }
 
+/**
+ * The one paid-offer destination that may follow account creation: the
+ * membership page itself, with only a plan and a safe `returnTo`. Anything else
+ * (another path, extra parameters, an external URL) returns null.
+ */
+export function safeMembershipReturn(raw: string | null | undefined): string | null {
+  const url = internalUrl(raw);
+  if (!url || url.pathname !== "/membership") return null;
+  if (!hasOnlyParams(url.searchParams, ["plan", "returnTo"])) return null;
+  const plan = url.searchParams.get("plan");
+  if (plan !== null && plan !== "founder" && plan !== "teacher") return null;
+  const returnTo = url.searchParams.get("returnTo");
+  if (returnTo !== null && safeUpgradeReturnPath(returnTo) !== returnTo) return null;
+  return url.pathname + url.search;
+}
+
+/** Where the choice of plan is remembered between the sign-up form and the confirmed account. */
+export const MEMBERSHIP_NEXT_METADATA_KEY = "membership_next";
+
 export function safeAuthNext(raw: string | null | undefined): string {
   const url = internalUrl(raw);
   if (!url) return "/app";
@@ -77,13 +96,9 @@ export function safeAuthNext(raw: string | null | undefined): string {
   if (resourcePath) return resourcePath;
 
   try {
-    if (url.pathname === "/membership" && hasOnlyParams(url.searchParams, ["plan", "returnTo"])) {
-      const plan = url.searchParams.get("plan");
-      if (plan !== null && plan !== "founder" && plan !== "teacher") return "/app";
-      const returnTo = url.searchParams.get("returnTo");
-      if (returnTo !== null && safeUpgradeReturnPath(returnTo) !== returnTo) return "/app";
-      return url.pathname + url.search;
-    }
+    const membershipPath = safeMembershipReturn(raw);
+    if (membershipPath) return membershipPath;
+    if (url.pathname === "/membership") return "/app";
 
     const match = /^\/download\/([^/]+)$/.exec(url.pathname);
     if (!match || !UUID.test(match[1]) || !hasOnlyParams(url.searchParams, ["name", "autoclose"])) {
@@ -100,14 +115,16 @@ export function safeAuthNext(raw: string | null | undefined): string {
 }
 
 /**
- * Signup is intentionally a single-purpose account-creation flow. It never
- * carries a paid offer, download, or resource deep link through confirmation;
- * those are selected again from the authenticated app. Sign-in may retain the
- * small allowlist above because it resumes an action for an existing account.
+ * Signup is a single-purpose account-creation flow: it never carries a
+ * download, a resource deep link or any other offer through confirmation. The
+ * one exception is the membership page (plan and safe returnTo only), so a
+ * visitor who chose a plan comes back to it after creating the account. Sign-in
+ * may retain the wider allowlist above because it resumes an action for an
+ * existing account.
  */
 export function authCompletionDestination(
   mode: AuthEntryMode,
   rawNext: string | null | undefined,
 ): string {
-  return mode === "signup" ? SIGNUP_DESTINATION : safeAuthNext(rawNext);
+  return mode === "signup" ? safeMembershipReturn(rawNext) ?? SIGNUP_DESTINATION : safeAuthNext(rawNext);
 }

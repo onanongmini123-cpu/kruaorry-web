@@ -4,6 +4,7 @@ import {
   FREE_SIGNUP_HREF,
   safeAuthNext,
   safeUpgradeReturnPath,
+  safeMembershipReturn,
   SIGNUP_DESTINATION,
 } from "../authReturnPath";
 
@@ -67,12 +68,36 @@ describe("safeAuthNext", () => {
 });
 
 describe("authCompletionDestination", () => {
-  it("makes every signup-mode completion canonical regardless of next", () => {
+  it("signup completion is /app, except for the membership page the visitor chose a plan on", () => {
     expect(FREE_SIGNUP_HREF).toBe("/login?mode=signup&next=%2Fapp");
     expect(SIGNUP_DESTINATION).toBe("/app");
+    expect(authCompletionDestination("signup", "/app")).toBe("/app");
     expect(authCompletionDestination("signup", `/app?resource=${id}`)).toBe("/app");
-    expect(authCompletionDestination("signup", `/membership?plan=teacher&returnTo=%2Fapp`)).toBe("/app");
     expect(authCompletionDestination("signup", "https://evil.example/steal")).toBe("/app");
+    expect(authCompletionDestination("signup", `/download/${id}?name=a.pdf`)).toBe("/app");
+    expect(authCompletionDestination("signup", "/membership?plan=teacher&returnTo=%2Fapp")).toBe("/membership?plan=teacher&returnTo=%2Fapp");
+    expect(authCompletionDestination("signup", "/membership?plan=founder")).toBe("/membership?plan=founder");
+    expect(authCompletionDestination("signup", "/membership")).toBe("/membership");
+  });
+
+  it("safeMembershipReturn allows only /membership with a plan and a safe returnTo", () => {
+    expect(safeMembershipReturn("/membership?plan=teacher&returnTo=%2Fapp")).toBe("/membership?plan=teacher&returnTo=%2Fapp");
+    expect(safeMembershipReturn(`/membership?plan=founder&returnTo=${encodeURIComponent(`/resources/${id}`)}`)).toContain("/membership?plan=founder");
+    for (const bad of [
+      null, undefined, "", "/app", "/membership/", "/membership/extra", "/membershipx", "/membership?plan=admin",
+      "/membership?plan=teacher&x=1", "/membership?plan=teacher&plan=founder", "/membership?plan=teacher&returnTo=https%3A%2F%2Fevil.example",
+      "/membership?plan=teacher&returnTo=%2F%2Fevil.example", "/membership?plan=teacher&returnTo=%2Fadmin",
+      "//evil.example/membership", "https://evil.example/membership", "/\\evil.example", "/membership\n?plan=teacher",
+      "/membership#frag", "/membership?plan=teacher#x", "javascript:alert(1)", `/${"a".repeat(800)}`,
+    ]) {
+      expect(safeMembershipReturn(bad as string | null | undefined), String(bad)).toBeNull();
+    }
+  });
+
+  it("sign-in keeps its wider allowlist and still sends a bad membership path to /app", () => {
+    expect(authCompletionDestination("signin", "/membership?plan=teacher&returnTo=%2Fapp")).toBe("/membership?plan=teacher&returnTo=%2Fapp");
+    expect(authCompletionDestination("signin", "/membership?plan=evil")).toBe("/app");
+    expect(authCompletionDestination("signin", "/membership?plan=teacher&x=1")).toBe("/app");
   });
 
   it("preserves only an allowlisted next for sign-in", () => {

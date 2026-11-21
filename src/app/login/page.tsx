@@ -8,7 +8,8 @@ import { Button, Input, IconButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import {
   authCompletionDestination,
-  SIGNUP_DESTINATION,
+  MEMBERSHIP_NEXT_METADATA_KEY,
+  safeMembershipReturn,
   type AuthEntryMode,
 } from "@/lib/authReturnPath";
 import { LINE_OA_URL } from "@/lib/config";
@@ -161,7 +162,13 @@ function LoginForm() {
           email,
           password,
           options: {
-            data: { full_name: fullName },
+            // The plan chosen on /membership is remembered with the new account (never in the
+            // confirmation link) so the confirmed visitor lands back on that page. Only the
+            // membership path survives the allowlist; anything else is dropped.
+            data: {
+              full_name: fullName,
+              ...(safeMembershipReturn(rawNext) ? { [MEMBERSHIP_NEXT_METADATA_KEY]: safeMembershipReturn(rawNext) } : {}),
+            },
             emailRedirectTo,
           },
         });
@@ -184,7 +191,7 @@ function LoginForm() {
           setShowConfirmPassword(false);
           return;
         }
-        router.replace(SIGNUP_DESTINATION);
+        router.replace(authCompletionDestination("signup", rawNext));
         router.refresh();
         return;
       }

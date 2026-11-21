@@ -142,7 +142,8 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("const signupHref = FREE_SIGNUP_HREF;");
     expect(membership.match(/href=\{signupHref\}/g)).toHaveLength(1); // the header link; the step 1 button goes to sign-in and comes back
     expect(membership).toContain("const wizardSignInHref");
-    expect(payment).toContain('redirect("/membership#how-to-pay")');
+    expect(payment).toContain('redirect("/membership")');
+    expect(payment).not.toContain("#");
   });
 
   it("separates free signup from intentional paid-upgrade CTAs", () => {
