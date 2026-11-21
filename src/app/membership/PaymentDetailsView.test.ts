@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PaymentDetailsView, TransferSummary } from "./PaymentFlow";
+import { PaymentDetailsView, ReferenceLine, TransferAmount } from "./PaymentFlow";
 import { resolvePaymentView, type BankPayment, type MethodState, type QrPayment } from "@/lib/paymentMethods";
 
 const qr: MethodState<QrPayment> = { status: "ready", amountThb: 599, accountName: "ชื่อบัญชีเดียวกัน", referenceCode: "KA-00000005", qrSvg: "<svg data-qr></svg>" };
@@ -13,12 +13,17 @@ const render = (q: MethodState<QrPayment>, b: MethodState<BankPayment>) => rende
 );
 const count = (html: string, text: string) => html.split(text).length - 1;
 
-describe("transfer summary (step 2 header): amount and reference, once", () => {
-  const html = renderToStaticMarkup(React.createElement(TransferSummary, { amountThb: 599, referenceCode: "KA-00000005", referenceCopied: false, onCopyReference: () => {} }));
-
-  it("shows the big amount, the exact-amount warning and the reference with a copy button", () => {
+describe("transfer amount and reference line (step 2)", () => {
+  it("shows the big amount with 'โอนให้ตรงทุกบาท'", () => {
+    const html = renderToStaticMarkup(React.createElement(TransferAmount, { amountThb: 599 }));
     expect(html).toContain("599 บาท");
-    expect(html).toContain("กรุณาโอนยอดนี้ให้ตรงทุกบาท");
+    expect(html).toContain("โอนให้ตรงทุกบาท");
+    expect(html).toContain('data-testid="transfer-amount"');
+  });
+
+  it("shows the reference small, with a copy button", () => {
+    const html = renderToStaticMarkup(React.createElement(ReferenceLine, { referenceCode: "KA-00000005", copied: false, onCopy: () => {} }));
+    expect(html).toContain("เลขอ้างอิง");
     expect(html).toContain("KA-00000005");
     expect(html).toContain("คัดลอกเลขอ้างอิง KA-00000005");
   });

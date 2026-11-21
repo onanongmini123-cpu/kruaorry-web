@@ -3,7 +3,7 @@ import { resolveMembershipBodyMode, type MembershipBodyModeInput } from "../memb
 
 const ready: MembershipBodyModeInput = {
   supabaseConfigured: true, schemaReadiness: "ready", authLoaded: true, signedIn: true,
-  noSelectablePlanForResource: false, hasUnlockedMembership: false, hasOpenApplication: false,
+  noSelectablePlanForResource: false, hasUnlockedMembership: false, hasOpenApplication: false, rejectedNotice: false,
   memberStatusError: false, activeMembershipStillSettling: false, readsFailed: false,
 };
 const mode = (over: Partial<MembershipBodyModeInput>) => resolveMembershipBodyMode({ ...ready, ...over });
@@ -24,6 +24,12 @@ describe("resolveMembershipBodyMode: which screen /membership opens on", () => {
   it("an active plan → the wizard is gone and the approved panel shows", () => {
     expect(mode({ hasUnlockedMembership: true })).toBe("approved");
     expect(mode({ hasUnlockedMembership: true, hasOpenApplication: true })).toBe("approved");
+  });
+
+  it("a declined application the member had sent a slip for → the rejected message; a pending one always wins", () => {
+    expect(mode({ rejectedNotice: true })).toBe("rejected");
+    expect(mode({ rejectedNotice: true, hasOpenApplication: true })).toBe("pending");
+    expect(mode({ rejectedNotice: true, hasUnlockedMembership: true })).toBe("approved");
   });
 
   it("an old declined application never makes a screen of its own: it is just 'create' (history is collapsed)", () => {

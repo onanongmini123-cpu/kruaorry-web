@@ -5,6 +5,7 @@ const membership = readFileSync(new URL("../../app/membership/page.tsx", import.
 const wizardSteps = readFileSync(new URL("../../app/membership/WizardSteps.tsx", import.meta.url), "utf8");
 const membershipCopy = readFileSync(new URL("../../lib/membershipCopy.ts", import.meta.url), "utf8");
 const bodyMode = readFileSync(new URL("../../lib/membershipBodyMode.ts", import.meta.url), "utf8");
+const planCopy = readFileSync(new URL("../../lib/membershipPlanCopy.ts", import.meta.url), "utf8");
 const payment = readFileSync(new URL("../../app/payment/page.tsx", import.meta.url), "utf8");
 const landing = readFileSync(new URL("../../app/landing/LandingExperience.tsx", import.meta.url), "utf8");
 const pricing = readFileSync(new URL("../../app/landing/PricingSection.tsx", import.meta.url), "utf8");
@@ -15,12 +16,12 @@ const privacy = readFileSync(new URL("../../app/privacy/page.tsx", import.meta.u
 
 describe("canonical manual membership flow", () => {
   it("states the exact price, capacity and allocation rules", () => {
-    expect(membership).toContain("299 บาทเฉพาะปีแรก");
-    expect(membership).toContain("สำหรับ 100 คนแรกที่ครูอรรี่ยืนยันการชำระเงินจริง");
-    expect(membership).toContain("ต่ออายุปีถัดไป 599 บาท/ปี");
-    expect(membership).toContain("การสร้างเลขอ้างอิงยังไม่นับสิทธิ์และยังไม่จองสิทธิ์");
-    // Public copy never shows how many Founder places are taken or left.
-    expect(membership).toContain("founderPublicNotice(capacity)");
+    expect(planCopy).toContain('"299 บาท ปีแรก"');
+    expect(planCopy).toContain('"(ปีต่อไป 599)"');
+    expect(planCopy).toContain('"599 บาท/ปี"');
+    expect(planCopy).toContain("สิทธิ์เริ่มใช้ได้หลังครูอรรี่ตรวจยอดเงินแล้ว");
+    // The remaining Founder places are public only as the badge on the Founder card; the used count never is.
+    expect(membership).toContain("founderSeatsBadge(capacity)");
     expect(membership).not.toContain("capacity.used");
     expect(membership).not.toContain("capacity.remaining");
   });
@@ -34,7 +35,7 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("LINE_OA_URL");
     expect(membership).toContain("navigator.clipboard.writeText");
     expect(membership).toContain("onOpenLine={handleOpenLine}");
-    expect(membership).toContain("คัดลอกข้อความแล้ว วางในแชตแล้วแนบสลิป");
+    expect(membership).toContain("คัดลอกข้อความแล้ว วางในแชตได้เลย");
     expect(membership).toContain("lineSlipAction(process.env.NEXT_PUBLIC_LINE_OA_ID");
     expect(membership).toContain("fetchUpgradeRequestsResult(supabase, userId)");
     expect(membership).toContain('applicationResult.applications.some((application) => application.status === "pending")');
@@ -45,7 +46,7 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("lineSlipReceivedAt");
     expect(wizardSteps).toContain("ทีมงานบันทึกรับสลิปจาก LINE");
     expect(wizardSteps).toContain("ระบบมีสถานะแจ้งชำระเดิม");
-    expect(wizardSteps).toContain("ไม่เก็บสลิปบนเว็บไซต์ ส่งทาง LINE เท่านั้น");
+    expect(wizardSteps).toContain("เว็บไม่เก็บรูปสลิป ส่งทาง LINE ที่เดียว");
     expect(membership).not.toContain("reportMembershipPayment");
     expect(membership).not.toContain("ฉันส่งเลขอ้างอิงและหลักฐานแล้ว");
     expect(membership).toContain("pendingFounderUnavailable");
@@ -55,7 +56,6 @@ describe("canonical manual membership flow", () => {
 
   it("lets membership card content shrink without overflowing narrow screens", () => {
     expect(membership).toMatch(/\.kru-membership-wizard \{[^}]*min-width: 0;/);
-    expect(membership).toContain("grid-template-columns: minmax(0, 1fr)");
   });
 
   it("fails closed globally for schema drift and only applies Founder facts to Founder flows", () => {
@@ -63,9 +63,10 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain('const founderChecksUnavailable = schemaReadiness !== "ready"');
     expect(membership).toContain('const selectedFounderChecksUnavailable = founderChecksBlockPlan(selectedPlanId, founderChecksUnavailable)');
     expect(membership).toContain('const shouldLoadFounderChecks = founderChecksRequiredForPlanSelection(selectedPlanPreference)');
-    expect(membership).toContain('shouldLoadFounderChecks ? fetchFounderCapacity(supabase) : Promise.resolve(null)');
+    // The seat count is read for the Founder card badge even while Teacher Pro is selected; it never blocks Teacher Pro.
+    expect(membership).toContain('fetchFounderCapacity(supabase),');
     expect(membership).toContain('user && shouldLoadFounderChecks');
-    expect(membership).toContain('const founderChecksDeferred = plan.id === "founder" && !shouldLoadFounderChecks');
+    expect(membership).toContain('const founderChecksDeferred = id === "founder" && !shouldLoadFounderChecks');
     expect(membership).toContain('founderChecksBlockPlanSelection(planId, founderChecksUnavailable, founderChecksDeferred)');
     expect(membership).toContain('const applicationFounderChecksUnavailable = founderChecksBlockPlan(applicationPlanId, founderChecksUnavailable)');
     expect(membership).toContain('const pendingFounderChecksUnavailable = founderChecksBlockPlan(latestApplication?.planId, founderChecksUnavailable)');
@@ -76,9 +77,8 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain('|| applicationsError');
     expect(membership).toContain('|| pendingFounderChecksUnavailable');
     expect(membership).toContain('!founderChecksBlockPlan(membershipStatusPlanId, founderChecksUnavailable)');
-    expect(membership).toContain('applicationPlanId === "founder" ? (');
-    expect(membership).toContain('<strong>Teacher Pro</strong>');
-    expect(membership).toContain('{applicationPlanId === "founder" && (');
+    // Founder facts (places left) belong to the Founder card only.
+    expect(membership).toContain('badge: id === "founder" && !unavailable && capacity && !capacity.isFull ? founderSeatsBadge(capacity) : null');
 
     expect(membership).not.toContain("const handleReportPayment");
 
@@ -102,13 +102,13 @@ describe("canonical manual membership flow", () => {
 
   it("gates every new membership path behind the old-schema readiness marker", () => {
     expect(membership).toContain("fetchMembershipSchemaReadiness");
-    expect(membership).toContain('schemaReadiness === "unavailable"');
+    expect(bodyMode).toContain('schemaReadiness === "unavailable"');
     expect(membership).toContain("MEMBERSHIP_SCHEMA_UNAVAILABLE_MESSAGE");
     expect(membership).toContain("ลองตรวจสอบอีกครั้ง");
     expect(membership).toContain('if (schemaReadiness !== "ready")');
     expect(bodyMode).toContain('schemaReadiness === "unavailable"');
     expect(membership).toContain('bodyMode === "unavailable"');
-    expect(membership).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
+    expect(readFileSync(new URL("../../lib/membershipSchemaReadiness.ts", import.meta.url), "utf8")).toContain("ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว");
   });
 
   it("shows maintenance instead of stale Founder capacity on public and member package cards", () => {
@@ -132,14 +132,16 @@ describe("canonical manual membership flow", () => {
 
   it("loads the live plan catalog and renders its benefits", () => {
     expect(membership).toContain("fetchPlans");
-    expect(membership).toContain("<PlanBenefits benefits={selectedPlan.benefits ?? []} />");
+    // The plan cards show three short, fixed benefit lines per plan (Founder adds its badge).
+    expect(membership).toContain("planBenefitLines(selectedPlanId)");
   });
 
   it("keeps membership public, sends auth back safely, and redirects the old payment route", () => {
     expect(membership).toContain("membershipReturnTarget");
     expect(membership).toContain("new URLSearchParams({ returnTo })");
     expect(membership).toContain("const signupHref = FREE_SIGNUP_HREF;");
-    expect(membership.match(/href=\{signupHref\}/g)).toHaveLength(2);
+    expect(membership.match(/href=\{signupHref\}/g)).toHaveLength(1); // the header link; the step 1 button goes to sign-in and comes back
+    expect(membership).toContain("const wizardSignInHref");
     expect(payment).toContain('redirect("/membership#how-to-pay")');
   });
 
@@ -191,8 +193,6 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("noSelectablePlanForResource");
     expect(membership).toContain("membershipResourceHasSelectablePlan(returnResourcePlanIds)");
     expect(membership).toContain("&& !noSelectablePlanForResource");
-    expect(membership).toContain("ไม่มีแพ็กที่เปิดขายสำหรับสื่อนี้");
-    expect(membership).toContain("ระบบจะไม่รับใบสมัครหรือการแจ้งชำระสำหรับแพ็กอื่นที่ไม่สามารถเปิดสื่อนี้ได้");
     const legacyGuestBranch = bodyMode.indexOf("!i.signedIn && i.noSelectablePlanForResource");
     const genericGuestBranch = bodyMode.indexOf('if (!i.signedIn) return "signedOut"');
     expect(legacyGuestBranch).toBeGreaterThan(-1);
@@ -202,19 +202,17 @@ describe("canonical manual membership flow", () => {
     expect(membership).toContain("const signInHref = `/login?next=");
     expect(membership).toContain("เข้าสู่ระบบตรวจสอบสิทธิ์");
     expect(membership).toContain('href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"');
-    expect(membership).toContain("ใช้สิทธิ์สมาชิกเดิม");
-    expect(membership).toContain("ตรวจสอบสิทธิ์สมาชิกเดิม");
+    expect(membership).toContain("เข้าสู่ระบบด้วยบัญชีสมาชิกเดิม");
     expect(membership).toContain('bodyMode === "legacySignIn"');
     expect(membership).toContain('bodyMode === "legacyNote"');
     expect(membership).toContain("membershipApplicationPlanLabel(latestApplication.planId)");
 
     // The legacy messages never offer LINE or a payment step.
     const legacySignIn = membership.indexOf('bodyMode === "legacySignIn" ? (');
-    const signedOut = membership.indexOf('bodyMode === "signedOut" ? (', legacySignIn);
-    expect(legacySignIn).toBeGreaterThan(-1);
-    expect(signedOut).toBeGreaterThan(legacySignIn);
-    expect(membership.slice(legacySignIn, signedOut)).not.toContain("LINE_OA_URL");
     const legacyNote = membership.indexOf('bodyMode === "legacyNote" ? (');
+    expect(legacySignIn).toBeGreaterThan(-1);
+    expect(legacyNote).toBeGreaterThan(legacySignIn);
+    expect(membership.slice(legacySignIn, legacyNote)).not.toContain("LINE_OA_URL");
     const updating = membership.indexOf('bodyMode === "updating" ? (', legacyNote);
     expect(updating).toBeGreaterThan(legacyNote);
     expect(membership.slice(legacyNote, updating)).not.toContain("LINE_OA_URL");

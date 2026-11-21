@@ -35,46 +35,42 @@ export function MembershipStepper({ current }: { current: number }) {
   );
 }
 
-/** The amount to transfer and the reference code: shown once, at the top of the transfer step. */
-export function TransferSummary({
-  amountThb,
+/** The amount to transfer: big, once, at the top of the transfer step. */
+export function TransferAmount({ amountThb }: { amountThb: number }) {
+  return (
+    <div className="kru-ta" data-testid="transfer-amount">
+      <strong>{amountThb.toLocaleString("th-TH")} บาท</strong>
+      <span>โอนให้ตรงทุกบาท</span>
+      <style jsx>{`
+        .kru-ta { display: grid; gap: 2px; justify-items: center; text-align: center; padding: var(--sp-4); background: var(--purple-50); border: 2px solid var(--purple-700); border-radius: var(--r-md); }
+        .kru-ta strong { font-size: clamp(2rem, 10vw, 2.75rem); line-height: 1.1; color: var(--purple-700); }
+        .kru-ta span { color: var(--text-strong); font-weight: var(--fw-semibold); }
+      `}</style>
+    </div>
+  );
+}
+
+/** "เลขอ้างอิง KA-…" with a copy button: small, once per step (steps 2 and 4). */
+export function ReferenceLine({
   referenceCode,
-  referenceCopied,
-  onCopyReference,
+  copied,
+  onCopy,
 }: {
-  amountThb: number;
   referenceCode: string;
-  referenceCopied: boolean;
-  onCopyReference: (referenceCode: string) => void;
+  copied: boolean;
+  onCopy: (referenceCode: string) => void;
 }) {
   return (
-    <div className="kru-ts">
-      <div className="kru-ts__amount" data-testid="transfer-amount">
-        <span>ยอดที่ต้องโอน</span>
-        <strong>{amountThb.toLocaleString("th-TH")} บาท</strong>
-        <p>กรุณาโอนยอดนี้ให้ตรงทุกบาท</p>
-      </div>
-      <div className="kru-ts__reference">
-        <span>เลขอ้างอิง</span>
-        <div>
-          <strong>{referenceCode}</strong>
-          <button type="button" onClick={() => onCopyReference(referenceCode)} aria-label={`คัดลอกเลขอ้างอิง ${referenceCode}`}>
-            {referenceCopied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
-            {referenceCopied ? "คัดลอกแล้ว" : "คัดลอก"}
-          </button>
-        </div>
-      </div>
+    <div className="kru-ref">
+      <span>เลขอ้างอิง <strong>{referenceCode}</strong></span>
+      <button type="button" onClick={() => onCopy(referenceCode)} aria-label={`คัดลอกเลขอ้างอิง ${referenceCode}`}>
+        {copied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
+        {copied ? "คัดลอกแล้ว" : "คัดลอก"}
+      </button>
       <style jsx>{`
-        .kru-ts { display: grid; gap: var(--sp-3); }
-        .kru-ts__amount { display: grid; gap: 4px; justify-items: center; text-align: center; padding: var(--sp-4); background: var(--purple-50); border: 2px solid var(--purple-700); border-radius: var(--r-md); }
-        .kru-ts__amount span { color: var(--text-muted); font-size: var(--fs-13); }
-        .kru-ts__amount strong { font-size: clamp(2rem, 10vw, 2.75rem); line-height: 1.1; color: var(--purple-700); }
-        .kru-ts__amount p { margin: 0; font-weight: var(--fw-semibold); color: var(--text-strong); }
-        .kru-ts__reference { display: grid; gap: 4px; }
-        .kru-ts__reference > span { color: var(--text-muted); font-size: var(--fs-13); }
-        .kru-ts__reference > div { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-        .kru-ts__reference strong { font-family: var(--font-mono); letter-spacing: .04em; color: var(--text-strong); overflow-wrap: anywhere; }
-        .kru-ts__reference button { min-height: 44px; padding: 0 var(--sp-4); display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-brand); border-radius: var(--r-pill); background: var(--surface-card); color: var(--purple-700); font: inherit; font-weight: var(--fw-semibold); cursor: pointer; }
+        .kru-ref { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; color: var(--text-muted); font-size: var(--fs-14); }
+        .kru-ref strong { font-family: var(--font-mono); letter-spacing: .04em; color: var(--text-strong); overflow-wrap: anywhere; }
+        .kru-ref button { min-height: 44px; padding: 0 var(--sp-4); display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-brand); border-radius: var(--r-pill); background: var(--surface-card); color: var(--purple-700); font: inherit; font-weight: var(--fw-semibold); cursor: pointer; }
       `}</style>
     </div>
   );

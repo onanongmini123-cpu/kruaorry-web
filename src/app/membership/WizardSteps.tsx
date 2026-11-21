@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Clipboard, MessageCircle } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import type { UpgradeRequest } from "@/lib/data";
 import { applicationHistory } from "@/lib/membershipHistory";
 import { formatThaiDate, membershipApplicationPlanLabel, resolvedStatusCopy } from "@/lib/membershipCopy";
-import { TransferMethods, TransferSummary } from "./PaymentFlow";
+import { START_HINT } from "@/lib/membershipPlanCopy";
+import { LINE_OA_URL } from "@/lib/config";
+import { ReferenceLine, TransferAmount, TransferMethods } from "./PaymentFlow";
 
 /** The application fields the steps need. */
 export interface StepApplication {
@@ -19,7 +21,8 @@ export interface StepApplication {
 
 /**
  * One screen of the wizard: a heading that takes keyboard/screen-reader focus
- * when the member moves between steps, then the step's content.
+ * when the member moves between steps (and the page opens at the top), then
+ * the step's content.
  */
 export function StepFrame({
   title,
@@ -35,7 +38,6 @@ export function StepFrame({
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (!focusHeading) return;
-    // A new step opens at the top, with its heading focused for screen readers.
     window.scrollTo({ top: 0 });
     heading.current?.focus({ preventScroll: true });
   }, [focusHeading]);
@@ -53,7 +55,7 @@ export function StepFrame({
   );
 }
 
-/** Back on the left, the main action full width above it on a phone. */
+/** The main button on top, the secondary one below it, full width on a phone. */
 export function StepActions({ children }: { children: ReactNode }) {
   return (
     <div className="kru-actions">
@@ -66,9 +68,183 @@ export function StepActions({ children }: { children: ReactNode }) {
   );
 }
 
-export function BackButton({ onClick, children = "ย้อนกลับ" }: { onClick: () => void; children?: ReactNode }) {
+/** A small text-style back / secondary action (not a second big button). */
+export function TextAction({ onClick, children, backArrow = false }: { onClick: () => void; children: ReactNode; backArrow?: boolean }) {
   return (
-    <Button type="button" variant="ghost" icon={ArrowLeft} block onClick={onClick}>{children}</Button>
+    <button type="button" className="kru-text-action" onClick={onClick}>
+      {backArrow ? <ArrowLeft size={16} aria-hidden="true" /> : null}
+      {children}
+      <style jsx>{`
+        .kru-text-action { min-height: 44px; padding: 0 var(--sp-3); margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: none; color: var(--text-muted); font: inherit; font-size: var(--fs-14); font-weight: var(--fw-semibold); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+      `}</style>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ step 1 */
+
+export interface PlanCardView {
+  id: "founder" | "teacher";
+  title: string;
+  price: string;
+  priceNote: string | null;
+  /** "เหลือ 90 ที่" on the Founder card. */
+  badge: string | null;
+  /** When set the card is grey and cannot be chosen (full, used, checking). */
+  unavailableLabel: string | null;
+  selected: boolean;
+}
+
+export type PlanCta =
+  | { kind: "link"; href: string; label: string }
+  | { kind: "button"; label: string; loading: boolean; disabled: boolean; onClick: () => void };
+
+/** Step 1: two plan cards, three short benefits, one main button. */
+export function PlanStep({
+  cards,
+  benefits,
+  cta,
+  notices,
+  onSelect,
+  focusHeading,
+}: {
+  cards: PlanCardView[];
+  benefits: string[];
+  cta: PlanCta | null;
+  /** Anything that must be said (loading, a check that failed, why the plan cannot be bought). */
+  notices?: ReactNode;
+  onSelect: (planId: "founder" | "teacher") => void;
+  focusHeading: boolean;
+}) {
+  return (
+    <StepFrame title="เลือกแพ็กที่ต้องการ" focusHeading={focusHeading}>
+      <div className="kru-cards" role="radiogroup" aria-label="เลือกแพ็กสมาชิก">
+        {cards.map((card) => {
+          const unavailable = card.unavailableLabel !== null;
+          return (
+            <button
+              key={card.id}
+              type="button"
+              role="radio"
+              aria-checked={card.selected}
+              disabled={unavailable}
+              className={`kru-card-plan${card.selected ? " is-selected" : ""}`}
+              onClick={() => onSelect(card.id)}
+            >
+              <span className="kru-card-plan__text">
+                <strong>{card.title}</strong>
+                <span>{card.price}{card.priceNote ? <small> {card.priceNote}</small> : null}</span>
+              </span>
+              {unavailable ? <em>{card.unavailableLabel}</em> : card.badge ? <em className="kru-card-plan__badge">{card.badge}</em> : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <ul className="kru-benefits">
+        {benefits.map((line) => (
+          <li key={line}><Check size={16} aria-hidden="true" />{line}</li>
+        ))}
+      </ul>
+
+      {notices}
+
+      {cta ? (
+        <StepActions>
+          {cta.kind === "link" ? (
+            <Link href={cta.href} className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block">{cta.label}</Link>
+          ) : (
+            <Button type="button" size="lg" block loading={cta.loading} disabled={cta.disabled} onClick={cta.onClick}>{cta.label}</Button>
+          )}
+        </StepActions>
+      ) : null}
+      {cta ? <p className="kru-hint">{START_HINT}</p> : null}
+      <style jsx>{`
+        .kru-cards { display: grid; gap: var(--sp-3); }
+        .kru-card-plan { min-height: 72px; padding: var(--sp-3) var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); text-align: left; border: 2px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-card); color: var(--text-body); font: inherit; cursor: pointer; }
+        .kru-card-plan.is-selected { border-color: var(--purple-700); background: var(--purple-50); }
+        .kru-card-plan:disabled { cursor: not-allowed; background: var(--surface-sunken); color: var(--text-muted); border-style: dashed; }
+        .kru-card-plan__text { display: grid; gap: 2px; min-width: 0; }
+        .kru-card-plan__text strong { color: inherit; font-size: var(--fs-18); }
+        .kru-card-plan__text span { font-size: var(--fs-14); }
+        .kru-card-plan__text small { color: var(--text-muted); font-size: var(--fs-13); }
+        .kru-card-plan em { flex: 0 0 auto; font-style: normal; font-size: var(--fs-13); font-weight: var(--fw-semibold); padding: 4px 10px; border-radius: var(--r-pill); background: var(--surface-card); color: var(--text-muted); }
+        .kru-card-plan em.kru-card-plan__badge { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+        .kru-benefits { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+        .kru-benefits li { display: flex; align-items: center; gap: 8px; color: var(--text-body); font-size: var(--fs-14); }
+        .kru-benefits :global(svg) { flex: 0 0 auto; color: var(--status-success-fg); }
+        .kru-hint { margin: 0; text-align: center; color: var(--text-muted); font-size: var(--fs-13); }
+      `}</style>
+    </StepFrame>
+  );
+}
+
+/** Step 1 again when the member goes back with an application already waiting. */
+export function PendingSummary({
+  planLabel,
+  amountThb,
+  onContinue,
+  extra,
+  focusHeading,
+}: {
+  planLabel: string;
+  amountThb: number;
+  onContinue: (() => void) | null;
+  /** A conversion offer or the reason payment is blocked. */
+  extra?: ReactNode;
+  focusHeading: boolean;
+}) {
+  return (
+    <StepFrame title="ใบสมัครของคุณ" lead={`${planLabel} · ${amountThb.toLocaleString("th-TH")} บาท`} focusHeading={focusHeading}>
+      {extra}
+      {onContinue ? (
+        <StepActions>
+          <Button type="button" size="lg" block onClick={onContinue}>ไปโอนเงิน</Button>
+        </StepActions>
+      ) : null}
+    </StepFrame>
+  );
+}
+
+/* ------------------------------------------------------------------ step 2 */
+
+export function TransferStep({
+  application,
+  referenceCopied,
+  legacyReportedAt,
+  onCopyReference,
+  onBack,
+  onNext,
+  onAlreadySent,
+  focusHeading,
+}: {
+  application: StepApplication;
+  referenceCopied: boolean;
+  legacyReportedAt: string | null;
+  onCopyReference: (referenceCode: string) => void;
+  onBack: () => void;
+  onNext: () => void;
+  /** "ส่งสลิปแล้ว? ดูสถานะ": for someone who already sent the slip from another device. */
+  onAlreadySent: () => void;
+  focusHeading: boolean;
+}) {
+  return (
+    <StepFrame title="โอนเงิน" focusHeading={focusHeading}>
+      <LegacyReportNote reportedAt={legacyReportedAt} />
+      <TransferAmount amountThb={application.quotedAmountThb} />
+      <TransferMethods
+        key={`${application.id}:${application.quotedAmountThb}`}
+        applicationId={application.id}
+        amountThb={application.quotedAmountThb}
+        referenceCode={application.referenceCode}
+      />
+      <ReferenceLine referenceCode={application.referenceCode} copied={referenceCopied} onCopy={onCopyReference} />
+      <StepActions>
+        <Button type="button" size="lg" block onClick={onNext}>โอนแล้ว ไปส่งสลิป</Button>
+        <Button type="button" variant="ghost" icon={ArrowLeft} block onClick={onBack}>ย้อนกลับ</Button>
+      </StepActions>
+      <TextAction onClick={onAlreadySent}>ส่งสลิปแล้ว? ดูสถานะ</TextAction>
+    </StepFrame>
   );
 }
 
@@ -85,74 +261,35 @@ function LegacyReportNote({ reportedAt }: { reportedAt: string | null }) {
   );
 }
 
-/** Step 2: the amount, the reference, and the transfer methods, once. */
-export function TransferStep({
-  application,
-  referenceCopied,
-  legacyReportedAt,
-  onCopyReference,
-  onBack,
-  onNext,
-  focusHeading,
-}: {
-  application: StepApplication;
-  referenceCopied: boolean;
-  legacyReportedAt: string | null;
-  onCopyReference: (referenceCode: string) => void;
-  onBack: () => void;
-  onNext: () => void;
-  focusHeading: boolean;
-}) {
-  return (
-    <StepFrame title="โอนเงิน" focusHeading={focusHeading}>
-      <LegacyReportNote reportedAt={legacyReportedAt} />
-      <TransferSummary
-        amountThb={application.quotedAmountThb}
-        referenceCode={application.referenceCode}
-        referenceCopied={referenceCopied}
-        onCopyReference={onCopyReference}
-      />
-      <TransferMethods
-        key={`${application.id}:${application.quotedAmountThb}`}
-        applicationId={application.id}
-        amountThb={application.quotedAmountThb}
-        referenceCode={application.referenceCode}
-      />
-      <StepActions>
-        <Button type="button" size="lg" block onClick={onNext}>โอนแล้ว ไปขั้นต่อไป</Button>
-        <BackButton onClick={onBack} />
-      </StepActions>
-    </StepFrame>
-  );
-}
+/* ------------------------------------------------------------------ step 3 */
 
-/** Step 3: open LINE with the message, or copy the message first when there is no OA ID. */
 export function SlipStep({
-  message,
   href,
   copyFirst,
   feedback,
-  messageCopied,
+  fallbackMessage,
   onOpenLine,
-  onCopyMessage,
   onSent,
   onBack,
   focusHeading,
 }: {
-  message: string;
   href: string;
   copyFirst: boolean;
+  /** The short note shown after the button is pressed. */
   feedback: string | null;
-  messageCopied: boolean;
+  /** Only set when copying failed: the message to select and copy by hand. */
+  fallbackMessage: string | null;
   onOpenLine: () => void;
-  onCopyMessage: () => void;
   onSent: () => void;
   onBack: () => void;
   focusHeading: boolean;
 }) {
   return (
-    <StepFrame title="ส่งสลิปทาง LINE" focusHeading={focusHeading}>
-      <p className="kru-slip__how">กดปุ่มด้านล่าง → แนบรูปสลิปในแชต → กดส่ง</p>
+    <StepFrame
+      title="ส่งสลิปทาง LINE"
+      lead="กดปุ่มด้านล่าง แชตจะเปิดพร้อมข้อความ แนบรูปสลิปแล้วกดส่ง"
+      focusHeading={focusHeading}
+    >
       <StepActions>
         <a
           className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block"
@@ -164,40 +301,26 @@ export function SlipStep({
           aria-describedby="kru-slip-feedback"
           data-copy-first={copyFirst ? "true" : "false"}
         >
-          <MessageCircle size={19} aria-hidden="true" /> เปิด LINE ส่งสลิป
+          เปิด LINE ส่งสลิป
         </a>
+        <Button type="button" variant="secondary" size="lg" block onClick={onSent}>ส่งสลิปแล้ว</Button>
       </StepActions>
       <p id="kru-slip-feedback" role="status" className="kru-slip__feedback">{feedback ?? ""}</p>
-
-      <div className="kru-slip__message">
-        <span>ข้อความที่จะส่ง</span>
-        <output>{message}</output>
-        <button type="button" onClick={onCopyMessage}>
-          {messageCopied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
-          {messageCopied ? "คัดลอกแล้ว" : "คัดลอกข้อความ"}
-        </button>
-      </div>
-
-      <p className="kru-slip__privacy">ไม่เก็บสลิปบนเว็บไซต์ ส่งทาง LINE เท่านั้น</p>
-      <StepActions>
-        <Button type="button" variant="secondary" size="lg" block onClick={onSent}>ส่งสลิปแล้ว</Button>
-        <BackButton onClick={onBack} />
-      </StepActions>
+      {fallbackMessage ? <output className="kru-slip__fallback">{fallbackMessage}</output> : null}
+      <p className="kru-slip__privacy">เว็บไม่เก็บรูปสลิป ส่งทาง LINE ที่เดียว</p>
+      <TextAction onClick={onBack} backArrow>ย้อนกลับไปดูเลขบัญชี</TextAction>
       <style jsx>{`
-        .kru-slip__how { margin: 0; font-size: var(--fs-18); font-weight: var(--fw-semibold); color: var(--text-strong); }
-        .kru-slip__feedback { margin: 0; min-height: 1.5em; color: var(--status-success-fg); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+        .kru-slip__feedback { margin: 0; min-height: 1.5em; color: var(--status-success-fg); font-weight: var(--fw-semibold); overflow-wrap: anywhere; text-align: center; }
         .kru-slip__feedback:empty { min-height: 0; }
-        .kru-slip__message { display: grid; gap: var(--sp-2); padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-sunken); }
-        .kru-slip__message > span { color: var(--text-muted); font-size: var(--fs-13); }
-        output { display: block; color: var(--text-strong); font-weight: var(--fw-semibold); overflow-wrap: anywhere; user-select: all; }
-        .kru-slip__message button { min-height: 44px; width: fit-content; padding: 0 var(--sp-4); display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-brand); border-radius: var(--r-pill); background: var(--surface-card); color: var(--purple-700); font: inherit; font-weight: var(--fw-semibold); cursor: pointer; }
-        .kru-slip__privacy { margin: 0; color: var(--text-muted); font-size: var(--fs-14); }
+        .kru-slip__fallback { display: block; padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-sunken); color: var(--text-strong); font-weight: var(--fw-semibold); overflow-wrap: anywhere; user-select: all; }
+        .kru-slip__privacy { margin: 0; text-align: center; color: var(--text-muted); font-size: var(--fs-13); }
       `}</style>
     </StepFrame>
   );
 }
 
-/** Step 4: waiting for the team to confirm the transfer. */
+/* ------------------------------------------------------------------ step 4 */
+
 export function WaitingStep({
   referenceCode,
   referenceCopied,
@@ -216,35 +339,17 @@ export function WaitingStep({
   focusHeading: boolean;
 }) {
   return (
-    <StepFrame title="รออนุมัติ" focusHeading={focusHeading}>
-      <p className="kru-wait__lead">ได้รับใบสมัครแล้ว ครูอรรี่จะตรวจสอบและอนุมัติภายใน 1 วันทำการ</p>
+    <StepFrame title="ได้รับแล้ว รอครูอรรี่ตรวจสอบ" lead="อนุมัติภายใน 1 วันทำการ ไม่ต้องกดอะไรเพิ่ม หน้านี้จะอัปเดตเอง" focusHeading={focusHeading}>
+      <div className="kru-wait__icon" aria-hidden="true">⏳</div>
       {slipReceivedAt ? (
         <p role="status" className="kru-wait__received">ทีมงานบันทึกรับสลิปจาก LINE เมื่อ {formatThaiDate(slipReceivedAt)} · กำลังตรวจยอดจริง</p>
       ) : null}
       <LegacyReportNote reportedAt={legacyReportedAt} />
-      <div className="kru-wait__reference">
-        <span>เลขอ้างอิง</span>
-        <div>
-          <strong>{referenceCode}</strong>
-          <button type="button" onClick={() => onCopyReference(referenceCode)} aria-label={`คัดลอกเลขอ้างอิง ${referenceCode}`}>
-            {referenceCopied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}
-            {referenceCopied ? "คัดลอกแล้ว" : "คัดลอก"}
-          </button>
-        </div>
-      </div>
-      <p className="kru-wait__auto">หน้านี้ตรวจสถานะให้เองทุก 1 นาที เมื่ออนุมัติแล้วจะแจ้งที่นี่</p>
-      <StepActions>
-        <BackButton onClick={onBackToSlip}>ยังไม่ได้ส่งสลิป? กลับไปขั้นที่ 3</BackButton>
-      </StepActions>
+      <ReferenceLine referenceCode={referenceCode} copied={referenceCopied} onCopy={onCopyReference} />
+      <TextAction onClick={onBackToSlip}>ยังไม่ได้ส่งสลิป? กลับไปส่ง</TextAction>
       <style jsx>{`
-        .kru-wait__lead { margin: 0; font-size: var(--fs-18); font-weight: var(--fw-semibold); color: var(--text-strong); }
+        .kru-wait__icon { font-size: 3rem; text-align: center; line-height: 1; }
         .kru-wait__received { margin: 0; padding: var(--sp-4); border-radius: var(--r-md); background: var(--status-info-bg); color: var(--status-info-fg); }
-        .kru-wait__reference { display: grid; gap: 4px; padding: var(--sp-4); border: 1px solid var(--border-brand); border-radius: var(--r-md); background: var(--purple-50); }
-        .kru-wait__reference > span { color: var(--text-muted); font-size: var(--fs-13); }
-        .kru-wait__reference > div { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-        .kru-wait__reference strong { font-family: var(--font-mono); letter-spacing: .04em; font-size: clamp(1.15rem, 5vw, var(--fs-24)); color: var(--text-strong); overflow-wrap: anywhere; }
-        .kru-wait__reference button { min-height: 44px; padding: 0 var(--sp-4); display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-brand); border-radius: var(--r-pill); background: var(--surface-card); color: var(--purple-700); font: inherit; font-weight: var(--fw-semibold); cursor: pointer; }
-        .kru-wait__auto { margin: 0; color: var(--text-muted); font-size: var(--fs-14); }
       `}</style>
     </StepFrame>
   );
@@ -267,7 +372,7 @@ export function ApprovedPanel({
 }) {
   return (
     <section className="kru-approved" aria-live="polite">
-      <h2>{celebrate ? `🎉 ใช้งาน ${planName} ได้แล้ว` : `สิทธิ์ ${planName} ใช้งานอยู่`}</h2>
+      <h2>{celebrate ? `🎉 ยินดีด้วย ใช้งาน ${planName} ได้แล้ว` : `สิทธิ์ ${planName} ใช้งานอยู่`}</h2>
       {periodEnd ? <p>สิ้นสุดรอบสมาชิก {formatThaiDate(periodEnd)}</p> : null}
       <Link className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" href={href}>{actionLabel}</Link>
       <style jsx>{`
@@ -280,7 +385,23 @@ export function ApprovedPanel({
   );
 }
 
-/** Older applications, collapsed so they never compete with the current step. */
+/** Declined after a slip was sent: say so plainly, point to LINE, offer a new application. */
+export function RejectedPanel({ onStartOver, focusHeading }: { onStartOver: () => void; focusHeading: boolean }) {
+  return (
+    <StepFrame title="ใบสมัครนี้ไม่ผ่าน กรุณาทักครูอรรี่ทาง LINE" focusHeading={focusHeading}>
+      <StepActions>
+        <a className="kru-btn kru-btn--primary kru-btn--lg kru-btn--block" href={LINE_OA_URL} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+          ทักครูอรรี่ทาง LINE
+        </a>
+        <Button type="button" variant="secondary" size="lg" block onClick={onStartOver}>สมัครใหม่</Button>
+      </StepActions>
+    </StepFrame>
+  );
+}
+
+/* ------------------------------------------------------------------ history */
+
+/** Older applications, collapsed at the bottom so they never compete with the current step. */
 export function ApplicationHistory({ applications }: { applications: readonly UpgradeRequest[] }) {
   const items = applicationHistory(applications);
   if (items.length === 0) return null;

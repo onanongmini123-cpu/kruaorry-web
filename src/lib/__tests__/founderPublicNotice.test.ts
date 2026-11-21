@@ -12,8 +12,8 @@ describe("Founder public notice", () => {
     expect(founderPublicNotice({ isFull: false })).not.toMatch(/\d+\s*\/\s*\d+|เหลือ/);
   });
 
-  it("is the only Founder availability text on landing, member and membership pages", () => {
-    for (const page of ["../../app/landing/PricingSection.tsx", "../../app/app/page.tsx", "../../app/membership/page.tsx"]) {
+  it("is the only Founder availability text on the landing and member pages", () => {
+    for (const page of ["../../app/landing/PricingSection.tsx", "../../app/app/page.tsx"]) {
       const source = read(page);
       expect(source, page).toMatch(/founderPublicNotice\(|FOUNDER_LIMIT_NOTICE/);
       expect(source, page).not.toMatch(/ยืนยันชำระแล้ว\s*\{/);
@@ -21,6 +21,13 @@ describe("Founder public notice", () => {
       expect(source, page).not.toMatch(/เหลือ\s*\$\{/);
       expect(source, page).not.toMatch(/\.(used|remaining)\b[^\n]*\/[^\n]*capacity/);
     }
+  });
+
+  it("the membership page shows the places left only as the Founder card badge (never the used count)", () => {
+    const source = read("../../app/membership/page.tsx");
+    expect(source).toContain("founderSeatsBadge(capacity)");
+    expect(source).not.toMatch(/\.(used)\b/);
+    expect(source).not.toMatch(/\.remaining\b/);
   });
 
   it("keeps the real seat count in the admin console", () => {

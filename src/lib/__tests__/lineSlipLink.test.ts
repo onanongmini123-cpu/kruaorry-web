@@ -41,6 +41,6 @@ describe("LINE slip action (with / without an OA ID)", () => {
 
 describe("membership step labels", () => {
   it("has the four labels in order", () => {
-    expect(MEMBERSHIP_STEPS).toEqual(["กรอกใบสมัคร", "โอนเงิน", "ส่งสลิปทาง LINE", "รออนุมัติ"]);
+    expect(MEMBERSHIP_STEPS).toEqual(["เลือกแพ็ก", "โอนเงิน", "ส่งสลิป", "รออนุมัติ"]);
   });
 });
