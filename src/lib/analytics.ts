@@ -19,6 +19,7 @@ export type AnalyticsEventName =
   | "resource_view"
   | "resource_start"
   | "outbound_game_open"
+  | "resource_demo_open"
   | "signup_start"
   | "signup_complete"
   | "pricing_view"

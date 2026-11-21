@@ -6,6 +6,7 @@ import { withTimeout } from "@/lib/asyncTimeout";
 import { relatedResources } from "@/lib/relatedResources";
 import { isResourceUuid, isValidSlug } from "@/lib/resourceSlug";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
+import { publicDemoUrl } from "@/lib/resourceDemoUrl";
 import { EMPTY_ENTITLEMENTS, type EntitlementSnapshot } from "@/lib/entitlement";
 import { PUBLIC_RESOURCE_SELECT, PUBLIC_RESOURCE_SELECT_WITH_SLUG, resourceHref, toPublicResource, type PublicResource, type PublicResourceViewer } from "./catalog";
 import { collectResourcePages } from "./pagination";
@@ -45,6 +46,30 @@ function toEntitlements(value: unknown): EntitlementSnapshot {
 }
 
 const CATALOG_REVALIDATE_SECONDS = 300;
+
+/**
+ * Public demo links, one per published resource, from the separate
+ * resource_demo_catalog view (migration 061). A database without it, or any read
+ * failure, simply means "no demos": the catalogue itself must never fail because
+ * of an optional extra. Every value is re-validated before it can reach a page.
+ */
+export async function readDemoUrls(client: SupabaseClient): Promise<Map<string, string>> {
+  const demos = new Map<string, string>();
+  try {
+    const outcome = await withTimeout(
+      Promise.resolve(client.from("resource_demo_catalog").select("resource_id, demo_url").limit(1000)),
+      "public resource demos",
+    );
+    if (!outcome.ok || outcome.value.error || !Array.isArray(outcome.value.data)) return demos;
+    for (const row of outcome.value.data as { resource_id?: unknown; demo_url?: unknown }[]) {
+      const url = publicDemoUrl(row?.demo_url);
+      if (typeof row?.resource_id === "string" && url) demos.set(row.resource_id, url);
+    }
+  } catch {
+    return new Map();
+  }
+  return demos;
+}
 
 type CatalogRead = { resources: PublicResource[]; slugsLive: boolean };
 
@@ -95,13 +120,17 @@ async function readCatalog(): Promise<CatalogRead> {
     result = await readCatalogRows(client, PUBLIC_RESOURCE_SELECT);
   }
   if (!result.rows) throw new Error("catalog unavailable: read failed");
+  const demos = await readDemoUrls(client);
   return {
     slugsLive,
-    resources: result.rows.map(toPublicResource).filter((item): item is PublicResource => item !== null),
+    resources: result.rows
+      .map(toPublicResource)
+      .filter((item): item is PublicResource => item !== null)
+      .map((item) => ({ ...item, demoUrl: demos.get(item.id) ?? null })),
   };
 }
 
-const readCatalogCached = unstable_cache(readCatalog, ["public-catalog-v2"], {
+const readCatalogCached = unstable_cache(readCatalog, ["public-catalog-v3"], {
   revalidate: CATALOG_REVALIDATE_SECONDS,
   tags: ["catalog"],
 });

@@ -15,6 +15,7 @@ view, a successful call).
 | `search` | A search on the landing page, or a library page with a search or filters | `source`, `query_length`, `results_count`, `filters_count` |
 | `resource_view` | A resource detail page is shown | `resource_id`, `slug`, `access_tier`, `delivery_mode`, `authenticated` |
 | `resource_start` | The main button is pressed by a viewer who can use the resource | `resource_id`, `slug`, `access_tier`, `delivery_mode`, `source` |
+| `resource_demo_open` | The "ทดลองเล่น" demo link on a detail page was pressed (the demo is public; this says nothing about access to the full version) | `resource_id`, `slug`, `access_tier`, `delivery_mode`, `source` |
 | `outbound_game_open` | The same press when the resource is a web game or tool that opens another site | `resource_id`, `source` |
 | `download` | A file download finished in the browser | `resource_id`, `stage: completed` |
 | `signup_start` | The sign-up form is shown, or a sign-up button is pressed by a visitor | `source` |

@@ -32,6 +32,11 @@ export type PublicResource = {
   reviewCount: number;
   /** Optional structured teaching notes; every section hides when absent. */
   detail: ResourceDetailContent | null;
+  /**
+   * Public demo link ("ทดลองเล่น"), kept apart from the full version. It is read from
+   * resource_demo_catalog and re-validated; it never carries or implies access.
+   */
+  demoUrl: string | null;
 };
 
 export interface PublicResourceViewer {
@@ -94,6 +99,7 @@ export function toPublicResource(value: unknown): PublicResource | null {
       : Number(row.review_average),
     reviewCount: Number(row.review_count ?? 0),
     detail: parseDetailContent(row.detail_content),
+    demoUrl: null,
   };
 }
 

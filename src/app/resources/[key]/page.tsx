@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
-import { ArrowLeft, ArrowRight, BookOpen, Lock } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Lock } from "lucide-react";
 import { Badge, ResourceCard, Tag } from "@/components/ui";
 import { PublicTopBar } from "@/components/PublicTopBar";
 import { TrackedAnchor } from "@/components/analytics/TrackedAnchor";
@@ -15,6 +15,7 @@ import { DEFAULT_SHARE_IMAGE } from "@/lib/site";
 import { loadPublicResourceViewer, loadRelatedResources, resolvePublicResource } from "../data";
 import { publicResourceAction, resourceHref } from "../catalog";
 import { resourceAccessCopy } from "../detailCopy";
+import { resourceDemoView } from "../demoCopy";
 import { PublicResourceCover } from "../PublicResourceCover";
 import "./detail.css";
 
@@ -78,6 +79,7 @@ export default async function ResourceDetailPage({ params }: Props) {
   const { resource: item, canonicalPath } = lookup;
   const action = publicResourceAction(item, viewer);
   const copy = resourceAccessCopy(item, viewer, action);
+  const demo = resourceDemoView(item, viewer, action);
   const tier = accessTier(item.accessMode);
   const gradeText = formatResourceGrades(item.gradeLevels);
   const parsedMeta = parseResourceMeta(item.meta);
@@ -162,6 +164,34 @@ export default async function ResourceDetailPage({ params }: Props) {
                 </TrackedAnchor>
               )}
             </div>
+
+            {demo && (
+              <div className="kru-detail__demo" role="group" aria-label="ทดลองเล่น/ดูตัวอย่าง">
+                <TrackedAnchor
+                  events={[{ name: "resource_demo_open", properties: { resource_id: item.id, slug: item.slug ?? "", access_tier: tier, delivery_mode: item.deliveryMode, source: "detail" } }]}
+                  className="kru-btn kru-btn--soft kru-btn--lg kru-btn--block"
+                  href={demo.href}
+                  aria-label={`${demo.label} (เปิดในแท็บใหม่)`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  referrerPolicy="no-referrer"
+                >
+                  {demo.label}<ExternalLink size={18} aria-hidden="true" />
+                </TrackedAnchor>
+                {demo.upgrade && (
+                  <>
+                    <p className="kru-detail__demo-note">{demo.upgrade.note}</p>
+                    <TrackedAnchor
+                      events={[{ name: "upgrade_click", properties: { resource_id: item.id, plan_id: item.requiredPlanIds.includes("founder") ? "founder" : "teacher", source: "resource_demo_note" } }]}
+                      href={demo.upgrade.href}
+                      className="kru-btn kru-btn--ghost kru-btn--block"
+                    >
+                      {demo.upgrade.label}<ArrowRight size={18} aria-hidden="true" />
+                    </TrackedAnchor>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
