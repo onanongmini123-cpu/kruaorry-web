@@ -28,7 +28,7 @@ insert into public.resources
 values
   ('ffffffff-0000-4000-8000-000000000001', '[TEST] เกม Pro 1 (มีวิดีโอ)', 'ทดสอบ', 'สื่อทดสอบ ใช้ตรวจ Preview เท่านั้น', 'web_app',
    'https://www.wikipedia.org/#test-pro-game-1', 'https://kruaorry-web.vercel.app/images/resources/bingo-fun.jpg', 'published', now() - interval '1 day',
-   false, 'plans', array['p4'], 'test-pro-game-1', 'jNQXAC9IMGY', null, null, null, null),
+   false, 'plans', array['p4'], 'test-pro-game-1', 'M7lc1UVf-VE', null, null, null, null),
   ('ffffffff-0000-4000-8000-000000000002', '[TEST] เกม Pro 2', 'ทดสอบ', 'สื่อทดสอบ ใช้ตรวจ Preview เท่านั้น', 'web_app',
    'https://www.wikipedia.org/#test-pro-game-2', 'https://kruaorry-web.vercel.app/images/resources/mission-wheel.jpg', 'published', now() - interval '2 days',
    false, 'plans', array['p5'], 'test-pro-game-2', null, null, null, null, null),
@@ -63,7 +63,7 @@ insert into public.resource_previews (resource_id, position, image_url) values
 
 -- One homepage video.
 insert into public.homepage_videos (position, youtube_video_id, title)
-values (1, 'jNQXAC9IMGY', '[TEST] คลิปแนะนำหน้าแรก')
+values (1, 'M7lc1UVf-VE', '[TEST] คลิปแนะนำหน้าแรก')
 on conflict (position) do update set youtube_video_id = excluded.youtube_video_id, title = excluded.title;
 
 -- Ranking material: three hearts from the staging owner, and anonymous daily views.

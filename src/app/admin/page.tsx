@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshPublicPages } from "@/lib/refreshPublicPages";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as tus from "tus-js-client";
@@ -1479,6 +1480,7 @@ export default function AdminConsolePage() {
         }
       }
 
+      await refreshPublicPages();
       setSavedNotice(`บันทึก “${payload.title}” แล้ว`);
       setSavedSlug("");
       setSavedVideoId("");

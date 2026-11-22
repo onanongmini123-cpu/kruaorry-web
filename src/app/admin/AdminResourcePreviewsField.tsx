@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshPublicPages } from "@/lib/refreshPublicPages";
 import { useCallback, useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Button } from "@/components/ui";
@@ -97,10 +98,11 @@ export function AdminResourcePreviewsField({ supabase, resourceId }: { supabase:
     setBusy(true);
     setMessage(null);
     const { error } = await supabase.rpc("admin_set_resource_previews", { p_resource_id: resourceId, p_urls: urls });
+    const refreshed = error ? false : await refreshPublicPages();
     setBusy(false);
     setMessage(error
       ? { tone: "error", text: `บันทึกรูปตัวอย่างไม่สำเร็จ: ${error.message}` }
-      : { tone: "ok", text: "บันทึกรูปตัวอย่างแล้ว จะแสดงบนหน้าสื่อภายในประมาณ 5 นาที" });
+      : { tone: "ok", text: refreshed ? "บันทึกรูปตัวอย่างแล้ว หน้าสื่ออัปเดตแล้ว" : "บันทึกรูปตัวอย่างแล้ว จะแสดงบนหน้าสื่อภายในประมาณ 5 นาที" });
   };
 
   return (

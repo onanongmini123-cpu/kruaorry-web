@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshPublicPages } from "@/lib/refreshPublicPages";
 import { useCallback, useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Button, Input } from "@/components/ui";
@@ -85,9 +86,14 @@ export function AdminHomepageVideosPanel({ supabase }: { supabase: SupabaseClien
       setMessage({ tone: "error", text: `บันทึกไม่สำเร็จ: ${error.message}` });
       return;
     }
+    const refreshed = await refreshPublicPages();
     setMessage({
       tone: "ok",
-      text: payload.videos.length === 0
+      text: refreshed
+        ? payload.videos.length === 0
+          ? "ลบวิดีโอหน้าแรกทั้งหมดแล้ว ส่วน “วิดีโอแนะนำ” ถูกซ่อนแล้ว"
+          : "บันทึกแล้ว หน้าแรกอัปเดตแล้ว"
+        : payload.videos.length === 0
         ? "ลบวิดีโอหน้าแรกทั้งหมดแล้ว ส่วน “วิดีโอแนะนำ” จะถูกซ่อน (อัปเดตบนหน้าแรกภายในประมาณ 5 นาที)"
         : "บันทึกแล้ว วิดีโอจะแสดงบนหน้าแรกภายในประมาณ 5 นาที",
     });
