@@ -8,6 +8,7 @@ import { fetchMembershipSchemaReadiness, type MembershipSchemaReadiness } from "
 import { createAnonClient } from "@/lib/supabase/anon";
 import { parseHomepageVideos, type HomepageVideo } from "@/lib/homepageVideos";
 import { parseHomepageRankings, RANKING_ROW_LIMIT, type HomepageRankings } from "@/lib/homepageRankings";
+import { parsePromoBanners, type PromoBanner } from "@/lib/promoBanners";
 import { withTimeout } from "@/lib/asyncTimeout";
 
 /**
@@ -23,8 +24,10 @@ export interface LandingData {
   resources: Resource[];
   founderCapacity: FounderCapacity | null;
   readiness: MembershipSchemaReadiness;
-  /** Admin-chosen homepage videos (0–3). Empty hides the section. */
+  /** Admin-chosen homepage videos (0–4). Empty hides the section. */
   videos: HomepageVideo[];
+  /** Staff-managed promo banners that are on and inside their date window. Empty hides the section. */
+  banners: PromoBanner[];
   /** Homepage ranking rows (ids and counts only); null until migration 060 or on failure. */
   rankings: HomepageRankings | null;
 }
@@ -36,6 +39,7 @@ export const EMPTY_LANDING_DATA: LandingData = {
   founderCapacity: null,
   readiness: "checking",
   videos: [],
+  banners: [],
   rankings: null,
 };
 
@@ -86,6 +90,21 @@ async function readHomepageVideos(supabase: SupabaseClient): Promise<HomepageVid
   }
 }
 
+/** Never throws: before migration 061 (or on any failure) there are simply no banners. RLS returns only live rows. */
+async function readPromoBanners(supabase: SupabaseClient): Promise<PromoBanner[]> {
+  try {
+    const outcome = await withTimeout(Promise.resolve(supabase
+      .from("promo_banners")
+      .select("position, image_url, image_mobile_url, link_url, alt_text")
+      .order("position", { ascending: true })
+      .limit(10)), "promo banners");
+    if (!outcome.ok || outcome.value.error) return [];
+    return parsePromoBanners(outcome.value.data);
+  } catch {
+    return [];
+  }
+}
+
 /** Never throws: before migration 060 (or on any failure) there is simply no ranking. */
 async function readRankings(supabase: SupabaseClient): Promise<HomepageRankings | null> {
   try {
@@ -101,12 +120,13 @@ async function readLandingData(): Promise<LandingData> {
   const supabase = createAnonClient();
   if (!supabase) return EMPTY_LANDING_DATA;
   try {
-    const [plans, catalogue, readiness, videos, rankings] = await Promise.all([
+    const [plans, catalogue, readiness, videos, rankings, banners] = await Promise.all([
       fetchPlans(supabase),
       loadPublicResources(),
       fetchMembershipSchemaReadiness(supabase),
       readHomepageVideos(supabase),
       readRankings(supabase),
+      readPromoBanners(supabase),
     ]);
     const resources = catalogue.status === "ready" ? catalogue.resources.map(toLandingResource) : [];
     const founderCapacity = readiness === "ready" ? await fetchFounderCapacity(supabase) : null;
@@ -114,7 +134,7 @@ async function readLandingData(): Promise<LandingData> {
     // and no resources" as not loaded so a transient outage is retried by the
     // client rather than cached as the truth.
     const loaded = plans.length > 0 || resources.length > 0;
-    return { loaded, plans, resources, founderCapacity, readiness, videos, rankings };
+    return { loaded, plans, resources, founderCapacity, readiness, videos, rankings, banners };
   } catch {
     return EMPTY_LANDING_DATA;
   }

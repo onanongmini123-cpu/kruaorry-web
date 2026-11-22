@@ -64,9 +64,9 @@ export function buildRankingRows<T extends { id: string }>(rankings: HomepageRan
   const byId = new Map(catalogue.map((item) => [item.id.toLowerCase(), item]));
   const pick = (list: string[]) => list.map((id) => byId.get(id)).filter((item): item is T => item !== undefined).slice(0, RANKING_ROW_LIMIT);
   const rows: RankingRow<T>[] = [
-    { key: "hearts", title: "❤️ ครูกดหัวใจมากที่สุด", items: pick(rankings.hearts) },
-    { key: "popular", title: "🔥 ยอดนิยม", items: pick(rankings.popular) },
     { key: "newest", title: "🆕 ใหม่ล่าสุด", items: pick(rankings.newest) },
+    { key: "popular", title: "🔥 ยอดนิยม", items: pick(rankings.popular) },
+    { key: "hearts", title: "❤️ ครูกดหัวใจมากที่สุด", items: pick(rankings.hearts) },
   ];
   return rows.filter((row) => row.items.length >= RANKING_MIN_ITEMS);
 }

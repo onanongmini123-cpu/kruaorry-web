@@ -25,6 +25,7 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
+import { PromoBanners } from "@/app/landing/PromoBanners";
 import { HomepageVideosSection } from "@/app/landing/HomepageVideosSection";
 import { HomepageRankings } from "@/app/landing/HomepageRankings";
 import { buildRankingRows } from "@/lib/homepageRankings";
@@ -252,10 +253,10 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           <div className="kru-discovery-hero__grid">
             <div className="kru-discovery-hero__content">
               <div className="kru-discovery-hero__eyebrow">
-                <Mascot size={40} />
-                <span>วันนี้มีอะไรให้ครูอรรี่ช่วยคะ?</span>
+                <Mascot size={56} />
+                <h1>วันนี้มีอะไรให้ครูอรรี่ช่วยคะ?</h1>
               </div>
-              <h1>เกม สื่อ และเครื่องมือที่ช่วยให้ครูเตรียมสอนน้อยลง</h1>
+              <p className="kru-discovery-hero__tagline">KruAorry.com ผู้ช่วยครูและผู้ปกครองในยุคดิจิทัล</p>
               <p className="kru-discovery-hero__lead">
                 ค้นหาสื่อ เกม และเครื่องมือสำหรับใช้ในห้องเรียน มีทั้งแบบใช้ฟรีและสำหรับสมาชิก Teacher Pro
               </p>
@@ -298,14 +299,18 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
               </ul>
             </div>
 
-            {!hasSearched && (
-              <FeaturedResourceCarousel
-                resources={discoverableResources}
-                loading={!samplesLoaded}
-              />
-            )}
           </div>
         </section>
+
+        {!hasSearched && (
+          <>
+            <PromoBanners banners={initial.banners} />
+            <FeaturedResourceCarousel
+              resources={discoverableResources}
+              loading={!samplesLoaded}
+            />
+          </>
+        )}
 
         {hasSearched && (
           <section aria-live="polite" className="kru-discovery-results">
@@ -349,17 +354,6 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             )}
           </section>
         )}
-
-        <nav className="kru-entry-cards" aria-label="เริ่มต้นจากสิ่งที่ต้องการ">
-          {ENTRY_CARDS.map((card) => (
-            <Link key={card.title} href={card.href} className={`kru-card kru-entry-card kru-entry-card--${card.tone}`}>
-              <span className="kru-entry-card__icon"><card.icon size={26} aria-hidden="true" /></span>
-              <strong>{card.title}</strong>
-              <span>{card.desc}</span>
-              <span className="kru-entry-card__go">ดูเลย <ArrowRight size={16} aria-hidden="true" /></span>
-            </Link>
-          ))}
-        </nav>
 
         <HomepageRankings
           rows={buildRankingRows(initial.rankings, resources)}
@@ -425,6 +419,17 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             </div>
           )}
         </section>
+
+        <nav className="kru-entry-cards" aria-label="เริ่มต้นจากสิ่งที่ต้องการ">
+          {ENTRY_CARDS.map((card) => (
+            <Link key={card.title} href={card.href} className={`kru-card kru-entry-card kru-entry-card--${card.tone}`}>
+              <span className="kru-entry-card__icon"><card.icon size={26} aria-hidden="true" /></span>
+              <strong>{card.title}</strong>
+              <span>{card.desc}</span>
+              <span className="kru-entry-card__go">ดูเลย <ArrowRight size={16} aria-hidden="true" /></span>
+            </Link>
+          ))}
+        </nav>
 
         <TrackOnVisible event="pricing_view" properties={{ source: "home" }}>
         <PricingSection
@@ -508,35 +513,49 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           margin: 0 auto;
           padding: clamp(48px, 7vw, 88px) var(--sp-5);
           display: grid;
-          grid-template-columns: minmax(0, 1.14fr) minmax(300px, .86fr);
+          grid-template-columns: minmax(0, 1fr);
           align-items: center;
-          gap: clamp(32px, 6vw, 76px);
+          justify-items: center;
+          text-align: center;
         }
 
         .kru-discovery-hero__content {
           min-width: 0;
         }
 
+        .kru-discovery-hero__content {
+          width: min(100%, 860px);
+        }
+
         .kru-discovery-hero__eyebrow {
-          display: inline-flex;
+          display: flex;
           align-items: center;
-          gap: 10px;
+          justify-content: center;
+          gap: clamp(10px, 2vw, 18px);
           color: var(--purple-700);
-          font-size: var(--fs-14);
+        }
+
+        .kru-discovery-hero__tagline {
+          margin-top: var(--sp-4);
+          color: var(--text-strong);
+          font-family: var(--font-display);
+          font-size: clamp(1.125rem, 3.2vw, 1.5rem);
           font-weight: var(--fw-semibold);
+          line-height: 1.4;
         }
 
         .kru-discovery-hero h1 {
-          max-width: 760px;
-          margin-top: var(--sp-5);
-          font-size: clamp(2.25rem, 5.2vw, 4.25rem);
-          line-height: 1.08;
-          letter-spacing: -.035em;
+          margin: 0;
+          font-size: clamp(2rem, 6.4vw, 3.5rem);
+          line-height: 1.12;
+          letter-spacing: -.03em;
+          text-wrap: balance;
         }
 
         .kru-discovery-hero__lead {
           max-width: 660px;
-          margin-top: var(--sp-5);
+          margin-inline: auto;
+          margin-top: var(--sp-4);
           color: var(--text-body);
           font-size: clamp(1rem, 2vw, 1.2rem);
           line-height: 1.75;
@@ -544,7 +563,8 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
         .kru-discovery-search {
           max-width: 760px;
-          margin-top: var(--sp-7);
+          margin-inline: auto;
+          margin-top: var(--sp-6);
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
           gap: var(--sp-3);
@@ -584,6 +604,8 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
         .kru-discovery-hero__secondary {
           max-width: 760px;
+          margin-inline: auto;
+          justify-content: center;
           margin-top: var(--sp-5);
           display: flex;
           align-items: center;
@@ -753,7 +775,8 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
         .kru-access-legend {
           max-width: 760px;
-          margin: var(--sp-6) 0 0;
+          text-align: left;
+          margin: var(--sp-6) auto 0;
           padding: 0;
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -867,7 +890,11 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           }
 
           .kru-discovery-hero h1 {
-            font-size: clamp(2.05rem, 11.4vw, 3rem);
+            font-size: clamp(2rem, 8.8vw, 2.25rem);
+          }
+
+          .kru-discovery-hero__eyebrow {
+            flex-direction: column;
           }
 
           .kru-discovery-search {
