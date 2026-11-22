@@ -773,6 +773,23 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           align-items: stretch;
         }
 
+        /* Phone: one swipeable row, like the ranking rows, instead of a very long stack. */
+        @media (max-width: 719px) {
+          .kru-sample-grid {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x proximity;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: var(--sp-3);
+          }
+
+          .kru-sample-grid > :global(*) {
+            flex: 0 0 min(260px, 78vw);
+            min-width: 0;
+            scroll-snap-align: start;
+          }
+        }
+
         .kru-access-legend {
           max-width: 760px;
           text-align: left;

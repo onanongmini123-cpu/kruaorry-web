@@ -54,3 +54,10 @@ describe("HomepageVideosSection", () => {
     expect(render(0)).toBe("");
   });
 });
+
+describe("free samples on phones", () => {
+  it("turn into one swipeable row below 720px and stay a grid above", () => {
+    expect(source).toMatch(/@media \(max-width: 719px\) \{\s*\.kru-sample-grid \{\s*display: flex;\s*overflow-x: auto;/);
+    expect(source).toContain("repeat(auto-fill, minmax(min(100%, 260px), 1fr))");
+  });
+});
