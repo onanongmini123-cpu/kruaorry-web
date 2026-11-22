@@ -103,8 +103,8 @@
 
   --wash-hero: linear-gradient(160deg, var(--purple-50) 0%, var(--pink-50) 55%, var(--blue-50) 100%);
 
-  --font-display: var(--font-anuphan), "Noto Sans Thai", system-ui, sans-serif;
-  --font-body: var(--font-plex-thai), var(--font-anuphan), "Noto Sans Thai", system-ui, sans-serif;
+  --font-display: var(--font-anuphan-latin), var(--font-anuphan-thai), "Noto Sans Thai", system-ui, sans-serif;
+  --font-body: var(--font-plex-thai-latin), var(--font-plex-thai-thai), var(--font-anuphan-latin), var(--font-anuphan-thai), "Noto Sans Thai", system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
 
   --fs-12: 0.75rem;

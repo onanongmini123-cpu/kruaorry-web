@@ -20,7 +20,10 @@ describe("login and signup branding", () => {
     expect(loginSource).toContain("authCompletionDestination(requestedMode, rawNext)");
     expect(loginSource).toContain('authCompletionDestination("signin", rawNext)');
     expect(loginSource).toContain("buildSignupConfirmationRedirect(window.location.origin)");
-    expect(loginSource).toContain("router.replace(SIGNUP_DESTINATION)");
+    expect(loginSource).toContain('router.replace(authCompletionDestination("signup", rawNext))');
+    // The remembered plan travels in the account's metadata, never in the confirmation link.
+    expect(loginSource).toContain("[MEMBERSHIP_NEXT_METADATA_KEY]: safeMembershipReturn(rawNext)");
+    expect(loginSource).toContain("buildSignupConfirmationRedirect(window.location.origin)");
     expect(loginSource).toContain("router.replace(signInDestination)");
   });
 

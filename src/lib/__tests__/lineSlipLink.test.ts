@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LINE_OA_URL } from "@/lib/config";
-import { lineSlipHref, lineSlipMessage, normalizeLineOaId } from "@/lib/lineSlipLink";
-import { MEMBERSHIP_STEPS, membershipStepNumber } from "@/lib/membershipSteps";
+import { lineSlipAction, lineSlipHref, lineSlipMessage, normalizeLineOaId } from "@/lib/lineSlipLink";
+import { MEMBERSHIP_STEPS } from "@/lib/membershipSteps";
 
 const input = { planName: "Teacher Pro", referenceCode: "KA-00000005", amountThb: 599 };
 
@@ -24,15 +24,23 @@ describe("LINE slip link", () => {
   });
 });
 
-describe("membership steps", () => {
-  it("has the four labels in order", () => {
-    expect(MEMBERSHIP_STEPS).toEqual(["กรอกใบสมัคร", "โอนเงิน", "ส่งสลิปทาง LINE", "รออนุมัติ"]);
+describe("LINE slip action (with / without an OA ID)", () => {
+  it("with a configured OA ID: the chat opens with the message typed in, nothing to copy first", () => {
+    const action = lineSlipAction("@abc1234d", input);
+    expect(action.copyFirst).toBe(false);
+    expect(action.href.startsWith("https://line.me/R/oaMessage/@abc1234d/?")).toBe(true);
+    expect(decodeURIComponent(action.href.split("/?")[1])).toBe("ส่งสลิปสมัคร Teacher Pro เลขอ้างอิง KA-00000005 ยอด 599 บาท");
   });
 
-  it("moves 1 → 2 → 4 → done without touching approval logic", () => {
-    expect(membershipStepNumber({ hasPendingApplication: false, lineSlipReceived: false, membershipActive: false })).toBe(1);
-    expect(membershipStepNumber({ hasPendingApplication: true, lineSlipReceived: false, membershipActive: false })).toBe(2);
-    expect(membershipStepNumber({ hasPendingApplication: true, lineSlipReceived: true, membershipActive: false })).toBe(4);
-    expect(membershipStepNumber({ hasPendingApplication: false, lineSlipReceived: false, membershipActive: true })).toBe(5);
+  it("without an OA ID (or a malformed one): plain LINE link, and the message must be copied first", () => {
+    for (const bad of [undefined, "", "abc", "https://evil.example/", "@x/../y"]) {
+      expect(lineSlipAction(bad, input)).toEqual({ href: LINE_OA_URL, copyFirst: true });
+    }
+  });
+});
+
+describe("membership step labels", () => {
+  it("has the four labels in order", () => {
+    expect(MEMBERSHIP_STEPS).toEqual(["เลือกแพ็ก", "โอนเงิน", "ส่งสลิป", "รออนุมัติ"]);
   });
 });
