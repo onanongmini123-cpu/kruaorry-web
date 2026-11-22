@@ -98,7 +98,7 @@ export function PromoBanners({ banners }: { banners: readonly PromoBanner[] }) {
       onTouchEnd={() => setHold(false)}
       onTouchCancel={() => setHold(false)}
     >
-      <h2 id={headingId} className="kru-visually-hidden">ประชาสัมพันธ์</h2>
+      <h2 id={headingId} className="kru-promo__sr">ประชาสัมพันธ์</h2>
       <div
         ref={trackRef}
         id={trackId}
@@ -178,6 +178,7 @@ export function PromoBanners({ banners }: { banners: readonly PromoBanner[] }) {
 
       <style>{`
         .kru-promo { width: min(100%, var(--container-max)); margin: 0 auto; padding: var(--sp-6) var(--sp-5) 0; }
+        .kru-promo__sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
         .kru-promo__track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; border-radius: var(--r-lg); overscroll-behavior-x: contain; }
         .kru-promo__track::-webkit-scrollbar { display: none; }
         .kru-promo__track:focus-visible { outline: 3px solid var(--purple-700, #7256a8); outline-offset: 3px; }

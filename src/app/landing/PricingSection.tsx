@@ -21,6 +21,8 @@ export interface PricingSectionProps {
   membershipUnavailable?: boolean;
   /** Where the free plan's button goes: sign-up for visitors, the member app for members. */
   freeAction?: { href: string; label: string };
+  /** Signed-in Pro members and admins do not need a sign-up button. */
+  hideFreeAction?: boolean;
   onRetry?: () => void;
   onCtaClick?: (cta: PricingCta) => void;
 }
@@ -63,7 +65,7 @@ function Cell({ cell, label }: { cell: ComparisonCell; label: string }) {
   );
 }
 
-export function PricingSection({ plans, loaded, founder, membershipUnavailable = false, freeAction, onRetry, onCtaClick }: PricingSectionProps) {
+export function PricingSection({ plans, loaded, founder, membershipUnavailable = false, freeAction, hideFreeAction = false, onRetry, onCtaClick }: PricingSectionProps) {
   const free = plans.find((plan) => plan.id === "free");
   const pro = plans.find((plan) => plan.id === "teacher");
   const founderPlan = plans.find((plan) => plan.id === "founder");
@@ -97,13 +99,15 @@ export function PricingSection({ plans, loaded, founder, membershipUnavailable =
                     <li key={text}><Check size={17} aria-hidden="true" /><span>{text}</span></li>
                   ))}
                 </ul>
-                <Link
-                  href={signup.href}
-                  className="kru-btn kru-btn--secondary kru-btn--block kru-pricing__cta"
-                  onClick={() => onCtaClick?.("free_signup")}
-                >
-                  {signup.label}
-                </Link>
+                {!hideFreeAction && (
+                  <Link
+                    href={signup.href}
+                    className="kru-btn kru-btn--secondary kru-btn--block kru-pricing__cta"
+                    onClick={() => onCtaClick?.("free_signup")}
+                  >
+                    {signup.label}
+                  </Link>
+                )}
               </article>
             )}
 

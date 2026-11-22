@@ -22,7 +22,8 @@ describe("homepage order and hero copy", () => {
       return index;
     };
     const order = [
-      "kru-discovery-hero\">",
+      "className={`kru-discovery-hero${",
+      "<MyHome ",
       "<PromoBanners",
       "<FeaturedResourceCarousel",
       "<HomepageRankings",

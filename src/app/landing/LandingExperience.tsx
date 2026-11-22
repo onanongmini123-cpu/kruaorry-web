@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -26,6 +26,9 @@ import {
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
 import { PromoBanners } from "@/app/landing/PromoBanners";
+import { MyHome, MyHomeSkeleton } from "@/app/landing/MyHome";
+import { useViewerSummary } from "@/app/landing/useViewerSummary";
+import { isNewSince, readSignedInHint, visitBaseline, writeSignedInHint } from "@/lib/myHome";
 import { HomepageVideosSection } from "@/app/landing/HomepageVideosSection";
 import { HomepageRankings } from "@/app/landing/HomepageRankings";
 import { buildRankingRows } from "@/lib/homepageRankings";
@@ -69,6 +72,9 @@ function toLandingResource(resource: Resource): LandingResource {
 
 const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
+/** useSyncExternalStore needs a subscribe function; the sign-in hint never changes while the page is open. */
+const subscribeNothing = () => () => undefined;
+
 const FOUNDER_REFRESH_INTERVAL_MS = 5 * 60_000;
 const FOUNDER_REFRESH_MIN_GAP_MS = 60_000;
 
@@ -89,7 +95,25 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
   const [hasSearched, setHasSearched] = useState(false);
   const [publicAuthState, setPublicAuthState] = useState(() => initialPublicAuthState(isSupabaseConfigured));
 
-  const discoverableResources = useMemo(() => resources.map(toLandingResource), [resources]);
+  const isMember = publicAuthState === "member";
+  const viewer = useViewerSummary(isMember);
+  // A returning member sees a placeholder (not a jump) while the sign-in check runs. Everyone
+  // else gets the normal cached page; the hint only exists on a browser that was signed in.
+  const signedInHint = useSyncExternalStore(subscribeNothing, readSignedInHint, () => false);
+  const showMySkeleton = !hasSearched && (publicAuthState === "checking" ? signedInHint : isMember && viewer.status === "loading");
+  const showMyHome = !hasSearched && isMember && viewer.status !== "loading" && viewer.status !== "idle";
+  const compactHero = isMember || (publicAuthState === "checking" && signedInHint);
+  // "New since your last visit": fixed for this tab, so a reload does not clear the badges.
+  const baseline = useMemo(() => (viewer.userId ? visitBaseline(viewer.userId) : null), [viewer.userId]);
+  const hideAccountCta = isMember && (viewer.kind === "pro" || viewer.kind === "admin");
+  const upgradeAction = isMember && viewer.kind === "free" ? { href: "/membership", label: "อัปเกรดเป็น Teacher Pro" } : null;
+
+  const discoverableResources = useMemo(
+    () => resources.map(toLandingResource).map((resource) => (
+      isMember && baseline !== null ? { ...resource, isNew: isNewSince(resource.publishedAt, baseline, resource.isNew) } : resource
+    )),
+    [resources, isMember, baseline],
+  );
   const freeSamples = useMemo(
     () => discoverableResources.filter((resource) => resource.accessMode === "public").slice(0, 3),
     [discoverableResources],
@@ -128,6 +152,11 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
     if (!isSupabaseConfigured) return;
     return observePublicAuthState(createClient().auth, setPublicAuthState);
   }, []);
+
+  useEffect(() => {
+    if (publicAuthState === "member") writeSignedInHint(true);
+    else if (publicAuthState === "guest") writeSignedInHint(false);
+  }, [publicAuthState]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -249,7 +278,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
       </header>
 
       <main style={{ flex: 1 }}>
-        <section className="kru-discovery-hero">
+        <section className={`kru-discovery-hero${compactHero ? " kru-discovery-hero--compact" : ""}`}>
           <div className="kru-discovery-hero__grid">
             <div className="kru-discovery-hero__content">
               <div className="kru-discovery-hero__eyebrow">
@@ -257,9 +286,11 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
                 <h1>วันนี้มีอะไรให้ครูอรรี่ช่วยคะ?</h1>
               </div>
               <p className="kru-discovery-hero__tagline">KruAorry.com ผู้ช่วยครูและผู้ปกครองในยุคดิจิทัล</p>
-              <p className="kru-discovery-hero__lead">
-                ค้นหาสื่อ เกม และเครื่องมือสำหรับใช้ในห้องเรียน มีทั้งแบบใช้ฟรีและสำหรับสมาชิก Teacher Pro
-              </p>
+              {!compactHero && (
+                <p className="kru-discovery-hero__lead">
+                  ค้นหาสื่อ เกม และเครื่องมือสำหรับใช้ในห้องเรียน มีทั้งแบบใช้ฟรีและสำหรับสมาชิก Teacher Pro
+                </p>
+              )}
 
               <form className="kru-discovery-search" role="search" onSubmit={handleDiscoverySubmit}>
                 <label className="kru-visually-hidden" htmlFor="landing-discovery-search">ค้นหาสื่อและเครื่องมือ</label>
@@ -278,29 +309,36 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
                 <Button size="lg" type="submit">ค้นหาสื่อและเกม</Button>
               </form>
 
-              <div className="kru-discovery-hero__secondary">
-                <Link href={resourceDiscoveryHref("/resources", { access: "free" })} className="kru-btn kru-btn--secondary">
-                  ลองใช้ฟรี
-                </Link>
-                {freeAccountAction ? (
-                  <Link href={freeAccountAction.href} onClick={() => handleSignupClick("home_hero")}>{freeAccountAction.label} <ArrowRight size={16} aria-hidden="true" /></Link>
-                ) : (
-                  <span className="kru-public-auth-placeholder kru-public-auth-placeholder--inline" aria-hidden="true" />
-                )}
-              </div>
+              {!compactHero && (
+                <>
+                  <div className="kru-discovery-hero__secondary">
+                    <Link href={resourceDiscoveryHref("/resources", { access: "free" })} className="kru-btn kru-btn--secondary">
+                      ลองใช้ฟรี
+                    </Link>
+                    {freeAccountAction ? (
+                      <Link href={freeAccountAction.href} onClick={() => handleSignupClick("home_hero")}>{freeAccountAction.label} <ArrowRight size={16} aria-hidden="true" /></Link>
+                    ) : (
+                      <span className="kru-public-auth-placeholder kru-public-auth-placeholder--inline" aria-hidden="true" />
+                    )}
+                  </div>
 
-              <ul className="kru-access-legend" aria-label="ความหมายของป้ายสิทธิ์">
-                {ACCESS_LEGEND.map((tier) => (
-                  <li key={tier}>
-                    <strong>{ACCESS_TIER_LABEL[tier]}</strong>
-                    <span>{ACCESS_TIER_DESCRIPTION[tier]}</span>
-                  </li>
-                ))}
-              </ul>
+                  <ul className="kru-access-legend" aria-label="ความหมายของป้ายสิทธิ์">
+                    {ACCESS_LEGEND.map((tier) => (
+                      <li key={tier}>
+                        <strong>{ACCESS_TIER_LABEL[tier]}</strong>
+                        <span>{ACCESS_TIER_DESCRIPTION[tier]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
 
           </div>
         </section>
+
+        {showMySkeleton && <MyHomeSkeleton />}
+        {showMyHome && <MyHome summary={viewer} resources={discoverableResources} baseline={baseline} />}
 
         {!hasSearched && (
           <>
@@ -356,7 +394,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
         )}
 
         <HomepageRankings
-          rows={buildRankingRows(initial.rankings, resources)}
+          rows={buildRankingRows(initial.rankings, discoverableResources)}
           heartCounts={initial.rankings?.heartCounts ?? {}}
         />
 
@@ -373,7 +411,11 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
               <Link href="/resources?access=free" className="kru-btn kru-btn--primary kru-btn--lg">
                 ดูสื่อฟรีทั้งหมด <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              {freeAccountAction ? (
+              {hideAccountCta ? null : upgradeAction ? (
+                <Link href={upgradeAction.href} className="kru-btn kru-btn--secondary">
+                  {upgradeAction.label}
+                </Link>
+              ) : freeAccountAction ? (
                 <Link href={freeAccountAction.href} className="kru-btn kru-btn--secondary" onClick={() => handleSignupClick("home_free_showcase")}>
                   {freeAccountAction.label}
                 </Link>
@@ -440,6 +482,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           freeAction={freeAccountAction
             ? { href: freeAccountAction.href, label: publicAuthState === "member" ? freeAccountAction.label : "สมัครฟรี" }
             : undefined}
+          hideFreeAction={hideAccountCta}
           onRetry={() => { setPlansLoaded(false); setLoadAttempt((attempt) => attempt + 1); }}
           onCtaClick={handlePricingClick}
         />
@@ -525,6 +568,31 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
 
         .kru-discovery-hero__content {
           width: min(100%, 860px);
+        }
+
+        /* Signed-in members: a short hero so "ส่วนของฉัน" is visible without scrolling. */
+        .kru-discovery-hero--compact .kru-discovery-hero__grid {
+          padding-top: clamp(20px, 3vw, 32px);
+          padding-bottom: clamp(20px, 3vw, 32px);
+        }
+
+        .kru-discovery-hero--compact .kru-discovery-hero__eyebrow :global(svg),
+        .kru-discovery-hero--compact .kru-discovery-hero__eyebrow :global(img) {
+          width: 40px;
+          height: 40px;
+        }
+
+        .kru-discovery-hero--compact h1 {
+          font-size: clamp(1.5rem, 5vw, 2.25rem);
+        }
+
+        .kru-discovery-hero--compact .kru-discovery-hero__tagline {
+          margin-top: var(--sp-2);
+          font-size: var(--fs-14);
+        }
+
+        .kru-discovery-hero--compact .kru-discovery-search {
+          margin-top: var(--sp-4);
         }
 
         .kru-discovery-hero__eyebrow {
