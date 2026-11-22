@@ -192,7 +192,7 @@ export function PromoBanners({ banners }: { banners: readonly PromoBanner[] }) {
         .kru-promo__dots button { width: var(--tap-min, 44px); height: var(--tap-min, 44px); padding: 0; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
         .kru-promo__dots button::after { content: ""; width: 10px; height: 10px; border-radius: var(--r-pill); background: var(--purple-200); transition: width var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard); }
         .kru-promo__dots button[aria-current="true"]::after { width: 26px; background: var(--purple-600); }
-        @media (min-width: 720px) { .kru-promo[data-tall="true"] .kru-promo__link { aspect-ratio: 16 / 9; } }
+        @media (min-width: 720px) { .kru-promo[data-tall="true"] .kru-promo__link { aspect-ratio: 16 / 9; } .kru-promo__link { max-height: 520px; } }
         @media (max-width: 560px) { .kru-promo { padding-inline: var(--sp-4); } .kru-promo__controls .kru-promo__arrow { width: 40px; height: 40px; } }
         @media (prefers-reduced-motion: reduce) { .kru-promo__dots button::after { transition: none; } }
       `}</style>
