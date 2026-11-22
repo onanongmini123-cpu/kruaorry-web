@@ -25,6 +25,7 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
+import { FreeSamplesRow, pickFreeSamples } from "@/app/landing/FreeSamplesRow";
 import { PromoBanners } from "@/app/landing/PromoBanners";
 import { MyHome, MyHomeSkeleton } from "@/app/landing/MyHome";
 import { useViewerSummary } from "@/app/landing/useViewerSummary";
@@ -115,7 +116,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
     [resources, isMember, baseline],
   );
   const freeSamples = useMemo(
-    () => discoverableResources.filter((resource) => resource.accessMode === "public").slice(0, 3),
+    () => pickFreeSamples(discoverableResources),
     [discoverableResources],
   );
   const discoveryMatches = useMemo(
@@ -398,8 +399,6 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           heartCounts={initial.rankings?.heartCounts ?? {}}
         />
 
-        <HomepageVideosSection videos={initial.videos} />
-
         <section className="kru-free-showcase">
           <div className="kru-free-showcase__heading">
             <div>
@@ -434,23 +433,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
               </div>
             </div>
           ) : freeSamples.length > 0 ? (
-            <div className="kru-sample-grid">
-              {freeSamples.map((sample) => (
-                <ResourceCard
-                  key={sample.id}
-                  title={sample.title}
-                  description={sample.description}
-                  meta={sample.meta}
-                  category={sample.category}
-                  deliveryMode={sample.affordance}
-                  gradeLevels={sample.gradeLevels}
-                  accessTier={accessTier(sample.accessMode)}
-                  coverImageUrl={sample.coverImageUrl}
-                  isNew={sample.isNew}
-                  href={resourceHref(sample)}
-                />
-              ))}
-            </div>
+            <FreeSamplesRow samples={freeSamples} />
           ) : (
             <div role="status" className="kru-free-showcase__state">
               <span className="kru-free-showcase__state-icon"><Gift size={24} aria-hidden="true" /></span>
@@ -461,6 +444,8 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             </div>
           )}
         </section>
+
+        <HomepageVideosSection videos={initial.videos} />
 
         <nav className="kru-entry-cards" aria-label="เริ่มต้นจากสิ่งที่ต้องการ">
           {ENTRY_CARDS.map((card) => (
@@ -831,31 +816,6 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           border-radius: var(--r-lg);
           background: var(--green-50);
           color: var(--status-success-fg);
-        }
-
-        .kru-sample-grid {
-          margin-top: var(--sp-7);
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
-          gap: var(--gap-grid);
-          align-items: stretch;
-        }
-
-        /* Phone: one swipeable row, like the ranking rows, instead of a very long stack. */
-        @media (max-width: 719px) {
-          .kru-sample-grid {
-            display: flex;
-            overflow-x: auto;
-            scroll-snap-type: x proximity;
-            -webkit-overflow-scrolling: touch;
-            padding-bottom: var(--sp-3);
-          }
-
-          .kru-sample-grid > :global(*) {
-            flex: 0 0 min(260px, 78vw);
-            min-width: 0;
-            scroll-snap-align: start;
-          }
         }
 
         .kru-access-legend {

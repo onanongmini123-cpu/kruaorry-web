@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HomepageVideosSection } from "./HomepageVideosSection";
+import { FreeSamplesRow, pickFreeSamples } from "./FreeSamplesRow";
 
 const source = readFileSync(path.join(process.cwd(), "src/app/landing/LandingExperience.tsx"), "utf8");
 
@@ -27,8 +28,8 @@ describe("homepage order and hero copy", () => {
       "<PromoBanners",
       "<FeaturedResourceCarousel",
       "<HomepageRankings",
-      "<HomepageVideosSection",
       "kru-free-showcase\">",
+      "<HomepageVideosSection",
       "<nav className=\"kru-entry-cards\"",
       "<PricingSection",
     ].map(at);
@@ -56,9 +57,43 @@ describe("HomepageVideosSection", () => {
   });
 });
 
-describe("free samples on phones", () => {
-  it("turn into one swipeable row below 720px and stay a grid above", () => {
-    expect(source).toMatch(/@media \(max-width: 719px\) \{\s*\.kru-sample-grid \{\s*display: flex;\s*overflow-x: auto;/);
-    expect(source).toContain("repeat(auto-fill, minmax(min(100%, 260px), 1fr))");
+describe("free media row", () => {
+  const item = (id: string, publishedAt: string | null, accessMode = "public") => ({ id, accessMode, publishedAt });
+  const render = (n: number) => renderToStaticMarkup(React.createElement(FreeSamplesRow, {
+    samples: Array.from({ length: n }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, slug: `r-${i + 1}`, title: `ฟรี ${i + 1}`, meta: "", description: "d", category: null, affordance: "web_app", coverImageUrl: null,
+      tags: [], gradeLevels: [], accessMode: "public", requiredPlanIds: [], requiredPlanNames: [], free: true, isNew: false, fileSize: null, featuredRank: null, reviewAverage: null, reviewCount: 0,
+    })) as never,
+  }));
+
+  it("picks only free resources, newest first, dated ones before undated, capped", () => {
+    const picked = pickFreeSamples([item("old", "2026-01-01"), item("pro", "2026-12-01", "plans"), item("none", null), item("new", "2026-11-01"), item("mid", "2026-06-01")]);
+    expect(picked.map((r) => r.id)).toEqual(["new", "mid", "old", "none"]);
+    expect(pickFreeSamples(Array.from({ length: 30 }, (_, i) => item(`r${i}`, `2026-01-${String((i % 28) + 1).padStart(2, "0")}`)))).toHaveLength(12);
+  });
+  it("shows the heading 'สื่อฟรี ใช้ได้ทันที' and one card per item", () => {
+    const html = render(4);
+    expect(html).toContain("สื่อฟรี ใช้ได้ทันที");
+    expect(html.match(/<article/g)).toHaveLength(4);
+    expect(html).not.toContain("kru-free-row__arrows\" aria-label");
+  });
+  it("more than four: arrow buttons and a scrolling track; fewer: centred, no arrows", () => {
+    const many = render(7);
+    expect(many.match(/<article/g)).toHaveLength(7);
+    expect(many).toContain("ดูสื่อฟรีถัดไป");
+    const few = render(2);
+    expect(few).toContain('data-count="2"');
+    expect(few).not.toContain("ดูสื่อฟรีถัดไป");
+    expect(few).toContain("justify-content: center");
+  });
+  it("four fill the row exactly on desktop; the track swipes on phones", () => {
+    const css = render(4);
+    expect(css).toContain("calc((100% - 3 * var(--sp-4)) / 4)");
+    expect(css).toContain("overflow-x: auto");
+    expect(css).toContain("scroll-snap-type: x proximity");
+  });
+  it("order: free media comes before the videos, and the 'see all' button stays", () => {
+    expect(source.indexOf("<FreeSamplesRow")).toBeLessThan(source.indexOf("<HomepageVideosSection"));
+    expect(source).toContain("ดูสื่อฟรีทั้งหมด");
   });
 });
