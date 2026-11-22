@@ -1,19 +1,21 @@
--- READ-ONLY verification for migration 060. Every row must return ok = true.
+-- READ-ONLY verification for migration 060. After applying 060 every row must return ok = true.
+-- After a ROLLBACK of 060 every row returns ok = false (it never raises an error), which is the
+-- expected proof that the objects are gone.
 select check_name, ok, detail
 from (
   select 1 as sort, 'resource_view_daily exists with RLS on and no browser privilege' as check_name,
     coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('public.resource_view_daily')), false)
-    and not pg_catalog.has_table_privilege('anon', 'public.resource_view_daily', 'select')
-    and not pg_catalog.has_table_privilege('anon', 'public.resource_view_daily', 'insert')
-    and not pg_catalog.has_table_privilege('authenticated', 'public.resource_view_daily', 'select')
-    and not pg_catalog.has_table_privilege('authenticated', 'public.resource_view_daily', 'insert') as ok,
+    and not coalesce(pg_catalog.has_table_privilege('anon', pg_catalog.to_regclass('public.resource_view_daily'), 'select'), false)
+    and not coalesce(pg_catalog.has_table_privilege('anon', pg_catalog.to_regclass('public.resource_view_daily'), 'insert'), false)
+    and not coalesce(pg_catalog.has_table_privilege('authenticated', pg_catalog.to_regclass('public.resource_view_daily'), 'select'), false)
+    and not coalesce(pg_catalog.has_table_privilege('authenticated', pg_catalog.to_regclass('public.resource_view_daily'), 'insert'), false) as ok,
     'table' as detail
 
   union all
   select 2, 'view table has only resource_id, viewer_key, view_date (no user id, IP or user agent)',
-    (select array_agg(a.attname order by a.attnum) = array['resource_id', 'viewer_key', 'view_date']::name[]
+    coalesce((select array_agg(a.attname order by a.attnum) = array['resource_id', 'viewer_key', 'view_date']::name[]
      from pg_catalog.pg_attribute a
-     where a.attrelid = pg_catalog.to_regclass('public.resource_view_daily') and a.attnum > 0 and not a.attisdropped),
+     where a.attrelid = pg_catalog.to_regclass('public.resource_view_daily') and a.attnum > 0 and not a.attisdropped), false),
     'columns'
 
   union all
@@ -31,9 +33,19 @@ from (
 
   union all
   select 4, 'ranking answer has hearts, popular, newest and heart_counts and never an id of a person',
-    (select (r ?& array['hearts', 'popular', 'newest', 'heart_counts'])
-       and not (r::text ~ '"(user_id|email|full_name|viewer_key)"')
-     from (select public.get_homepage_rankings(10) as r) x),
+    -- After a rollback the function is gone: report false instead of failing with
+    -- "function does not exist". The CASE keeps the call from being evaluated then.
+    case
+      when pg_catalog.to_regprocedure('public.get_homepage_rankings(integer)') is null then false
+      else coalesce((
+        select (r ?& array['hearts', 'popular', 'newest', 'heart_counts'])
+           and not (r::text ~ '"(user_id|email|full_name|viewer_key)"')
+        from (
+          select (xpath('/row/r/text()',
+                   pg_catalog.query_to_xml('select public.get_homepage_rankings(10)::text as r', false, true, '')))[1]::text::jsonb as r
+        ) x
+      ), false)
+    end,
     'shape'
 ) checks
 order by sort;
