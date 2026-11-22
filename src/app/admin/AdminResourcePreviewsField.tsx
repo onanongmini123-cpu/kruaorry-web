@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Button } from "@/components/ui";
 import { groupPreviewRows, MAX_RESOURCE_PREVIEWS } from "@/lib/resourcePreviews";
 import { watermarkImageFile } from "@/lib/previewWatermark";
+import { COVER_CACHE_CONTROL } from "@/lib/coverCompression";
 
 const BUCKET = "resource-covers";
 
@@ -80,7 +81,7 @@ export function AdminResourcePreviewsField({ supabase, resourceId }: { supabase:
         const blob = await watermarkImageFile(file);
         const extension = blob.type === "image/webp" ? "webp" : "jpg";
         const path = `previews/${resourceId}/${crypto.randomUUID()}.${extension}`;
-        const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: false, contentType: blob.type });
+        const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: false, contentType: blob.type, cacheControl: COVER_CACHE_CONTROL });
         if (error) throw new Error(error.message);
         added.push(supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
       }

@@ -17,17 +17,34 @@
   โหลดรูปเดิม → ย่อเป็น WebP ≤800px q0.8 → อัปโหลดไป `v2/<uuid>.webp` (แคช 1 ปี) → เปลี่ยนลิงก์ปกของสื่อนั้น → ล้างแคชหน้าเว็บตอนจบ
 - รูปที่พลาดจะถูกข้าม ทำรูปถัดไปต่อ และสรุปท้ายงาน ไฟล์ใหม่ที่ไม่เล็กลงอย่างน้อย 10% จะไม่ถูกใช้
 - **ไม่ลบไฟล์เดิม**
-- การเปลี่ยนลิงก์ใช้ฟังก์ชัน `admin_save_resource` เดิม (ส่งค่าเดิมทุกช่อง เปลี่ยนเฉพาะปก) แล้วอ่านกลับมาเทียบ ถ้ามีช่องอื่นเปลี่ยนไป ระบบคืนค่าเดิมทันทีและนับว่าพลาด
+- การเปลี่ยนลิงก์ใช้ฟังก์ชันใหม่ `admin_set_resource_cover(resource_id, cover_url)` (migration **063**) ที่แก้ **เฉพาะ `cover_image_url`** ของสื่อชิ้นนั้น
+  ไม่แตะ status, published_at, slug, สิทธิ์/แพ็ก, ลำดับ หรือช่องอื่น และไม่ได้เขียนสิทธิ์ซ้ำเหมือน `admin_save_resource`
+  ผลกระทบข้างเคียง: ตาราง `resources` ไม่มีคอลัมน์ `updated_at` และไม่มี trigger (ตรวจจาก migration ทั้งหมดและอ่านจาก staging) จึงไม่มีอะไรถูกอัปเดตตามมา
+- ฟังก์ชันตรวจ: ผู้เรียกเป็นแอดมิน/เจ้าของ → สื่อมีอยู่ → URL เป็น `https://…/storage/v1/object/public/resource-covers/<path>` (path ใช้ได้เฉพาะ ตัวอักษร ตัวเลข . _ - /) → **มีไฟล์ชื่อนั้นอยู่จริงใน bucket resource-covers ของโปรเจกต์นี้** (นี่คือสิ่งที่ผูกลิงก์กับโปรเจกต์นี้ โดยไม่เดาโดเมน)
+- ก่อนเริ่ม (และก่อนย้อนกลับ) เครื่องมือเช็กว่า 063 ติดตั้งแล้ว ถ้ายังไม่ติดตั้ง จะหยุดทันทีโดยยังไม่ดาวน์โหลด/อัปโหลด/เปลี่ยนอะไร
 - "ย้อนกลับ": คืนลิงก์เดิมของรอบนี้ หรือเลือกไฟล์ CSV สำรอง (รับเฉพาะลิงก์ของ bucket นี้) คืนเฉพาะสื่อที่ปกตอนนี้อยู่ใน `v2/`
 
+## Migration 063 (ลงโดย Codex/ครู ผมไม่ได้ลง)
+ไฟล์: `supabase/migrations/20261014090000_063_admin_set_resource_cover.sql` · rollback: `supabase/rollbacks/20261014090000_063_admin_set_resource_cover.rollback.sql` · ตรวจ: `supabase/verification/063-verify.sql` (4 แถว ต้อง `ok = true`) · ทดสอบ PGlite: `npm run test:admin-set-resource-cover-sql`
+```bash
+supabase migration list            # 063 ต้องมีเฉพาะฝั่ง Local
+supabase db push --dry-run         # ต้องเห็นเฉพาะ 063
+```
+ย้อนกลับ: รันไฟล์ rollback แล้ว `supabase migration repair --status reverted 20261014090000` (ลบแค่ฟังก์ชัน ลิงก์ปกที่เปลี่ยนแล้วยังอยู่ ใช้ปุ่ม "ย้อนกลับ" ของเครื่องมือก่อนถ้าต้องการลิงก์เดิม)
+
+### เลข migration (จองไว้)
+- 058–060: อยู่ใน main แล้ว (PR #48)
+- 061 (แบนเนอร์) และ 062 (วิดีโอ 4 ช่อง): อยู่ใน branch `feat/homepage-redesign`
+- **063: ฟังก์ชันนี้**
+- ระบบบัญชี (`claude/wonderful-planck-dixufx`) ถ้าจะใช้ ต้องเปลี่ยนเลขเป็น **064 และ 065** (timestamp ใหม่หลัง `20261014090000`) พร้อมไฟล์ rollback และ verify
+
 ## ลำดับทดสอบและใช้งาน (ครูกดเอง)
+0. ให้ Codex ลง migration 063 บน staging ก่อน แล้วรัน `063-verify.sql`
 1. Deploy branch นี้เป็น Preview ที่ชี้ staging (`bqgzmlujxtucojforjff`) ล็อกอินแอดมิน (staging มีสื่อทดสอบ [TEST] และ bucket ใช้ได้)
 2. กด "ตรวจรายการ" → "เริ่มบีบอัด" ตรวจว่าปกขึ้นปกติบนหน้าสื่อ แล้วลอง "ย้อนกลับรอบนี้"
 3. เมื่อพอใจ ทำซ้ำบนเว็บจริง ครั้งแรกเริ่มจากรายการเล็กๆ ได้โดยหยุดกลางคัน (ปุ่ม "หยุดหลังรูปนี้")
 4. หลังตรวจหน้าเว็บจริงแล้ว ไฟล์เดิมที่ไม่มีสื่อใดใช้ค่อยลบทีหลังด้วยตัวเอง (ยังไม่มีเครื่องมือลบ)
 
-## ที่ต้องทำต่อ (อยู่คนละ branch)
-ภาพตัวอย่าง (059) และแบนเนอร์ (หน้าแรก batch 2) ยังไม่อยู่ใน main ต้องเพิ่ม `cacheControl: "31536000"` ที่การอัปโหลดของสองจุดนี้เมื่อ branch ถูกรวม:
-- `src/app/admin/AdminResourcePreviewsField.tsx` (`supabase.storage.from(BUCKET).upload(path, blob, {...})`)
-- `src/app/admin/AdminPromoBannersPanel.tsx` (อัปโหลดแบนเนอร์)
-ค่าคงที่ `COVER_CACHE_CONTROL` อยู่ที่ `src/lib/coverCompression.ts`
+## cacheControl ของภาพตัวอย่างและแบนเนอร์
+- ภาพตัวอย่าง (`AdminResourcePreviewsField.tsx`): เพิ่ม cacheControl 1 ปีใน branch นี้แล้ว
+- แบนเนอร์ (`AdminPromoBannersPanel.tsx`): เพิ่มแล้วใน branch `feat/homepage-redesign` (อีก PR)

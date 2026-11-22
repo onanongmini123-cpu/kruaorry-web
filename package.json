@@ -23,7 +23,8 @@
     "test:admin-plan-resources-sql": "node scripts/test-admin-plan-resources-sql.mjs",
     "test:youtube-video-sql": "node scripts/test-youtube-video-sql.mjs",
     "test:resource-previews-sql": "node scripts/test-resource-previews-sql.mjs",
-    "test:homepage-rankings-sql": "node scripts/test-homepage-rankings-sql.mjs"
+    "test:homepage-rankings-sql": "node scripts/test-homepage-rankings-sql.mjs",
+    "test:admin-set-resource-cover-sql": "node scripts/test-admin-set-resource-cover-sql.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

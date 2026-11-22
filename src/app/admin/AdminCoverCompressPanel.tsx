@@ -5,57 +5,45 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Button } from "@/components/ui";
 import { compressToWebp } from "@/lib/imageWebp";
 import { refreshPublicPages } from "@/lib/refreshPublicPages";
-import { loadResourceTarget } from "@/lib/resourceTarget";
 import {
   COVER_BUCKET, COVER_CACHE_CONTROL, COVER_COMPRESS_MAX_WIDTH, COVER_COMPRESS_QUALITY, backupCsv, coverFileName, coverObjectPath,
-  formatKb, isCompressedCoverUrl, newCompressedPath, parseBackupCsv, planCompression, sameExceptCover, saveParamsWithCover, totals,
-  type CompressionCandidate, type CoverRow, type ResourceSnapshot,
+  formatKb, isCompressedCoverUrl, newCompressedPath, parseBackupCsv, planCompression, totals,
+  type CompressionCandidate, type CoverRow,
 } from "@/lib/coverCompression";
 
 type Outcome = { id: string; title: string; status: "done" | "skipped" | "failed"; note: string; oldUrl?: string; newUrl?: string; saved?: number };
 
-const COLUMNS = "title, meta, description, category, grade_levels, delivery_mode, cover_image_url, access_mode, file_size, file_mime_type";
-
-async function readSnapshot(supabase: SupabaseClient, id: string): Promise<ResourceSnapshot | null> {
-  const [row, target, plans] = await Promise.all([
-    supabase.from("resources").select(COLUMNS).eq("id", id).single(),
-    loadResourceTarget(supabase, id),
-    supabase.from("resource_plan_access").select("plan_id").eq("resource_id", id),
-  ]);
-  if (row.error || !row.data || !target.target || plans.error) return null;
-  const data = row.data as unknown as Record<string, unknown>;
-  return {
-    title: String(data.title ?? ""),
-    meta: (data.meta as string | null) ?? null,
-    description: (data.description as string | null) ?? null,
-    category: (data.category as string | null) ?? null,
-    grade_levels: Array.isArray(data.grade_levels) ? (data.grade_levels as string[]) : [],
-    delivery_mode: String(data.delivery_mode ?? ""),
-    cta_url: target.target.cta_url,
-    cover_image_url: (data.cover_image_url as string | null) ?? null,
-    file_path: target.target.file_path,
-    file_name: target.target.file_name,
-    file_size: typeof data.file_size === "number" ? data.file_size : null,
-    file_mime_type: (data.file_mime_type as string | null) ?? null,
-    access_mode: String(data.access_mode ?? ""),
-    plan_ids: (plans.data ?? []).map((p) => String((p as { plan_id: unknown }).plan_id)),
-  };
-}
+/** What the install check learned about migration 063 (the cover-only save function). */
+export type ToolReadiness = "ready" | "missing" | "not_admin" | "unknown";
 
 /**
- * Changes ONLY a resource's cover. It reads the resource, saves it again with the
- * same values and the new cover, reads it back, and if anything else differs it
- * puts the first copy back and reports a failure.
+ * Calls admin_set_resource_cover with an id that does not exist. A "resource not
+ * found" answer proves the function is installed and the caller is an admin; no
+ * data is read or written.
  */
+export async function checkToolReadiness(supabase: SupabaseClient): Promise<ToolReadiness> {
+  const { error } = await supabase.rpc("admin_set_resource_cover", { p_resource_id: crypto.randomUUID(), p_cover_url: "https://example.invalid/" });
+  if (!error) return "unknown";
+  const text = `${error.code ?? ""} ${error.message ?? ""}`;
+  if (error.code === "P0002" || /resource not found/i.test(text)) return "ready";
+  if (error.code === "42501" || /admin access required/i.test(text)) return "not_admin";
+  if (error.code === "PGRST202" || error.code === "42883" || /could not find the function|does not exist/i.test(text)) return "missing";
+  return "unknown";
+}
+
+/** Changes ONLY a resource's cover link, through admin_set_resource_cover (migration 063). */
 export async function setCover(supabase: SupabaseClient, id: string, coverUrl: string): Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }> {
-  const before = await readSnapshot(supabase, id);
-  if (!before) return { ok: false, reason: "อ่านข้อมูลสื่อไม่สำเร็จ" };
-  const saved = await supabase.rpc("admin_save_resource", saveParamsWithCover(id, before, coverUrl));
+  const current = await supabase.from("resources").select("cover_image_url").eq("id", id).single();
+  if (current.error || !current.data) return { ok: false, reason: "อ่านข้อมูลสื่อไม่สำเร็จ" };
+  const saved = await supabase.rpc("admin_set_resource_cover", { p_resource_id: id, p_cover_url: coverUrl });
   if (saved.error) return { ok: false, reason: `บันทึกไม่สำเร็จ: ${saved.error.message}` };
-  const after = await readSnapshot(supabase, id);
-  if (after && after.cover_image_url === coverUrl && sameExceptCover(before, after)) return { ok: true, previous: before.cover_image_url };
-  await supabase.rpc("admin_save_resource", saveParamsWithCover(id, before, before.cover_image_url ?? ""));
-  return { ok: false, reason: "ตรวจพบว่าข้อมูลอื่นของสื่อเปลี่ยนไป จึงย้อนคืนค่าเดิมแล้ว" };
+  return { ok: true, previous: ((current.data as { cover_image_url?: string | null }).cover_image_url) ?? null };
+}
+
+function readinessMessage(readiness: ToolReadiness): string {
+  if (readiness === "missing") return "ยังใช้เครื่องมือนี้ไม่ได้ เพราะฐานข้อมูลยังไม่ได้ติดตั้ง migration 063 (ฟังก์ชัน admin_set_resource_cover) ยังไม่มีอะไรถูกอัปโหลดหรือเปลี่ยน";
+  if (readiness === "not_admin") return "บัญชีนี้ไม่ใช่แอดมินหรือเจ้าของ ใช้เครื่องมือนี้ไม่ได้";
+  return "ตรวจสอบความพร้อมของเครื่องมือไม่สำเร็จ ยังไม่มีอะไรถูกอัปโหลดหรือเปลี่ยน ลองใหม่อีกครั้ง";
 }
 
 function downloadText(name: string, content: string) {
@@ -109,6 +97,12 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
 
   const start = async () => {
     if (!candidates || candidates.length === 0) return;
+    // 0. Refuse to begin unless the cover-only save function is installed.
+    const readiness = await checkToolReadiness(supabase);
+    if (readiness !== "ready") {
+      setMessage({ tone: "error", text: readinessMessage(readiness) });
+      return;
+    }
     // 1. The backup file comes first, before anything is uploaded or changed.
     downloadText(`cover-backup-${new Date().toISOString().slice(0, 10)}.csv`, backupCsv(candidates.map((c) => ({ id: c.id, title: c.title, url: c.url }))));
     setRunning(true);
@@ -158,6 +152,11 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
 
   const rollback = async (rows: { id: string; url: string }[]) => {
     if (rows.length === 0) return;
+    const readiness = await checkToolReadiness(supabase);
+    if (readiness !== "ready") {
+      setMessage({ tone: "error", text: readinessMessage(readiness) });
+      return;
+    }
     setRunning(true);
     setMessage(null);
     const results: Outcome[] = [];
@@ -165,12 +164,13 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
       const row = rows[index];
       setProgress({ index: index + 1, total: rows.length, title: row.id });
       try {
-        const current = await readSnapshot(supabase, row.id);
-        if (!current) results.push({ id: row.id, title: row.id, status: "failed", note: "อ่านข้อมูลสื่อไม่สำเร็จ" });
-        else if (!isCompressedCoverUrl(current.cover_image_url)) results.push({ id: row.id, title: current.title, status: "skipped", note: "ปกไม่ได้ถูกบีบอัดโดยเครื่องมือนี้ ไม่แตะ" });
+        const current = await supabase.from("resources").select("title, cover_image_url").eq("id", row.id).single();
+        const data = current.data as { title?: string; cover_image_url?: string | null } | null;
+        if (current.error || !data) results.push({ id: row.id, title: row.id, status: "failed", note: "อ่านข้อมูลสื่อไม่สำเร็จ" });
+        else if (!isCompressedCoverUrl(data.cover_image_url)) results.push({ id: row.id, title: data.title ?? row.id, status: "skipped", note: "ปกไม่ได้ถูกบีบอัดโดยเครื่องมือนี้ ไม่แตะ" });
         else {
           const changed = await setCover(supabase, row.id, row.url);
-          results.push({ id: row.id, title: current.title, status: changed.ok ? "done" : "failed", note: changed.ok ? "คืนลิงก์เดิมแล้ว" : changed.reason });
+          results.push({ id: row.id, title: data.title ?? row.id, status: changed.ok ? "done" : "failed", note: changed.ok ? "คืนลิงก์เดิมแล้ว" : changed.reason });
         }
       } catch (thrown) {
         results.push({ id: row.id, title: row.id, status: "failed", note: thrown instanceof Error ? thrown.message : String(thrown) });
@@ -204,7 +204,7 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
         <h2 id="admin-cover-compress-title" style={{ fontSize: "var(--fs-20)" }}>บีบอัดรูปปกเดิม</h2>
         <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
           ลดโควตา Supabase โดยย่อรูปปกที่ใหญ่เกิน 150 KB เป็น WebP กว้างไม่เกิน {COVER_COMPRESS_MAX_WIDTH}px ไฟล์ใหม่อยู่ในโฟลเดอร์ v2/ (แคช 1 ปี) ไฟล์เดิมไม่ถูกลบ ·
-          ก่อนเริ่มระบบดาวน์โหลดไฟล์สำรอง (CSV) ให้อัตโนมัติ · ใช้สิทธิ์แอดมินที่ล็อกอินอยู่ ไม่ใช้กุญแจลับ · ใช้ทีละเครื่อง อย่าปิดหน้านี้ระหว่างทำ
+          ก่อนเริ่มระบบดาวน์โหลดไฟล์สำรอง (CSV) ให้อัตโนมัติ · ใช้สิทธิ์แอดมินที่ล็อกอินอยู่ ไม่ใช้กุญแจลับ · เปลี่ยนเฉพาะลิงก์ปก ไม่แตะสถานะ วันเผยแพร่ หรือสิทธิ์ · ใช้ทีละเครื่อง อย่าปิดหน้านี้ระหว่างทำ
         </p>
       </div>
 

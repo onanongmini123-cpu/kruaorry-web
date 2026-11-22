@@ -11,7 +11,15 @@ through `057` are all recorded as applied on the live project, including
 state when they were written and are kept as history. Migrations `058`
 (YouTube videos), `059` (resource previews) and `060` (homepage rankings) are
 NOT applied; each is additive and ships with a rollback and a read-only
-verification file. Always re-run `supabase migration list` and
+verification file.
+
+**Migration numbers in use:** `063` (`admin_set_resource_cover`, written and tested
+on PGlite, NOT applied; used by the admin tool "บีบอัดรูปปกเดิม") is on branch
+`perf/compress-covers`. `061` (promo banners) and `062` (four homepage videos) are
+on branch `feat/homepage-redesign`. The accounts branch
+(`claude/wonderful-planck-dixufx`) must renumber its migrations to **`064` and
+`065`** (timestamps after `20261014090000`) before it is used, with matching
+rollback and verification files. Always re-run `supabase migration list` and
 `supabase db push --dry-run` before applying anything; do not infer remote
 state from this note.
 

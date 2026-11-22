@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { AdminCoverCompressPanel, setCover } from "@/app/admin/AdminCoverCompressPanel";
+import { AdminCoverCompressPanel, checkToolReadiness, setCover } from "@/app/admin/AdminCoverCompressPanel";
 import {
   backupCsv, COMPRESS_THRESHOLD_BYTES, COVER_CACHE_CONTROL, coverObjectPath, estimateAfterBytes, isCompressedCoverUrl, newCompressedPath,
-  parseBackupCsv, planCompression, sameExceptCover, saveParamsWithCover, totals, type ResourceSnapshot,
+  parseBackupCsv, planCompression, totals,
 } from "@/lib/coverCompression";
 
 const BASE = "https://abc.supabase.co/storage/v1/object/public/resource-covers/";
@@ -63,68 +63,48 @@ describe("backup file", () => {
   });
 });
 
-const snapshot = (over: Partial<ResourceSnapshot> = {}): ResourceSnapshot => ({
-  title: "สื่อ", meta: "m", description: null, category: null, grade_levels: ["p1", "p2"], delivery_mode: "web_app", cta_url: "https://x.example/play",
-  cover_image_url: `${BASE}old.png`, file_path: null, file_name: null, file_size: null, file_mime_type: null, access_mode: "plans", plan_ids: ["teacher", "founder"], ...over,
-});
+// A tiny fake of the database client: one resource, the cover function and the read the tool makes.
+function fakeClient(opts: { rpcError?: { code?: string; message: string } } = {}) {
+  const state = { cover_image_url: `${BASE}old.png`, title: "สื่อ" };
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
+  const client = {
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { ...state }, error: null }) }) }) }),
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args });
+      if (opts.rpcError) return { error: opts.rpcError };
+      if (name === "admin_set_resource_cover") state.cover_image_url = String(args.p_cover_url);
+      return { error: null };
+    },
+  };
+  return { client: client as unknown as SupabaseClient, calls, state };
+}
 
-describe("saving only the cover", () => {
-  it("sends exactly what the resource form sends, with only the cover replaced", () => {
-    const params = saveParamsWithCover(ID, snapshot(), `${BASE}v2/n.webp`);
-    expect(params).toMatchObject({ p_resource_id: ID, p_create: false, p_title: "สื่อ", p_cta_url: "https://x.example/play", p_cover_image_url: `${BASE}v2/n.webp`, p_access_mode: "plans", p_plan_ids: ["teacher", "founder"] });
-    expect(saveParamsWithCover(ID, snapshot({ access_mode: "public" }), "x").p_plan_ids).toEqual([]);
-    expect("p_slug" in params).toBe(false);
-  });
-  it("sameExceptCover ignores the cover, blank-vs-null and order, but nothing else", () => {
-    expect(sameExceptCover(snapshot(), snapshot({ cover_image_url: "z", description: "", plan_ids: ["founder", "teacher"], title: " สื่อ " }))).toBe(true);
-    for (const patch of [{ title: "อื่น" }, { cta_url: "https://x.example/other" }, { access_mode: "public" }, { plan_ids: ["teacher"] }, { grade_levels: ["p1"] }, { file_size: 5 }]) {
-      expect(sameExceptCover(snapshot(), snapshot(patch)), JSON.stringify(patch)).toBe(false);
-    }
-  });
-
-  // A tiny fake of the database: one resource, the save RPC and the reads the tool makes.
-  function fakeClient(opts: { corrupt?: boolean; rpcError?: string }) {
-    const state = { ...snapshot(), plan_ids: ["teacher", "founder"] };
-    const calls: Record<string, unknown>[] = [];
-    const client = {
-      from: (table: string) => ({
-        select: () => ({
-          eq: () => table === "resources"
-            ? { single: async () => ({ data: { ...state }, error: null }) }
-            : Promise.resolve({ data: state.plan_ids.map((plan_id) => ({ plan_id })), error: null }),
-        }),
-      }),
-      rpc: (name: string, args?: Record<string, unknown>) => {
-        if (name === "resolve_resource_target") return { maybeSingle: async () => ({ data: { delivery_mode: state.delivery_mode, cta_url: state.cta_url, file_path: state.file_path, file_name: state.file_name }, error: null }) };
-        calls.push(args ?? {});
-        if (opts.rpcError) return Promise.resolve({ error: { message: opts.rpcError } });
-        state.cover_image_url = String(args?.p_cover_image_url ?? "");
-        if (opts.corrupt && calls.length === 1) state.title = "ถูกเปลี่ยน";
-        else state.title = String(args?.p_title);
-        return Promise.resolve({ error: null });
-      },
-    };
-    return { client: client as unknown as SupabaseClient, calls, state };
-  }
-
-  it("succeeds when nothing else changed and returns the previous cover for the backup", async () => {
-    const { client, calls, state } = fakeClient({});
+describe("saving only the cover (admin_set_resource_cover)", () => {
+  it("calls the cover-only function with just the id and the link, and returns the previous cover for the backup", async () => {
+    const { client, calls, state } = fakeClient();
     await expect(setCover(client, ID, `${BASE}v2/n.webp`)).resolves.toEqual({ ok: true, previous: `${BASE}old.png` });
-    expect(calls).toHaveLength(1);
+    expect(calls).toEqual([{ name: "admin_set_resource_cover", args: { p_resource_id: ID, p_cover_url: `${BASE}v2/n.webp` } }]);
     expect(state.cover_image_url).toBe(`${BASE}v2/n.webp`);
   });
-  it("puts the first copy back and reports failure when anything else differs afterwards", async () => {
-    const { client, calls, state } = fakeClient({ corrupt: true });
-    const result = await setCover(client, ID, `${BASE}v2/n.webp`);
-    expect(result).toMatchObject({ ok: false });
-    expect(calls).toHaveLength(2);
-    expect(calls[1]).toMatchObject({ p_title: "สื่อ", p_cover_image_url: `${BASE}old.png` });
-    expect(state.title).toBe("สื่อ");
-  });
-  it("reports a save error without a second write", async () => {
-    const { client, calls } = fakeClient({ rpcError: "denied" });
-    await expect(setCover(client, ID, "x")).resolves.toEqual({ ok: false, reason: "บันทึกไม่สำเร็จ: denied" });
+  it("reports a refusal from the database without any second write", async () => {
+    const { client, calls } = fakeClient({ rpcError: { code: "22023", message: "Cover file not found in resource-covers" } });
+    await expect(setCover(client, ID, `${BASE}v2/x.webp`)).resolves.toEqual({ ok: false, reason: "บันทึกไม่สำเร็จ: Cover file not found in resource-covers" });
     expect(calls).toHaveLength(1);
+  });
+  it("tells whether migration 063 is installed before anything is uploaded", async () => {
+    const ready = fakeClient({ rpcError: { code: "P0002", message: "Resource not found" } });
+    await expect(checkToolReadiness(ready.client)).resolves.toBe("ready");
+    expect(ready.calls[0].args.p_cover_url).toBe("https://example.invalid/");
+    await expect(checkToolReadiness(fakeClient({ rpcError: { code: "PGRST202", message: "Could not find the function public.admin_set_resource_cover" } }).client)).resolves.toBe("missing");
+    await expect(checkToolReadiness(fakeClient({ rpcError: { code: "42501", message: "Admin access required" } }).client)).resolves.toBe("not_admin");
+    await expect(checkToolReadiness(fakeClient({ rpcError: { message: "network down" } }).client)).resolves.toBe("unknown");
+    await expect(checkToolReadiness(fakeClient().client)).resolves.toBe("unknown");
+  });
+  it("never uses the full-save function, never deletes files, and checks readiness before the backup and every upload", () => {
+    const source = read("src/app/admin/AdminCoverCompressPanel.tsx");
+    expect(source).not.toContain("admin_save_resource");
+    expect(source).toContain("admin_set_resource_cover");
+    expect(source.indexOf("checkToolReadiness(supabase)")).toBeLessThan(source.indexOf("backupCsv("));
   });
 });
 
@@ -148,6 +128,7 @@ describe("panel and upload settings", () => {
   });
   it("new cover uploads from the resource form use a one-year cache and the cropper caps at 800px", () => {
     expect(read("src/app/admin/page.tsx")).toContain('upload(path, file, { upsert: false, cacheControl: COVER_CACHE_CONTROL })');
+    expect(read("src/app/admin/AdminResourcePreviewsField.tsx")).toContain("cacheControl: COVER_CACHE_CONTROL");
     expect(read("src/lib/resourceCoverCrop.ts")).toContain("RESOURCE_COVER_MAX_WIDTH = 800");
     expect(read("src/lib/resourceCoverCrop.ts")).toContain("RESOURCE_COVER_WEBP_QUALITY = 0.8");
   });
