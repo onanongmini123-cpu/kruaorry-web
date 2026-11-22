@@ -30,7 +30,7 @@ const rejects = (sql, params, label) => assert.rejects(() => db.query(sql, param
 const snapshot = async () => (await db.query("select * from public.resources order by title")).rows;
 const planRows = async () => JSON.stringify((await db.query("select * from public.resource_plan_access")).rows);
 
-for (const run of [1, 2]) await db.exec(m063);
+for (let run = 0; run < 2; run += 1) await db.exec(m063);
 for (const check of (await db.query(verification)).rows) assert.equal(check.ok, true, `verification: ${check.check_name}`);
 
 // Admin gate comes first.
