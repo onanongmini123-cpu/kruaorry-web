@@ -179,12 +179,31 @@ describe("wiring on the homepage (cached page stays the same for everyone)", () 
     const source = read("src/app/landing/LandingExperience.tsx");
     expect(source).toContain('const hideAccountCta = isMember && (viewer.kind === "pro" || viewer.kind === "admin")');
     expect(source).toContain('label: "อัปเกรดเป็น Teacher Pro"');
-    expect(source).toContain("hideFreeAction={hideAccountCta}");
+    expect(source).toContain("hideActions={hideAccountCta}");
     expect(source).toContain("compactHero");
   });
   it("opening a resource page remembers it for this member in this browser only", () => {
     expect(read("src/components/RecentViewTracker.tsx")).toContain("recordRecentResource");
     expect(read("src/app/resources/[key]/page.tsx")).toContain("<RecentViewTracker resourceId={item.id} />");
     expect(read("src/app/app/page.tsx")).toContain("recordRecentResource(profile.id, r.id)");
+  });
+});
+
+describe("pricing section for Pro members and admins", () => {
+  it("keeps the plan information but removes the sign-up, upgrade and offer buttons", async () => {
+    const { PricingSection } = await import("@/app/landing/PricingSection");
+    const plan = (id: string, name: string, priceLabel: string) => ({ id, name, priceLabel, note: null, features: [], benefits: [], billingInterval: id === "free" ? null : "year", isPopular: id === "teacher" });
+    const plans = [plan("free", "ฟรี", "ฟรี"), plan("teacher", "Teacher Pro", "599 บาท/ปี"), plan("founder", "Founder 100", "299 บาท")] as never;
+    const render = (hideActions: boolean) => renderToStaticMarkup(React.createElement(PricingSection, { plans, loaded: true, founder: { full: false }, hideActions }));
+    const shown = render(false);
+    expect(shown).toContain("อัปเกรดเป็น Teacher Pro");
+    expect(shown).toContain("kru-pricing__cta");
+    expect(shown).toContain("ดูข้อเสนอ");
+    const hidden = render(true);
+    expect(hidden).toContain("599");
+    expect(hidden).not.toContain("kru-pricing__cta");
+    expect(hidden).not.toContain("อัปเกรดเป็น");
+    expect(hidden).not.toContain("ดูข้อเสนอ");
+    expect(hidden).not.toContain("สมัครฟรี");
   });
 });

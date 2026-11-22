@@ -482,7 +482,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
           freeAction={freeAccountAction
             ? { href: freeAccountAction.href, label: publicAuthState === "member" ? freeAccountAction.label : "สมัครฟรี" }
             : undefined}
-          hideFreeAction={hideAccountCta}
+          hideActions={hideAccountCta}
           onRetry={() => { setPlansLoaded(false); setLoadAttempt((attempt) => attempt + 1); }}
           onCtaClick={handlePricingClick}
         />
