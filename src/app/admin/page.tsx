@@ -67,6 +67,8 @@ import { AdminPlansPanel } from "./AdminPlansPanel";
 import type { AdminPlanOverviewItem, PlanBenefitRow } from "./planOverview";
 import { ResourceEditorDrawer } from "./ResourceEditorDrawer";
 import { CoverCropper } from "@/components/CoverCropper";
+import { COVER_CACHE_CONTROL } from "@/lib/coverCompression";
+import { AdminCoverCompressPanel } from "./AdminCoverCompressPanel";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
 import { AdminHomepageVideosPanel } from "./AdminHomepageVideosPanel";
 import { VIDEO_RULE_HELP, VIDEO_UNAVAILABLE_NOTICE, isVideoUnavailable, videoChangeForSave, videoFieldState, videoLinkForId } from "./resourceVideoField";
@@ -1207,7 +1209,7 @@ export default function AdminConsolePage() {
         if (cancelled) return;
         setUploadStatus({ phase: "uploading", target: "cover", progress: 0, strategy: "standard", onPause: null, onCancel: cancel });
         try {
-          const { error } = await supabase.storage.from("resource-covers").upload(path, file, { upsert: false });
+          const { error } = await supabase.storage.from("resource-covers").upload(path, file, { upsert: false, cacheControl: COVER_CACHE_CONTROL });
           if (cancelled) {
             if (!error) await supabase.storage.from("resource-covers").remove([path]);
             return;
@@ -2198,6 +2200,8 @@ export default function AdminConsolePage() {
                   </Button>
                 </div>
               )}
+
+              <AdminCoverCompressPanel supabase={supabase} />
 
               {savedNotice && (
                 <div className="kru-res-notice" role="status">
