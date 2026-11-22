@@ -84,6 +84,14 @@ describe("bannersPayload (admin save)", () => {
   });
 });
 
+describe("banner upload cache", () => {
+  it("uploads banner pictures with a one-year cache", () => {
+    const source = read("src/app/admin/AdminPromoBannersPanel.tsx");
+    expect(source).toContain('BANNER_CACHE_CONTROL = "31536000"');
+    expect(source).toContain("cacheControl: BANNER_CACHE_CONTROL");
+  });
+});
+
 describe("PromoBanners view", () => {
   const banners = [
     { imageUrl: IMG, imageMobileUrl: MOB, linkUrl: "/resources", altText: "แบนเนอร์หนึ่ง" },

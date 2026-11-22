@@ -9,6 +9,8 @@ import { refreshPublicPages } from "@/lib/refreshPublicPages";
 import { bannersPayload, draftsFromRows, EMPTY_BANNER_DRAFT, PROMO_BANNER_LIMIT, type BannerDraft } from "@/lib/promoBanners";
 
 const BUCKET = "resource-covers";
+/** One year: banner file names are unique and never overwritten. */
+const BANNER_CACHE_CONTROL = "31536000";
 const DESKTOP_MAX_WIDTH = 1600;
 const MOBILE_MAX_WIDTH = 1080;
 
@@ -67,7 +69,7 @@ export function AdminPromoBannersPanel({ supabase }: { supabase: SupabaseClient 
     try {
       const blob = await compressToWebp(file, field === "imageUrl" ? DESKTOP_MAX_WIDTH : MOBILE_MAX_WIDTH);
       const path = `banners/${crypto.randomUUID()}.webp`;
-      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: false, contentType: "image/webp" });
+      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: false, contentType: "image/webp", cacheControl: BANNER_CACHE_CONTROL });
       if (error) throw new Error(error.message);
       update(index, { [field]: supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl });
       setMessage({ tone: "ok", text: `ย่อและอัปโหลดรูปแล้ว (${Math.round(blob.size / 1024)} KB) กด “บันทึกแบนเนอร์” เพื่อใช้งานจริง` });
