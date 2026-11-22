@@ -46,6 +46,7 @@ import { RESOURCE_TYPE_OPTIONS, type ResourceTypeFilter } from "@/lib/resourceMe
 import { RESOURCE_GRADE_OPTIONS, formatResourceGrades } from "@/lib/resourceGrades";
 import { createFavoriteRefreshGuard, persistFavoriteOptimistically } from "@/lib/favoriteState";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
+import { navigateAfterAuthChange } from "@/lib/authNavigation";
 import {
   beginMemberEntitlementsRefresh,
   completeMemberEntitlementsRefresh,
@@ -400,8 +401,7 @@ export default function TeacherAppPage() {
     setUpgradeRequests([]);
     setUpgradeRequestsError(false);
     setLoading(true);
-    router.replace("/login");
-    router.refresh();
+    navigateAfterAuthChange("/login");
   };
 
   const detail = resources.find((r) => r.id === detailId) || null;

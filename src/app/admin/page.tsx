@@ -53,6 +53,7 @@ import { planDisplayName } from "@/lib/planDisplay";
 import { canAccessAdminConsole } from "@/lib/routeAccess";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { signOutCurrentSession } from "@/lib/currentSessionLogout";
+import { navigateAfterAuthChange } from "@/lib/authNavigation";
 import { trackEvent } from "@/lib/analytics";
 import { APP_VERSION } from "@/lib/appVersion";
 import { RESOURCE_GRADE_OPTIONS, type ResourceGrade } from "@/lib/resourceGrades";
@@ -974,8 +975,7 @@ export default function AdminConsolePage() {
       window.alert(logoutError);
       return;
     }
-    router.push("/");
-    router.refresh();
+    navigateAfterAuthChange("/");
   };
 
   const handleManualAdminRefresh = async () => {

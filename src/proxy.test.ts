@@ -93,6 +93,22 @@ describe("application proxy", () => {
     expect(config.matcher).toContain("/login");
   });
 
+  it("an already signed-in visitor who opens /login?next=/admin is sent to /admin (not /app), and never to another site", async () => {
+    mockSession({ id: "admin-1" });
+    const admin = await proxy(new NextRequest("https://example.com/login?next=%2Fadmin"));
+    expect(admin.status).toBe(307);
+    expect(admin.headers.get("location")).toBe("https://example.com/admin");
+    const view = await proxy(new NextRequest("https://example.com/login?next=%2Fadmin%3Fview%3Dmembers"));
+    expect(view.headers.get("location")).toBe("https://example.com/admin?view=members");
+    for (const next of ["https%3A%2F%2Fevil.example%2Fadmin", "%2F%2Fevil.example", "%2Fadmin%2Fusers", "%2Fadmin%3Fnext%3Dhttps%3A%2F%2Fevil.example"]) {
+      const bad = await proxy(new NextRequest(`https://example.com/login?next=${next}`));
+      expect(bad.headers.get("location"), next).toBe("https://example.com/app");
+    }
+    // Signing up never carries the back office along.
+    const signup = await proxy(new NextRequest("https://example.com/login?mode=signup&next=%2Fadmin"));
+    expect(signup.headers.get("location")).toBe("https://example.com/app");
+  });
+
   it("lets authenticated sign-in resume only an allowlisted destination", async () => {
     mockSession({ id: "member-1" });
     const safe = await proxy(new NextRequest(

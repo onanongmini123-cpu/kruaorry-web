@@ -19,6 +19,10 @@ describe("safeAuthNext", () => {
     expect(safeAuthNext(`/download/${id}?name=${encodeURIComponent("ใบงานภาษาไทย.pdf")}&autoclose=1`))
       .toBe(`/download/${id}?name=${encodeURIComponent("ใบงานภาษาไทย.pdf")}&autoclose=1`);
     expect(safeAuthNext("/app?view=favorites")).toBe("/app?view=favorites");
+    // The back office is a valid sign-in destination (it checks the role itself).
+    expect(safeAuthNext("/admin")).toBe("/admin");
+    expect(safeAuthNext("/admin?view=members")).toBe("/admin?view=members");
+    expect(safeAuthNext("/admin?view=resources-featured")).toBe("/admin?view=resources-featured");
     expect(safeAuthNext("/membership")).toBe("/membership");
     expect(safeAuthNext("/membership?plan=founder")).toBe("/membership?plan=founder");
     expect(safeAuthNext("/membership?plan=teacher")).toBe("/membership?plan=teacher");
@@ -34,8 +38,19 @@ describe("safeAuthNext", () => {
     "https://evil.example/app",
     "//evil.example/path",
     "/\\evil.example/path",
-    "/admin",
     "/auth/callback",
+    "/administrator",
+    "/admin/",
+    "/admin/users",
+    "/admin?view=Dash",
+    "/admin?view=a&view=b",
+    "/admin?view=a&next=https%3A%2F%2Fevil.example",
+    "/admin?next=/app",
+    "/admin#x",
+    "/admin?view=" + "a".repeat(60),
+    "/admin?view=../app",
+    "//admin",
+    "/%2Fadmin",
     "/resources/Not_A_Slug",
     "/resources/ab",
     "/resources/..%2Fadmin",
@@ -130,5 +145,13 @@ describe("safeUpgradeReturnPath", () => {
     expect(safeAuthNext("/resources/sentence-train")).toBe("/resources/sentence-train");
     expect(authCompletionDestination("signin", "/resources/grammar-boss-battle")).toBe("/resources/grammar-boss-battle");
     expect(safeUpgradeReturnPath("/resources/sentence-train")).toBe("/resources/sentence-train");
+  });
+});
+
+describe("the back office is never a sign-up destination", () => {
+  it("sign-up always ends at /app or the membership page, whatever next says", () => {
+    expect(authCompletionDestination("signup", "/admin")).toBe("/app");
+    expect(authCompletionDestination("signup", "/admin?view=members")).toBe("/app");
+    expect(authCompletionDestination("signin", "/admin")).toBe("/admin");
   });
 });
