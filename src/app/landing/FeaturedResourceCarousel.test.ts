@@ -84,3 +84,17 @@ describe("FeaturedResourceCarousel accessibility", () => {
     expect(featuredAccessLabel({ accessMode: "locked", requiredPlanNames: ["Ignored"] })).toBe("ยังไม่เปิดให้ใช้งาน");
   });
 });
+
+describe("FeaturedResourceCarousel trial badge", () => {
+  const render = (items: FeaturedCarouselResource[]) => renderToStaticMarkup(React.createElement(FeaturedResourceCarousel, { resources: items }));
+
+  it("shows 'ทดลองได้' only on a Pro slide that has previews", () => {
+    const html = render([
+      resource("pro-trial", 1, { accessMode: "plans", requiredPlanNames: ["Teacher"], trialAvailable: true }),
+      resource("pro-plain", 2, { accessMode: "plans", requiredPlanNames: ["Teacher"] }),
+      resource("free", 3, { trialAvailable: true }),
+    ]);
+    expect(html.match(/ทดลองได้/g)).toHaveLength(1);
+    expect(html.indexOf("ทดลองได้")).toBeLessThan(html.indexOf("pro-plain"));
+  });
+});

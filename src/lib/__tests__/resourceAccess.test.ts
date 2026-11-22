@@ -112,7 +112,7 @@ describe("requiredPlansLabel keeps real plan names", () => {
       required_plan_names: ["Founder 100", "Teacher"],
       is_free: false,
     });
-    expect(requiredPlansLabel(item)).toBe("Founder 100 หรือ Teacher Pro");
+    expect(requiredPlansLabel(item)).toBe("Teacher Pro และ Founder 100");
     expect(accessLabel(item.accessMode)).toBe("Teacher Pro");
   });
 
@@ -125,7 +125,7 @@ describe("requiredPlansLabel keeps real plan names", () => {
     });
     const { html } = badgeFor(item, { authenticated: true });
     expect(html).toContain("Teacher Pro");
-    expect(html).toContain("Founder 100 / Teacher Pro");
+    expect(html).toContain("ใช้ได้กับสมาชิก Teacher Pro และ Founder 100");
   });
 
   it("falls back to the generic label only when no plan names are known", () => {
@@ -138,5 +138,16 @@ describe("requiredPlansLabel keeps real plan names", () => {
       const label = requiredPlansLabel(resource({ access_mode: mode }));
       expect(label).not.toMatch(/พรีเมียม|Premium|สำหรับสมาชิก|Member only/i);
     }
+  });
+});
+
+describe("planAudienceLabel (short audience shown to the public)", () => {
+  it("hides retired plans and never lists the long chain of plan names", async () => {
+    const { planAudienceLabel } = await import("@/lib/planDisplay");
+    expect(planAudienceLabel(["Plus", "Founder 100", "Teacher Pro", "Teacher Pro (แพ็กเดิม)", "Lifetime"])).toBe("Teacher Pro และ Founder 100");
+    expect(planAudienceLabel(["Teacher Pro"])).toBe("Teacher Pro");
+    expect(planAudienceLabel(["Teacher Pro", "Plus", "Lifetime"])).toBe("Teacher Pro");
+    expect(planAudienceLabel(["Founder 100"])).toBe("Founder 100");
+    expect(planAudienceLabel([])).toBeNull();
   });
 });

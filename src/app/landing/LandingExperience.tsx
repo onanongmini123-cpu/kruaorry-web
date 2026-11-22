@@ -25,6 +25,9 @@ import {
   type MembershipSchemaReadiness,
 } from "@/lib/membershipSchemaReadiness";
 import { FeaturedResourceCarousel } from "@/app/landing/FeaturedResourceCarousel";
+import { HomepageVideosSection } from "@/app/landing/HomepageVideosSection";
+import { HomepageRankings } from "@/app/landing/HomepageRankings";
+import { buildRankingRows } from "@/lib/homepageRankings";
 import { PricingSection, type PricingCta } from "@/app/landing/PricingSection";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { TrackOnVisible } from "@/components/analytics/TrackOnVisible";
@@ -338,6 +341,7 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
                     accessTier={accessTier(resource.accessMode)}
                     coverImageUrl={resource.coverImageUrl}
                     isNew={resource.isNew}
+                    trialAvailable={resource.trialAvailable}
                     href={resourceHref(resource)}
                   />
                 ))}
@@ -356,6 +360,13 @@ export function LandingExperience({ initial }: { initial: LandingData }) {
             </Link>
           ))}
         </nav>
+
+        <HomepageRankings
+          rows={buildRankingRows(initial.rankings, resources)}
+          heartCounts={initial.rankings?.heartCounts ?? {}}
+        />
+
+        <HomepageVideosSection videos={initial.videos} />
 
         <section className="kru-free-showcase">
           <div className="kru-free-showcase__heading">

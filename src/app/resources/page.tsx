@@ -177,6 +177,7 @@ export default async function ResourcesPage({ searchParams }: { searchParams: Se
                     accessTier={accessTier(item.accessMode)}
                     coverImageUrl={item.coverImageUrl}
                     isNew={item.isNew}
+                    trialAvailable={item.trialAvailable}
                     locked={publicResourceAction(item, viewer).locked}
                     href={resourceHref(item)}
                     priority={index < 4}

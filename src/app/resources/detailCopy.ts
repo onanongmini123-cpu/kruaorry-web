@@ -41,7 +41,7 @@ export function resourceAccessCopy(
         ? "สื่อนี้ยังไม่เปิดให้ใช้งาน"
         : item.accessMode === "authenticated"
           ? "เริ่มใช้สื่อนี้ด้วยบัญชีฟรี"
-          : `สื่อนี้ต้องใช้ ${planLabel}`;
+          : `สื่อนี้สำหรับสมาชิก ${planLabel}`;
 
   const description = action.canUse
     ? item.accessMode === "public"

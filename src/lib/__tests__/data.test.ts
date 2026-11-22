@@ -710,6 +710,36 @@ describe("public catalog reads", () => {
     expect(query.order).toHaveBeenNthCalledWith(2, "id", { ascending: true });
   });
 
+  it("marks only Pro resources that have previews as trial-able, reading just the public preview view", async () => {
+    const row = (id: string, accessMode: string) => ({
+      id, title: id, meta: null, description: null, category: null, delivery_mode: "file_download", cover_image_url: null,
+      tags: [], grade_levels: [], access_mode: accessMode, required_plan_ids: accessMode === "plans" ? ["teacher"] : [],
+      required_plan_names: [], is_free: accessMode !== "plans", is_new: false, file_size: null, featured_rank: null, review_average: null, review_count: 0,
+    });
+    const preview = "https://abc.supabase.co/storage/v1/object/public/resource-covers/previews/r/a.webp";
+    const catalog = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: [row("pro-with", "plans"), row("pro-without", "plans"), row("free", "public")], error: null }) };
+    const previews = { select: vi.fn().mockReturnThis(), limit: vi.fn().mockResolvedValue({ data: [
+      { resource_id: "pro-with", position: 1, image_url: preview },
+      { resource_id: "free", position: 1, image_url: preview },
+    ], error: null }) };
+    const from = vi.fn((table: string) => (table === "resource_preview_catalog" ? previews : catalog));
+    const result = await fetchPublishedResources({ from } as unknown as SupabaseClient);
+    expect(result.map((item) => [item.id, item.trialAvailable])).toEqual([["pro-with", true], ["pro-without", false], ["free", false]]);
+    expect(previews.select).toHaveBeenCalledWith("resource_id, position, image_url");
+    expect(from).not.toHaveBeenCalledWith("resources");
+  });
+
+  it("shows no trial badge before migration 059 or when the preview read fails", async () => {
+    const catalog = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), range: vi.fn().mockResolvedValue({ data: [{
+      id: "pro", title: "pro", meta: null, description: null, category: null, delivery_mode: "file_download", cover_image_url: null, tags: [], grade_levels: [],
+      access_mode: "plans", required_plan_ids: ["teacher"], required_plan_names: [], is_free: false, is_new: false, file_size: null, featured_rank: null, review_average: null, review_count: 0,
+    }], error: null }) };
+    const previews = { select: vi.fn().mockReturnThis(), limit: vi.fn().mockResolvedValue({ data: null, error: { code: "42P01", message: "relation does not exist" } }) };
+    const from = vi.fn((table: string) => (table === "resource_preview_catalog" ? previews : catalog));
+    const result = await fetchPublishedResources({ from } as unknown as SupabaseClient);
+    expect(result[0].trialAvailable).toBe(false);
+  });
+
   it("ends a stalled plan request instead of leaving the home page loading forever", async () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});

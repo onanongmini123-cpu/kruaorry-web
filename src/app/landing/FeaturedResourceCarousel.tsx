@@ -20,6 +20,8 @@ export type FeaturedCarouselResource = {
   requiredPlanNames: string[];
   accessMode: "public" | "authenticated" | "plans" | "locked";
   isNew: boolean;
+  /** Pro resource with watermarked previews anyone can look at. */
+  trialAvailable?: boolean;
   featuredRank: number | null;
   reviewAverage: number | null;
   reviewCount: number;
@@ -214,6 +216,9 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
                       {resource.accessMode !== "public" && <Lock size={13} aria-hidden="true" />}
                       {accessLabel}
                     </span>
+                    {resource.trialAvailable && resource.accessMode === "plans" && (
+                      <span className="kru-featured-carousel__badge kru-featured-carousel__badge--trial">ทดลองได้</span>
+                    )}
                   </div>
                 </div>
                 <div className="kru-featured-carousel__body">
@@ -395,6 +400,11 @@ function CarouselStyles() {
       .kru-featured-carousel__badge--new {
         background: var(--pink-600);
         color: var(--white);
+      }
+
+      .kru-featured-carousel__badge--trial {
+        background: rgba(232, 244, 255, .96);
+        color: var(--status-info-fg, #1d4f91);
       }
 
       .kru-featured-carousel__badge--public {

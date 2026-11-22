@@ -6,6 +6,7 @@ import { Badge, ResourceCard, Tag } from "@/components/ui";
 import { PublicTopBar } from "@/components/PublicTopBar";
 import { TrackedAnchor } from "@/components/analytics/TrackedAnchor";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
+import { ResourceViewBeacon } from "@/components/analytics/ResourceViewBeacon";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { accessDescription, accessLabel, accessTier } from "@/lib/resourceAccess";
 import { formatResourceGrades } from "@/lib/resourceGrades";
@@ -13,9 +14,11 @@ import { DELIVERY_TYPE_LABEL, parseResourceMeta } from "@/lib/resourceMeta";
 import { breadcrumbJsonLd, jsonLdScript, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "@/lib/resourceSeo";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/site";
 import { loadPublicResourceViewer, loadRelatedResources, resolvePublicResource } from "../data";
-import { publicResourceAction, resourceHref } from "../catalog";
+import { membershipUpgradeHref, publicResourceAction, resourceHref } from "../catalog";
 import { resourceAccessCopy } from "../detailCopy";
 import { PublicResourceCover } from "../PublicResourceCover";
+import { HowToPlayVideo } from "./HowToPlayVideo";
+import { TrialPreview } from "./TrialPreview";
 import "./detail.css";
 
 type Props = { params: Promise<{ key: string }> };
@@ -103,6 +106,7 @@ export default async function ResourceDetailPage({ params }: Props) {
 
   return (
     <div className="kru-detail__page">
+      <ResourceViewBeacon resourceId={item.id} />
       <TrackOnMount
         event="resource_view"
         properties={{ resource_id: item.id, slug: item.slug ?? "", access_tier: tier, delivery_mode: item.deliveryMode, authenticated: viewer.authenticated }}
@@ -164,6 +168,14 @@ export default async function ResourceDetailPage({ params }: Props) {
             </div>
           </div>
         </div>
+
+        <HowToPlayVideo videoId={item.youtubeVideoId} resourceTitle={item.title} />
+
+        {/* Pro resource the viewer cannot open yet: watermarked pictures only. Pro members, free
+            resources and resources without previews render exactly as before. */}
+        {item.accessMode === "plans" && !action.canUse && (
+          <TrialPreview images={item.previewImages} resourceTitle={item.title} upgradeHref={membershipUpgradeHref(item, canonicalPath)} />
+        )}
 
         <div className="kru-detail__sections">
           {audience && (
@@ -233,6 +245,7 @@ export default async function ResourceDetailPage({ params }: Props) {
                   accessTier={accessTier(other.accessMode)}
                   coverImageUrl={other.coverImageUrl}
                   isNew={other.isNew}
+                  trialAvailable={other.trialAvailable}
                   locked={publicResourceAction(other, viewer).locked}
                   href={resourceHref(other)}
                 />

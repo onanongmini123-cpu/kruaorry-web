@@ -5,6 +5,16 @@ Applied filenames use the exact `<version>_<name>` recorded in
 (`ghwpmtmbqtchsrnagoir`). Newer files in this directory are pending and
 must be checked against the live ledger before application.
 
+**Current state (read-only `list_migrations` on 2026-11-19):** versions `001`
+through `057` are all recorded as applied on the live project, including
+`049`–`057`. Older paragraphs below that call 049–057 "pending" describe the
+state when they were written and are kept as history. Migrations `058`
+(YouTube videos), `059` (resource previews) and `060` (homepage rankings) are
+NOT applied; each is additive and ships with a rollback and a read-only
+verification file. Always re-run `supabase migration list` and
+`supabase db push --dry-run` before applying anything; do not infer remote
+state from this note.
+
 **Live ledger as verified on 2026-09-18:** `001` through `016c` (19
 migrations), plus the following two migrations that were originally run
 manually in the SQL Editor and subsequently reconciled with
@@ -272,7 +282,7 @@ post-apply ledger check confirmed local and remote version `20261001180000`.
 
 Migration `20261001190000_048_founder_payment_confirmation.sql` is **applied
 and recorded** on the live project. Migrations `049`, `050`, and `051` below
-remain pending and must be checked against the live ledger before rollout.
+are also applied and recorded (verified 2026-11-19).
 It makes 299 THB a first-year Founder offer for only the first 100 payments
 confirmed by an admin, sets Founder and Teacher renewal to 599 THB/year, and
 adds idempotent application, activation and renewal RPCs. Pending applications
@@ -365,8 +375,7 @@ list after the rehearsal and again after any authorized production apply.
 Before a migration push, recheck the live ledger and run a dry-run; do not
 infer remote state from this dated note.
 
-Migration `20261003120000_049_founder_first_year_once.sql` is **pending** and
-must run after `048`. It exposes only the signed-in member's boolean Founder
+Migration `20261003120000_049_founder_first_year_once.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19); it had to run after `048`. It exposes only the signed-in member's boolean Founder
 history and rejects any new pending Founder application when that member is
 already present in the permanent Founder ledger. The trigger takes the same
 Founder-allocation advisory lock as payment confirmation before reading that
@@ -376,8 +385,7 @@ at the regular 599 THB/year price continues through the existing renewal RPC.
 Its final readiness marker lets staggered clients avoid calling the new history
 RPC until the migration has completed.
 
-Migration `20261004100000_050_admin_line_slip_workflow.sql` is **pending** and
-must run after `049`. It removes the member-facing execution grant from the old
+Migration `20261004100000_050_admin_line_slip_workflow.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19); it had to run after `049`. It removes the member-facing execution grant from the old
 self-report RPC and adds the admin-only, idempotent
 `record_membership_line_slip_received(uuid)` RPC. For rollout compatibility the
 RPC writes distinct `line_slip_received_at` and `line_slip_received_by`
@@ -400,7 +408,7 @@ page. Admin and member readers use legacy selects until 050's separate marker
 is present, so a staggered rollout does not disable application creation or
 read-only member statuses.
 
-Migration `20261004110000_051_deterministic_profile_avatars.sql` is **pending**
+Migration `20261004110000_051_deterministic_profile_avatars.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19)
 and must run after `050`. It keeps the avatar bucket private and WebP-only with
 the existing 5 MB object limit, but replaces unbounded random writes with the
 single exact key `avatars/<auth.uid()>/avatar.webp`. Existing random-key
@@ -428,8 +436,7 @@ Storage validates declared MIME, size, ownership, and exact key, but does not
 inspect file magic bytes; stronger content verification would require a
 trusted server-side processing boundary.
 
-Migration `20261006090000_052_revoke_unneeded_write_privileges.sql` is
-**pending** (not applied by this repository) and must run after `051`. It
+Migration `20261006090000_052_revoke_unneeded_write_privileges.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19); it had to run after `051`. It
 revokes INSERT/UPDATE/DELETE/TRUNCATE from `anon` and `authenticated` on the
 four catalogue views and on `subscriptions`, `subscription_events`, `plans`,
 `features`, `plan_features` and `admin_audit_log`. The browser only reads these
@@ -446,8 +453,7 @@ Run `npm run test:privilege-hardening-sql` for the stand-in check and
 `npm run test:migration-chain-sql` for the run against the replayed 001–051
 chain.
 
-Migration `20261006100000_053_resource_slugs.sql` is **pending** (not applied
-by this repository) and is Phase B of a two-stage slug rollout. Phase A is in
+Migration `20261006100000_053_resource_slugs.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19) and is Phase B of a two-stage slug rollout. Phase A is in
 the application and needs no database change: it reads the `slug` column when
 it exists, falls back to the old query when it does not, serves both
 `/resources/{uuid}` and `/resources/{slug}`, and only redirects a UUID address
@@ -470,8 +476,7 @@ for the stand-in check and `npm run test:migration-chain-sql` for the real chain
 To give a new resource a slug later: `update public.resources set slug = 'my-slug' where id = '…';`
 (the format check and unique index reject bad or duplicate values).
 
-Migration `20261006110000_054_resource_issue_context.sql` is **pending** (not
-applied by this repository). It widens the problem-report categories from five
+Migration `20261006110000_054_resource_issue_context.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19). It widens the problem-report categories from five
 to ten (adds wrong answer, cannot play, no sound, camera not working, mobile
 layout) and lets `submit_resource_issue` take an optional context (app build,
 browser family and version, OS family, screen size; four short keys, nothing
@@ -486,8 +491,7 @@ application first, then apply. The file can be applied twice; roll back with
 `npm run test:platform-completion-sql` and, against the real 001–051 chain, by
 `npm run test:migration-chain-sql`.
 
-Migration `20261008090000_055_admin_save_resource_slug.sql` is **pending** (not
-applied by this repository) and **requires 053**. It gives
+Migration `20261008090000_055_admin_save_resource_slug.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19) and **requires 053**. It gives
 `public.admin_save_resource` (SECURITY DEFINER) an optional last parameter
 `p_slug` so the admin form can set a resource's readable address: null or blank
 keeps the current slug, a value must pass the same rules as the column (3–80
@@ -507,8 +511,7 @@ with `supabase/verification/055-verify.sql`. Verified against the real 001–054
 chain by `npm run test:admin-save-slug-sql`. Because it replaces a SECURITY
 DEFINER function, review the diff against migration 028 before applying.
 
-Migration `20261009090000_056_admin_overview_insights.sql` is **pending** (not
-applied by this repository). It adds one read-only aggregate RPC for the admin
+Migration `20261009090000_056_admin_overview_insights.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19). It adds one read-only aggregate RPC for the admin
 overview. The RPC checks `is_admin()` before reading business tables, uses an
 empty `search_path`, grants EXECUTE only to `authenticated`, and never returns
 member identity, email, payment references, or row-level payment data. Revenue
@@ -524,7 +527,7 @@ and verify with `supabase/verification/056-verify.sql`. Run
 aggregate, no-PII, no-write, rollback, and re-apply checks. The frontend fails
 softly while the RPC is absent, leaving every existing admin tool available.
 
-Migration `20261009100000_057_admin_plan_resource_summary.sql` is **pending**
+Migration `20261009100000_057_admin_plan_resource_summary.sql` was **pending** when this was written and is now **applied and recorded** (verified 2026-11-19)
 (not applied by this repository). It adds one read-only aggregate RPC for the
 admin “สื่อกับแพ็ก” tab. It counts published resources by the same four
 access modes used by `can_access_resource()`, returns aggregate Pro-resource
@@ -539,7 +542,7 @@ and verify with `supabase/verification/057-verify.sql`. Run
 no-PII, no-write, rollback, and re-apply checks. The frontend fails softly
 while the RPC is absent and leaves the other three “แพ็กและสิทธิ์” tabs available.
 
-The pending files 052–054 above do not depend on each other: every apply order
+The files 052–054 above (now applied) do not depend on each other: every apply order
 gives the same final state. The hand-off report under `docs/` has the rollout
 runbook (prerequisites, pre-check, apply, verification, rollback, post-deploy
 checks).
@@ -555,3 +558,42 @@ current entitled Founder usage. Pending migration `048` restores the durable
 ledger as the cumulative source of truth only after any unproven legacy grants
 have been separately audited and reconciled, then hardens it as an irreversible
 first-100 promotion record; once `048` is applied, places are never recycled.
+
+Migration `20261010090000_058_resource_youtube_video.sql` is **pending** (not
+applied by this repository). It is additive: a nullable
+`resources.youtube_video_id` (format-checked), the same id as the last column of
+`resource_catalog`, the admin-only `admin_set_resource_video(uuid, text)`, a
+read-only `homepage_videos` table (at most three rows) and the admin-only
+`admin_set_homepage_videos(jsonb)`. It does not modify `admin_save_resource` or
+any existing row. The application reads these defensively, so it can be
+deployed before or after the migration; until the migration exists no video and
+no homepage section is shown. Roll back with
+`supabase/rollbacks/20261010090000_058_resource_youtube_video.rollback.sql`
+(leaves an always-NULL view column) and verify with
+`supabase/verification/058-verify.sql`. Run `npm run test:youtube-video-sql`
+and `npm run test:migration-chain-sql` before applying.
+
+Migration `20261011090000_059_resource_previews.sql` is **pending** (not
+applied by this repository). It is additive: `resource_previews` (admin-only
+RLS, at most 6 watermarked picture URLs per resource), the read-only
+`resource_preview_catalog` view (resource_id, position, image_url of published
+Pro resources only; it never carries a destination) and the admin-only
+`admin_set_resource_previews(uuid, jsonb)`. It does not modify
+`resource_catalog` or `admin_save_resource`. The application reads it
+defensively: without it there are no previews and no "ทดลองได้" badge. Roll back
+with `supabase/rollbacks/20261011090000_059_resource_previews.rollback.sql`,
+verify with `supabase/verification/059-verify.sql`, and run
+`npm run test:resource-previews-sql` first.
+
+Migration `20261012090000_060_homepage_rankings.sql` is **pending** (not applied
+by this repository). It is additive: `resource_view_daily` (one anonymous row per
+resource, random viewer key and Bangkok day; no browser privilege), the
+`record_resource_view(uuid, text)` and `get_homepage_rankings(integer)`
+SECURITY DEFINER functions (ids and counts only, published catalogue only). It
+only READS `saved_resources` and `resource_catalog`. The application reads it
+defensively: without it the homepage shows no ranking rows and no views are
+recorded. Roll back with
+`supabase/rollbacks/20261012090000_060_homepage_rankings.rollback.sql`, verify
+with `supabase/verification/060-verify.sql`, and run
+`npm run test:homepage-rankings-sql` first. View counts are indicative, not
+tamper-proof; do not use them for payments or rewards.

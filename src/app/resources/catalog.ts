@@ -5,10 +5,11 @@ import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { proUpgradeHref } from "@/lib/upgradeFlow";
 import { resourceHref } from "@/lib/resourceUrl";
 export { resourceHref };
-import { planDisplayNames } from "@/lib/planDisplay";
+import { planAudienceLabel, planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 import { parseDetailContent, type ResourceDetailContent } from "@/lib/resourceDetail";
 import { isValidSlug } from "@/lib/resourceSlug";
+import { isYouTubeVideoId } from "@/lib/youtube";
 
 export type PublicResource = {
   id: string;
@@ -32,6 +33,12 @@ export type PublicResource = {
   reviewCount: number;
   /** Optional structured teaching notes; every section hides when absent. */
   detail: ResourceDetailContent | null;
+  /** Optional how-to-play video; null for every resource that has none. */
+  youtubeVideoId: string | null;
+  /** Watermarked preview pictures of a Pro resource (migration 059); empty for everything else. */
+  previewImages: string[];
+  /** A Pro resource a visitor can try through its previews: drives the "ทดลองได้" badge. */
+  trialAvailable: boolean;
 };
 
 export interface PublicResourceViewer {
@@ -94,6 +101,9 @@ export function toPublicResource(value: unknown): PublicResource | null {
       : Number(row.review_average),
     reviewCount: Number(row.review_count ?? 0),
     detail: parseDetailContent(row.detail_content),
+    youtubeVideoId: isYouTubeVideoId(row.youtube_video_id) ? row.youtube_video_id : null,
+    previewImages: [],
+    trialAvailable: false,
   };
 }
 
@@ -114,6 +124,13 @@ export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, d
  * PUBLIC_RESOURCE_SELECT until the slug migration is applied.
  */
 export const PUBLIC_RESOURCE_SELECT_WITH_SLUG = `${PUBLIC_RESOURCE_SELECT}, slug`;
+
+/**
+ * Same again plus the how-to-play video id (migration 058). Tried first; the
+ * loader falls back to the slug-only and then the base select while the column
+ * does not exist yet, so the app is safe to deploy before the migration.
+ */
+export const PUBLIC_RESOURCE_SELECT_WITH_VIDEO = `${PUBLIC_RESOURCE_SELECT_WITH_SLUG}, youtube_video_id`;
 
 export function signupHref(): string {
   // Account creation always lands at the member-app root. Opening a resource
@@ -148,8 +165,7 @@ const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
 };
 
 /**
- * Which plans unlock a resource, for explanatory copy ("ต้องใช้ Founder 100
- * หรือ Teacher Pro"). This keeps the real `requiredPlanNames`; the access
+ * Which plans unlock a resource, for explanatory copy ("สำหรับสมาชิก Teacher Pro และ Founder 100"). This keeps the real `requiredPlanNames`; the access
  * badge (`accessLabel`) is a separate, viewer-independent tier label. The
  * generic Teacher Pro label is only a fallback when no plan names exist.
  */
@@ -157,9 +173,7 @@ export function requiredPlansLabel(resource: PublicResource): string {
   if (resource.accessMode === "public") return ACCESS_TIER_LABEL.free;
   if (resource.accessMode === "authenticated") return ACCESS_TIER_LABEL.member;
   if (resource.accessMode === "locked") return ACCESS_TIER_LABEL.unavailable;
-  return resource.requiredPlanNames.length > 0
-    ? resource.requiredPlanNames.join(" หรือ ")
-    : ACCESS_TIER_LABEL.pro;
+  return planAudienceLabel(resource.requiredPlanNames) ?? ACCESS_TIER_LABEL.pro;
 }
 
 function looksLikeGame(resource: Pick<PublicResource, "tags" | "meta">): boolean {
