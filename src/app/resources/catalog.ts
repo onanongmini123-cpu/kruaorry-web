@@ -5,7 +5,7 @@ import { FREE_SIGNUP_HREF } from "@/lib/authReturnPath";
 import { proUpgradeHref } from "@/lib/upgradeFlow";
 import { resourceHref } from "@/lib/resourceUrl";
 export { resourceHref };
-import { planDisplayNames } from "@/lib/planDisplay";
+import { planAudienceLabel, planDisplayNames } from "@/lib/planDisplay";
 import { ACCESS_TIER_LABEL } from "@/lib/resourceAccess";
 import { parseDetailContent, type ResourceDetailContent } from "@/lib/resourceDetail";
 import { isValidSlug } from "@/lib/resourceSlug";
@@ -165,8 +165,7 @@ const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
 };
 
 /**
- * Which plans unlock a resource, for explanatory copy ("ต้องใช้ Founder 100
- * หรือ Teacher Pro"). This keeps the real `requiredPlanNames`; the access
+ * Which plans unlock a resource, for explanatory copy ("สำหรับสมาชิก Teacher Pro และ Founder 100"). This keeps the real `requiredPlanNames`; the access
  * badge (`accessLabel`) is a separate, viewer-independent tier label. The
  * generic Teacher Pro label is only a fallback when no plan names exist.
  */
@@ -174,9 +173,7 @@ export function requiredPlansLabel(resource: PublicResource): string {
   if (resource.accessMode === "public") return ACCESS_TIER_LABEL.free;
   if (resource.accessMode === "authenticated") return ACCESS_TIER_LABEL.member;
   if (resource.accessMode === "locked") return ACCESS_TIER_LABEL.unavailable;
-  return resource.requiredPlanNames.length > 0
-    ? resource.requiredPlanNames.join(" หรือ ")
-    : ACCESS_TIER_LABEL.pro;
+  return planAudienceLabel(resource.requiredPlanNames) ?? ACCESS_TIER_LABEL.pro;
 }
 
 function looksLikeGame(resource: Pick<PublicResource, "tags" | "meta">): boolean {

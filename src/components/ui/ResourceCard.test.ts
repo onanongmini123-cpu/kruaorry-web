@@ -162,7 +162,7 @@ describe("ResourceCard access badge", () => {
 
   it("announces the real unlocking plans for Pro without changing the visible badge", () => {
     const html = render({ accessTier: "pro", requiredPlanNames: ["Founder 100", "Teacher Pro"] });
-    expect(html).toContain("Founder 100 / Teacher Pro");
+    expect(html).toContain("ใช้ได้กับสมาชิก Teacher Pro และ Founder 100");
     expect(render({ accessTier: "free", requiredPlanNames: ["Founder 100"] })).not.toContain("Founder 100");
   });
 });

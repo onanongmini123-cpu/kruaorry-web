@@ -19,7 +19,10 @@ describe("homepage videos admin payload", () => {
   it("blocks bad input with a Thai message naming the row", () => {
     expect(homepageVideosPayload([{ link: "https://vimeo.com/1", title: "" }, { link: "", title: "" }, { link: "", title: "" }])).toMatchObject({ ok: false, message: expect.stringContaining("วิดีโอที่ 1") });
     expect(homepageVideosPayload([{ link: "", title: "มีแต่ชื่อ" }, { link: "", title: "" }, { link: "", title: "" }])).toMatchObject({ ok: false, message: expect.stringContaining("ยังไม่ได้ใส่ลิงก์") });
-    expect(homepageVideosPayload([{ link: a, title: "" }, { link: a, title: "" }, { link: "", title: "" }])).toMatchObject({ ok: false, message: expect.stringContaining("ซ้ำ") });
+    expect(homepageVideosPayload([{ link: a, title: "" }, { link: a, title: "" }, { link: "", title: "" }])).toMatchObject({ ok: false, message: "วิดีโอที่ 2: วิดีโอนี้ซ้ำกับช่องที่ 1" });
+    // the duplicate is reported against the slot it repeats, even when a blank slot sits between them
+    expect(homepageVideosPayload([{ link: a, title: "" }, { link: "", title: "" }, { link: a, title: "" }])).toMatchObject({ ok: false, message: "วิดีโอที่ 3: วิดีโอนี้ซ้ำกับช่องที่ 1" });
+    expect(homepageVideosPayload([{ link: a, title: "" }, { link: b, title: "" }, { link: "https://www.youtube.com/watch?v=bbbbbbbbbbb", title: "" }])).toMatchObject({ ok: false, message: "วิดีโอที่ 3: วิดีโอนี้ซ้ำกับช่องที่ 2" });
     expect(homepageVideosPayload([{ link: a, title: "x".repeat(81) }, { link: "", title: "" }, { link: "", title: "" }])).toMatchObject({ ok: false });
   });
 });

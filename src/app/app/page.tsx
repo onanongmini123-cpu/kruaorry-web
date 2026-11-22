@@ -57,7 +57,7 @@ import {
 } from "@/lib/memberAccount";
 import { membershipUpgradeHref } from "@/app/resources/catalog";
 import { createLatestRefreshController, createLatestRefreshRunner } from "@/lib/latestRefresh";
-import { planDisplayName } from "@/lib/planDisplay";
+import { planAudienceLabel, planDisplayName } from "@/lib/planDisplay";
 import { isPermanentAuthUser } from "@/lib/authIdentity";
 import { accessTier } from "@/lib/resourceAccess";
 import { trackEvent } from "@/lib/analytics";
@@ -723,7 +723,7 @@ export default function TeacherAppPage() {
                             ? "ลองตรวจสอบสิทธิ์อีกครั้งก่อนเลือกแพ็กหรือชำระเงิน"
                             : hasPendingUpgradeFor(detail)
                             ? "เข้าหน้าสมาชิกเพื่อดูเลขอ้างอิง สถานะการชำระ และผลการตรวจสอบ"
-                            : `ปลดล็อกได้ด้วยแพ็ก ${detail.requiredPlanNames.join(" หรือ ")}`}
+                            : `ปลดล็อกได้สำหรับสมาชิก ${planAudienceLabel(detail.requiredPlanNames)}`}
                         </p>
                       )}
                       <Button block size="lg" style={{ marginTop: "var(--sp-6)" }} disabled={!canAccess(detail) && detail.accessMode === "locked"} onClick={() => openResource(detail)}>

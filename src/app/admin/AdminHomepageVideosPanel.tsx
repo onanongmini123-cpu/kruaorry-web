@@ -1,7 +1,7 @@
 "use client";
 
 import { refreshPublicPages } from "@/lib/refreshPublicPages";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Button, Input } from "@/components/ui";
 import { HOMEPAGE_VIDEO_LIMIT, parseHomepageVideos } from "@/lib/homepageVideos";
@@ -21,6 +21,7 @@ const EMPTY_SLOTS: HomepageVideoDraft[] = Array.from({ length: HOMEPAGE_VIDEO_LI
  */
 export function homepageVideosPayload(slots: HomepageVideoDraft[]): { ok: true; videos: { videoId: string; title?: string }[] } | { ok: false; message: string } {
   const videos: { videoId: string; title?: string }[] = [];
+  const slotOfVideo = new Map<string, number>();
   for (let index = 0; index < slots.length; index += 1) {
     const link = slots[index].link.trim();
     const title = slots[index].title.replace(/\s+/g, " ").trim();
@@ -29,7 +30,9 @@ export function homepageVideosPayload(slots: HomepageVideoDraft[]): { ok: true; 
     const videoId = parseYouTubeVideoId(link);
     if (!videoId) return { ok: false, message: `วิดีโอที่ ${index + 1}: ลิงก์ไม่ถูกต้อง ${VIDEO_RULE_HELP}` };
     if (title.length > 80) return { ok: false, message: `วิดีโอที่ ${index + 1}: ชื่อยาวเกิน 80 ตัวอักษร` };
-    if (videos.some((video) => video.videoId === videoId)) return { ok: false, message: `วิดีโอที่ ${index + 1}: ซ้ำกับวิดีโอก่อนหน้า` };
+    const firstSlot = slotOfVideo.get(videoId);
+    if (firstSlot !== undefined) return { ok: false, message: `วิดีโอที่ ${index + 1}: วิดีโอนี้ซ้ำกับช่องที่ ${firstSlot + 1}` };
+    slotOfVideo.set(videoId, index);
     videos.push(title ? { videoId, title } : { videoId });
   }
   return { ok: true, videos };
@@ -47,6 +50,7 @@ export function AdminHomepageVideosPanel({ supabase }: { supabase: SupabaseClien
   const [supported, setSupported] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const messageRef = useRef<HTMLParagraphElement>(null);
 
   const query = useCallback(
     () => supabase.from("homepage_videos").select("position, youtube_video_id, title").order("position", { ascending: true }),
@@ -76,6 +80,8 @@ export function AdminHomepageVideosPanel({ supabase }: { supabase: SupabaseClien
     const payload = homepageVideosPayload(slots);
     if (!payload.ok) {
       setMessage({ tone: "error", text: payload.message });
+      // The message sits under the three fields; bring it into view so a refused save is never silent.
+      window.requestAnimationFrame(() => messageRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }));
       return;
     }
     setSaving(true);
@@ -130,7 +136,7 @@ export function AdminHomepageVideosPanel({ supabase }: { supabase: SupabaseClien
             </div>
           ))}
           {message && (
-            <p role={message.tone === "error" ? "alert" : "status"} style={{ color: message.tone === "error" ? "var(--status-danger-fg)" : "var(--status-success-fg)" }}>
+            <p ref={messageRef} role={message.tone === "error" ? "alert" : "status"} style={{ color: message.tone === "error" ? "var(--status-danger-fg)" : "var(--status-success-fg)" }}>
               {message.text}
             </p>
           )}
