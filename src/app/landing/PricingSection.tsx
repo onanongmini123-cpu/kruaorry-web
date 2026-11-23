@@ -21,6 +21,8 @@ export interface PricingSectionProps {
   membershipUnavailable?: boolean;
   /** Where the free plan's button goes: sign-up for visitors, the member app for members. */
   freeAction?: { href: string; label: string };
+  /** Signed-in Pro members and admins: no sign-up, upgrade or offer buttons (the plan information stays). */
+  hideActions?: boolean;
   onRetry?: () => void;
   onCtaClick?: (cta: PricingCta) => void;
 }
@@ -63,7 +65,7 @@ function Cell({ cell, label }: { cell: ComparisonCell; label: string }) {
   );
 }
 
-export function PricingSection({ plans, loaded, founder, membershipUnavailable = false, freeAction, onRetry, onCtaClick }: PricingSectionProps) {
+export function PricingSection({ plans, loaded, founder, membershipUnavailable = false, freeAction, hideActions = false, onRetry, onCtaClick }: PricingSectionProps) {
   const free = plans.find((plan) => plan.id === "free");
   const pro = plans.find((plan) => plan.id === "teacher");
   const founderPlan = plans.find((plan) => plan.id === "founder");
@@ -73,7 +75,7 @@ export function PricingSection({ plans, loaded, founder, membershipUnavailable =
   return (
     <section id="pricing" className="kru-pricing" aria-labelledby="pricing-heading">
       <h2 id="pricing-heading">แพ็กเกจ</h2>
-      <p className="kru-pricing__lead">เริ่มต้นฟรี แล้วอัปเกรดเป็น Teacher Pro เมื่อพร้อม ไม่ต้องผูกบัตร</p>
+      <p className="kru-pricing__lead">{hideActions ? "สิทธิ์ของแต่ละแพ็กใน KruAorry ดูได้ที่นี่ค่ะ" : "เริ่มต้นฟรี แล้วอัปเกรดเป็น Teacher Pro เมื่อพร้อม ไม่ต้องผูกบัตร"}</p>
       {membershipUnavailable && (
         <p role="status" className="kru-pricing__maintenance">ระบบสมัครสมาชิกกำลังปรับปรุงชั่วคราว</p>
       )}
@@ -97,13 +99,15 @@ export function PricingSection({ plans, loaded, founder, membershipUnavailable =
                     <li key={text}><Check size={17} aria-hidden="true" /><span>{text}</span></li>
                   ))}
                 </ul>
-                <Link
-                  href={signup.href}
-                  className="kru-btn kru-btn--secondary kru-btn--block kru-pricing__cta"
-                  onClick={() => onCtaClick?.("free_signup")}
-                >
-                  {signup.label}
-                </Link>
+                {!hideActions && (
+                  <Link
+                    href={signup.href}
+                    className="kru-btn kru-btn--secondary kru-btn--block kru-pricing__cta"
+                    onClick={() => onCtaClick?.("free_signup")}
+                  >
+                    {signup.label}
+                  </Link>
+                )}
               </article>
             )}
 
@@ -125,13 +129,15 @@ export function PricingSection({ plans, loaded, founder, membershipUnavailable =
                     <li key={text}><Check size={17} aria-hidden="true" /><span>{text}</span></li>
                   ))}
                 </ul>
-                <Link
-                  href={proUpgradeHref({ planId: "teacher" })}
-                  className="kru-btn kru-btn--primary kru-btn--block kru-pricing__cta"
-                  onClick={() => onCtaClick?.("upgrade")}
-                >
-                  อัปเกรดเป็น {pro.name}
-                </Link>
+                {!hideActions && (
+                  <Link
+                    href={proUpgradeHref({ planId: "teacher" })}
+                    className="kru-btn kru-btn--primary kru-btn--block kru-pricing__cta"
+                    onClick={() => onCtaClick?.("upgrade")}
+                  >
+                    อัปเกรดเป็น {pro.name}
+                  </Link>
+                )}
               </article>
             )}
           </div>
@@ -142,7 +148,7 @@ export function PricingSection({ plans, loaded, founder, membershipUnavailable =
                 <strong>ข้อเสนอเปิดตัว {founderPlan.name}: {founderPlan.priceLabel}</strong>
                 <span>{founder.full ? FOUNDER_FULL_NOTICE : FOUNDER_LIMIT_NOTICE}</span>
               </div>
-              {!founder.full && (
+              {!founder.full && !hideActions && (
                 <Link
                   href={proUpgradeHref({ planId: "founder" })}
                   className="kru-btn kru-btn--soft kru-btn--sm"

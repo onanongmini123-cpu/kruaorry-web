@@ -1,11 +1,11 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { parseHomepageVideos } from "@/lib/homepageVideos";
+import { HOMEPAGE_VIDEO_LIMIT, parseHomepageVideos } from "@/lib/homepageVideos";
 import { HomepageVideosSection } from "@/app/landing/HomepageVideosSection";
 
 describe("homepage videos", () => {
-  it("orders by position, trims titles, drops malformed rows and caps at three", () => {
+  it("orders by position, trims titles, drops malformed rows and caps at four", () => {
     const rows = [
       { position: 3, youtube_video_id: "ccccccccccc", title: null },
       { position: 1, youtube_video_id: "aaaaaaaaaaa", title: "  วิธีเล่น \n เกมแรก  " },
@@ -15,12 +15,15 @@ describe("homepage videos", () => {
       "x",
       { position: 4, youtube_video_id: "ddddddddddd", title: "fourth" },
       { position: 5, youtube_video_id: "eeeeeeeeeee", title: "fifth" },
+      { position: 6, youtube_video_id: "fffffffffff", title: "sixth" },
     ];
     expect(parseHomepageVideos(rows)).toEqual([
       { videoId: "aaaaaaaaaaa", title: "วิธีเล่น เกมแรก" },
       { videoId: "ccccccccccc", title: null },
       { videoId: "ddddddddddd", title: "fourth" },
+      { videoId: "eeeeeeeeeee", title: "fifth" },
     ]);
+    expect(HOMEPAGE_VIDEO_LIMIT).toBe(4);
   });
 
   it("returns nothing for non-arrays (a failed or missing read hides the section)", () => {

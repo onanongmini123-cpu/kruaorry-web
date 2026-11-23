@@ -23,7 +23,9 @@
     "test:admin-plan-resources-sql": "node scripts/test-admin-plan-resources-sql.mjs",
     "test:youtube-video-sql": "node scripts/test-youtube-video-sql.mjs",
     "test:resource-previews-sql": "node scripts/test-resource-previews-sql.mjs",
-    "test:homepage-rankings-sql": "node scripts/test-homepage-rankings-sql.mjs"
+    "test:homepage-rankings-sql": "node scripts/test-homepage-rankings-sql.mjs",
+    "test:promo-banners-sql": "node scripts/test-promo-banners-sql.mjs",
+    "test:homepage-videos-four-sql": "node scripts/test-homepage-videos-four-sql.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

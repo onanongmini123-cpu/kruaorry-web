@@ -11,7 +11,15 @@ through `057` are all recorded as applied on the live project, including
 state when they were written and are kept as history. Migrations `058`
 (YouTube videos), `059` (resource previews) and `060` (homepage rankings) are
 NOT applied; each is additive and ships with a rollback and a read-only
-verification file. Always re-run `supabase migration list` and
+verification file. Migrations `061` (homepage promo banners) and `062` (four
+homepage videos instead of three) are also written, tested on PGlite only
+(`npm run test:promo-banners-sql`, `npm run test:homepage-videos-four-sql`) and
+NOT applied; `062` needs `058`.
+
+**Numbers 061 and 062 are taken.** Any branch that also adds migrations (for
+example the accounts branch `claude/wonderful-planck-dixufx`) must renumber its
+files to **063 and 064** (new timestamps after `20261013100000`) before it is
+used, and renumber their rollback and verification files to match. Always re-run `supabase migration list` and
 `supabase db push --dry-run` before applying anything; do not infer remote
 state from this note.
 

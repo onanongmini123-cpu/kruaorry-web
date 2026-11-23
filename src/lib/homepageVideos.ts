@@ -1,6 +1,6 @@
 import { isYouTubeVideoId } from "@/lib/youtube";
 
-export const HOMEPAGE_VIDEO_LIMIT = 3;
+export const HOMEPAGE_VIDEO_LIMIT = 4;
 
 export interface HomepageVideo {
   videoId: string;
@@ -9,7 +9,7 @@ export interface HomepageVideo {
 
 /**
  * Validates the homepage video rows (migration 058). Anything malformed is
- * dropped, the list is ordered by position and capped at three, and an empty
+ * dropped, the list is ordered by position and capped at four, and an empty
  * result means the homepage section is hidden.
  */
 export function parseHomepageVideos(rows: unknown): HomepageVideo[] {
