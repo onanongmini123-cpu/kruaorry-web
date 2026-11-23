@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { track as trackVercel } from "@vercel/analytics";
 import { ALLOWED_PROPERTIES, registerAnalyticsProvider, sanitizeProperties, trackEvent } from "../analytics";
+
+vi.mock("@vercel/analytics", () => ({ track: vi.fn() }));
 
 describe("sanitizeProperties", () => {
   it("keeps allow-listed scalar properties only", () => {
@@ -47,6 +50,19 @@ describe("trackEvent", () => {
   afterEach(() => {
     remove?.();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.mocked(trackVercel).mockClear();
+  });
+
+  it("keeps Vercel custom events off by default on Hobby", () => {
+    trackEvent("home_view");
+    expect(trackVercel).not.toHaveBeenCalled();
+  });
+
+  it("sends only sanitized properties when custom events are explicitly enabled", () => {
+    vi.stubEnv("NEXT_PUBLIC_VERCEL_CUSTOM_EVENTS_ENABLED", "true");
+    trackEvent("resource_view", { resource_id: "r1", access_tier: "free", email: "teacher@example.com", query: "private search" });
+    expect(trackVercel).toHaveBeenCalledWith("resource_view", { resource_id: "r1", access_tier: "free" });
   });
 
   it("sends a sanitized event to every registered provider", () => {
