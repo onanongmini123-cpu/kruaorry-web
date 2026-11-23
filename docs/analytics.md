@@ -62,6 +62,16 @@ registerAnalyticsProvider({
 });
 ```
 
-For Vercel Web Analytics add `@vercel/analytics`, render its `<Analytics />`
-component in `app/layout.tsx`, and register a provider that calls its `track`
-(custom events need a paid plan on Vercel).
+Vercel Web Analytics is mounted from the root layout. Its client wrapper
+renders `<Analytics />` and removes query strings and fragments from page-view
+URLs before they are sent. A path containing an apparent email address or
+phone number is dropped. This protects links such as password reset and email
+confirmation URLs. It does not send text entered into forms.
+
+Page views work after the project owner enables **Web Analytics** in Vercel and
+deploys this code. The Vercel provider in `src/lib/analytics.ts` uses the same
+`ALLOWED_PROPERTIES` sanitizer as every other provider. Custom events are off
+by default (`NEXT_PUBLIC_VERCEL_CUSTOM_EVENTS_ENABLED` is unset) because the
+Hobby plan does not support them. Only set that variable to `true` after the
+owner explicitly approves an eligible plan and its event usage; page views do
+not need the variable.

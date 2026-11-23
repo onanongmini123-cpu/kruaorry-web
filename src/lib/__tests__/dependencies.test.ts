@@ -25,6 +25,7 @@ describe("dependencies", () => {
     expect(Object.keys(packageJson.dependencies).sort()).toEqual([
       "@supabase/ssr",
       "@supabase/supabase-js",
+      "@vercel/analytics",
       "lucide-react",
       "next",
       "qrcode",
