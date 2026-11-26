@@ -33,18 +33,16 @@ export function planDisplayNames(planIds: readonly string[], storedNames: readon
 
 /**
  * Short audience for a Pro resource, shown to visitors and members. The full
- * list of plan names (including retired Plus / Lifetime / legacy Teacher Pro) is
- * only for the admin console.
- *   - only Teacher-family plans -> "Teacher Pro"
- *   - Founder 100 is one of them -> "Teacher Pro และ Founder 100"
- *   - Founder 100 only           -> "Founder 100"
+ * list of plan names (including Founder 100 and the retired Plus / Lifetime /
+ * legacy Teacher Pro) is only for the admin console.
+ *   - any Teacher-family plan (with or without Founder 100) -> "Teacher Pro"
+ *   - Founder 100 only                                      -> "Founder 100"
  */
 export function planAudienceLabel(planNames: readonly string[]): string | null {
   const names = planNames.map((name) => name.trim()).filter(Boolean);
   if (names.length === 0) return null;
   const founder = names.some((name) => /founder/i.test(name));
   const teacherFamily = names.some((name) => !/founder/i.test(name));
-  if (founder && teacherFamily) return `${TEACHER_PRO_DISPLAY_NAME} และ Founder 100`;
-  if (founder) return "Founder 100";
+  if (founder && !teacherFamily) return "Founder 100";
   return TEACHER_PRO_DISPLAY_NAME;
 }

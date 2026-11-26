@@ -168,7 +168,7 @@ const ACTION_LABEL: Record<PublicResource["deliveryMode"], string> = {
 };
 
 /**
- * Which plans unlock a resource, for explanatory copy ("สำหรับสมาชิก Teacher Pro และ Founder 100"). This keeps the real `requiredPlanNames`; the access
+ * Which plans unlock a resource, for explanatory copy ("สำหรับสมาชิก Teacher Pro"). This keeps the real `requiredPlanNames`; the access
  * badge (`accessLabel`) is a separate, viewer-independent tier label. The
  * generic Teacher Pro label is only a fallback when no plan names exist.
  */
