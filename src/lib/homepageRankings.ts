@@ -55,7 +55,7 @@ export interface RankingRow<T> {
 }
 
 /**
- * Builds the three rows from the catalogue the page already has. An id that is
+ * Builds the homepage rows (newest, popular) from the catalogue the page already has. An id that is
  * not in the catalogue (unpublished meanwhile, cache lag) is skipped, and a row
  * with fewer than RANKING_MIN_ITEMS left is dropped, so nothing half-empty shows.
  */
@@ -66,7 +66,9 @@ export function buildRankingRows<T extends { id: string }>(rankings: HomepageRan
   const rows: RankingRow<T>[] = [
     { key: "newest", title: "🆕 ใหม่ล่าสุด", items: pick(rankings.newest) },
     { key: "popular", title: "🔥 ยอดนิยม", items: pick(rankings.popular) },
-    { key: "hearts", title: "❤️ ครูกดหัวใจมากที่สุด", items: pick(rankings.hearts) },
+    // The "❤️ ครูกดหัวใจมากที่สุด" row was removed at the site owner's request because it
+    // duplicated "🔥 ยอดนิยม" (26 พ.ย. 2569). The hearts data stays: heartCounts still
+    // drives the heart chip on each card.
   ];
   return rows.filter((row) => row.items.length >= RANKING_MIN_ITEMS);
 }
