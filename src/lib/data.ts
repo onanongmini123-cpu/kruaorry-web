@@ -42,6 +42,8 @@ export interface Resource {
   requiredPlanNames: string[];
   free: boolean;
   isNew: boolean;
+  /** ISO publish time when the catalogue returned it. */
+  publishedAt?: string | null;
   /** Pro resource with watermarked previews anyone can look at (public catalogue only). */
   trialAvailable?: boolean;
   fileSize: number | null;
@@ -69,6 +71,7 @@ interface ResourceCatalogRow {
   featured_rank: number | null;
   review_average: number | string | null;
   review_count: number | string | null;
+  published_at?: string | null;
 }
 
 export interface PlanBenefit {
@@ -129,7 +132,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
   for (let from = 0; ; from += pageSize) {
     const outcome = await withTimeout(Promise.resolve(supabase
       .from("resource_catalog")
-      .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, grade_levels, access_mode, required_plan_ids, required_plan_names, is_free, is_new, file_size, featured_rank, review_average, review_count")
+      .select("id, title, meta, description, category, delivery_mode, cover_image_url, tags, grade_levels, access_mode, required_plan_ids, required_plan_names, is_free, is_new, file_size, featured_rank, review_average, review_count, published_at")
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1)), "published resource listing");
@@ -165,6 +168,7 @@ export async function fetchPublishedResources(supabase: SupabaseClient): Promise
       requiredPlanNames: planDisplayNames(r.required_plan_ids ?? [], r.required_plan_names ?? []),
       free: accessMode === "public" || accessMode === "authenticated",
       isNew: r.is_new === true,
+      publishedAt: typeof r.published_at === "string" ? r.published_at : null,
       fileSize: r.file_size,
       featuredRank: typeof r.featured_rank === "number" ? r.featured_rank : null,
       reviewAverage: r.review_average === null ? null : Number(r.review_average),

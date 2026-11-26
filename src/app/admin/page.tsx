@@ -71,6 +71,7 @@ import { COVER_CACHE_CONTROL } from "@/lib/coverCompression";
 import { AdminCoverCompressPanel } from "./AdminCoverCompressPanel";
 import { ATTENTION_LABEL, STATUS_FILTER_LABEL, STATUS_FILTER_ORDER, filterResources, resourceAttention, statusCounts, type ResourceStatusFilter } from "./resourceList";
 import { AdminHomepageVideosPanel } from "./AdminHomepageVideosPanel";
+import { AdminPromoBannersPanel } from "./AdminPromoBannersPanel";
 import { VIDEO_RULE_HELP, VIDEO_UNAVAILABLE_NOTICE, isVideoUnavailable, videoChangeForSave, videoFieldState, videoLinkForId } from "./resourceVideoField";
 import { youtubeThumbnailUrl } from "@/lib/youtube";
 import { AdminResourcePreviewsField } from "./AdminResourcePreviewsField";
@@ -2175,6 +2176,8 @@ export default function AdminConsolePage() {
                   เพิ่มสื่อใหม่
                 </Button>
               </div>
+
+              <AdminPromoBannersPanel supabase={supabase} />
 
               <AdminHomepageVideosPanel supabase={supabase} />
 

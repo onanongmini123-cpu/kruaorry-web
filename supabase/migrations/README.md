@@ -2,25 +2,17 @@
 
 Applied filenames use the exact `<version>_<name>` recorded in
 `supabase_migrations.schema_migrations` on the live project
-(`ghwpmtmbqtchsrnagoir`). Newer files in this directory are pending and
-must be checked against the live ledger before application.
+(`ghwpmtmbqtchsrnagoir`). Any future file must be checked against the live
+ledger before application.
 
-**Current state (read-only `list_migrations` on 2026-11-19):** versions `001`
-through `057` are all recorded as applied on the live project, including
-`049`–`057`. Older paragraphs below that call 049–057 "pending" describe the
-state when they were written and are kept as history. Migrations `058`
-(YouTube videos), `059` (resource previews) and `060` (homepage rankings) are
-NOT applied; each is additive and ships with a rollback and a read-only
-verification file.
-
-**Migration numbers in use:** `063` (`admin_set_resource_cover`, written and tested
-on PGlite, NOT applied; used by the admin tool "บีบอัดรูปปกเดิม") is on branch
-`perf/compress-covers`. `061` (promo banners) and `062` (four homepage videos) are
-on branch `feat/homepage-redesign`. The accounts branch
-(`claude/wonderful-planck-dixufx`) must renumber its migrations to **`064` and
-`065`** (timestamps after `20261014090000`) before it is used, with matching
-rollback and verification files. Always re-run `supabase migration list` and
-`supabase db push --dry-run` before applying anything; do not infer remote
+**Current state (production ledger last checked 2026-11-23):** migrations
+`001`–`063` are recorded as applied. In particular, `058`–`060` (videos,
+previews and rankings), `061`–`062` (homepage banners and four videos), and
+`063` (the admin cover-only update function) are applied. Migration `063` was
+applied on 2026-11-23 and its read-only verification passed 4/4 checks. Older
+paragraphs below that call migrations "pending" describe the state when they
+were written and are kept as history. Always re-run `supabase migration list`
+and `supabase db push --dry-run` before applying anything; do not infer remote
 state from this note.
 
 **Live ledger as verified on 2026-09-18:** `001` through `016c` (19
@@ -567,8 +559,8 @@ ledger as the cumulative source of truth only after any unproven legacy grants
 have been separately audited and reconciled, then hardens it as an irreversible
 first-100 promotion record; once `048` is applied, places are never recycled.
 
-Migration `20261010090000_058_resource_youtube_video.sql` is **pending** (not
-applied by this repository). It is additive: a nullable
+Migration `20261010090000_058_resource_youtube_video.sql` is **applied** on
+production (recorded in the ledger by 2026-11-23). It is additive: a nullable
 `resources.youtube_video_id` (format-checked), the same id as the last column of
 `resource_catalog`, the admin-only `admin_set_resource_video(uuid, text)`, a
 read-only `homepage_videos` table (at most three rows) and the admin-only
@@ -581,8 +573,8 @@ no homepage section is shown. Roll back with
 `supabase/verification/058-verify.sql`. Run `npm run test:youtube-video-sql`
 and `npm run test:migration-chain-sql` before applying.
 
-Migration `20261011090000_059_resource_previews.sql` is **pending** (not
-applied by this repository). It is additive: `resource_previews` (admin-only
+Migration `20261011090000_059_resource_previews.sql` is **applied** on
+production (recorded in the ledger by 2026-11-23). It is additive: `resource_previews` (admin-only
 RLS, at most 6 watermarked picture URLs per resource), the read-only
 `resource_preview_catalog` view (resource_id, position, image_url of published
 Pro resources only; it never carries a destination) and the admin-only
@@ -593,8 +585,8 @@ with `supabase/rollbacks/20261011090000_059_resource_previews.rollback.sql`,
 verify with `supabase/verification/059-verify.sql`, and run
 `npm run test:resource-previews-sql` first.
 
-Migration `20261012090000_060_homepage_rankings.sql` is **pending** (not applied
-by this repository). It is additive: `resource_view_daily` (one anonymous row per
+Migration `20261012090000_060_homepage_rankings.sql` is **applied** on
+production (recorded in the ledger by 2026-11-23). It is additive: `resource_view_daily` (one anonymous row per
 resource, random viewer key and Bangkok day; no browser privilege), the
 `record_resource_view(uuid, text)` and `get_homepage_rankings(integer)`
 SECURITY DEFINER functions (ids and counts only, published catalogue only). It
@@ -605,3 +597,29 @@ recorded. Roll back with
 with `supabase/verification/060-verify.sql`, and run
 `npm run test:homepage-rankings-sql` first. View counts are indicative, not
 tamper-proof; do not use them for payments or rewards.
+
+Migration `20261013090000_061_promo_banners.sql` is **applied** on production
+(recorded in the ledger by 2026-11-23). It adds the `promo_banners` table and
+admin-only `admin_set_promo_banners(jsonb)` function. Public reads include only
+active banners inside their date window; an empty list hides the section.
+Rollback: `supabase/rollbacks/20261013090000_061_promo_banners.rollback.sql`;
+read-only verification: `supabase/verification/061-verify.sql`; SQL test:
+`npm run test:promo-banners-sql`.
+
+Migration `20261013100000_062_homepage_videos_four.sql` is **applied** on
+production (recorded in the ledger by 2026-11-23). It extends the homepage
+video limit from three to four and updates the admin-only save function. It
+depends on `058`. Rollback:
+`supabase/rollbacks/20261013100000_062_homepage_videos_four.rollback.sql`;
+read-only verification: `supabase/verification/062-verify.sql`; SQL test:
+`npm run test:homepage-videos-four-sql`.
+
+Migration `20261014090000_063_admin_set_resource_cover.sql` is **applied** on
+production as of 2026-11-23; its verification passed 4/4 checks. It adds
+`admin_set_resource_cover(uuid, text)` so the admin cover-compression tool can
+change only `resources.cover_image_url` after checking admin access and the
+target object in the `resource-covers` bucket. Applying the migration itself
+does not change any existing cover. Rollback:
+`supabase/rollbacks/20261014090000_063_admin_set_resource_cover.rollback.sql`;
+read-only verification: `supabase/verification/063-verify.sql`; SQL test:
+`npm run test:admin-set-resource-cover-sql`.

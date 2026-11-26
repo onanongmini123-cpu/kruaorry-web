@@ -40,6 +40,7 @@ import {
 } from "@/lib/membershipSchemaReadiness";
 import { canAccessMemberExperience } from "@/lib/routeAccess";
 import { openDownloadInNewTab } from "@/lib/downloadWindow";
+import { recordRecentResource } from "@/lib/myHome";
 import { appDiscoveryStateFromSearch, resourceIdFromSearch, type AppView } from "@/lib/resourceDeepLink";
 import { ACCESS_FILTER_OPTIONS, activeFilterCount, filterDiscoveredResources, type ResourceAccessFilter } from "@/lib/resourceDiscovery";
 import { RESOURCE_TYPE_OPTIONS, type ResourceTypeFilter } from "@/lib/resourceMeta";
@@ -338,6 +339,7 @@ export default function TeacherAppPage() {
       return;
     }
     // Access is confirmed on this device; the server still re-checks on open.
+    if (profile?.id) recordRecentResource(profile.id, r.id);
     trackEvent("resource_start", {
       resource_id: r.id,
       access_tier: accessTier(r.accessMode),

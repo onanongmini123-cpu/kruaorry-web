@@ -26,6 +26,8 @@ export type PublicResource = {
   accessMode: ResourceAccessMode;
   isFree: boolean;
   isNew: boolean;
+  /** When the resource was published (ISO), for "new since your last visit". */
+  publishedAt: string | null;
   requiredPlanIds: string[];
   requiredPlanNames: string[];
   featuredRank: number | null;
@@ -93,6 +95,7 @@ export function toPublicResource(value: unknown): PublicResource | null {
     accessMode,
     isFree: accessMode === "public" || accessMode === "authenticated",
     isNew: row.is_new === true,
+    publishedAt: typeof row.published_at === "string" ? row.published_at : null,
     requiredPlanIds,
     requiredPlanNames,
     featuredRank: typeof row.featured_rank === "number" ? row.featured_rank : null,
@@ -116,7 +119,7 @@ function cleanStringArray(value: unknown, limit: number): string[] {
     .slice(0, limit);
 }
 
-export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, access_mode, required_plan_ids, required_plan_names, is_new, featured_rank, review_average, review_count";
+export const PUBLIC_RESOURCE_SELECT = "id, title, meta, description, category, delivery_mode, cover_image_url, tags, is_free, status, grade_levels, access_mode, required_plan_ids, required_plan_names, is_new, featured_rank, review_average, review_count, published_at";
 
 /**
  * Same columns plus the slug. Selecting a column that does not exist yet

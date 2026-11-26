@@ -17,7 +17,7 @@ const EMPTY_SLOTS: HomepageVideoDraft[] = Array.from({ length: HOMEPAGE_VIDEO_LI
 
 /**
  * What to send to admin_set_homepage_videos, or the first problem found.
- * Blank rows are skipped and the rest keep their order (position 1, 2, 3).
+ * Blank rows are skipped and the rest keep their order (position 1 to 4).
  */
 export function homepageVideosPayload(slots: HomepageVideoDraft[]): { ok: true; videos: { videoId: string; title?: string }[] } | { ok: false; message: string } {
   const videos: { videoId: string; title?: string }[] = [];
@@ -110,7 +110,7 @@ export function AdminHomepageVideosPanel({ supabase }: { supabase: SupabaseClien
     <section className="kru-card" style={{ padding: "var(--sp-5)", marginTop: "var(--sp-6)", display: "grid", gap: "var(--sp-4)" }} aria-labelledby="admin-home-videos-title">
       <div>
         <h2 id="admin-home-videos-title" style={{ fontSize: "var(--fs-20)" }}>วิดีโอแนะนำบนหน้าแรก</h2>
-        <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>ใส่ได้ 1–3 วิดีโอ เว้นว่างทั้งหมด = ซ่อนส่วนนี้บนหน้าแรก {VIDEO_RULE_HELP}</p>
+        <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>ใส่ได้ 1–4 วิดีโอ เว้นว่างทั้งหมด = ซ่อนส่วนนี้บนหน้าแรก {VIDEO_RULE_HELP}</p>
       </div>
       {!loaded ? (
         <p role="status">กำลังโหลด…</p>

@@ -42,9 +42,9 @@ describe("homepage rankings data", () => {
       heartCounts: {},
     }, catalogue);
     expect(RANKING_MIN_ITEMS).toBe(3);
-    expect(rows.map((row) => row.key)).toEqual(["hearts", "newest"]);
-    expect(rows[0].items.map((item) => item.id)).toEqual([uuid(3), uuid(1), uuid(2)]);
-    expect(rows[1].items).toHaveLength(3);
+    expect(rows.map((row) => row.key)).toEqual(["newest", "hearts"]);
+    expect(rows[1].items.map((item) => item.id)).toEqual([uuid(3), uuid(1), uuid(2)]);
+    expect(rows[0].items).toHaveLength(3);
   });
 
   it("caps a row at ten and returns no rows without rankings", () => {
@@ -70,6 +70,9 @@ describe("homepage rankings view", () => {
     }, catalogue);
     const html = renderToStaticMarkup(React.createElement(HomepageRankings, { rows, heartCounts: { [uuid(1)]: 12 } }));
     for (const heading of ["❤️ ครูกดหัวใจมากที่สุด", "🔥 ยอดนิยม", "🆕 ใหม่ล่าสุด"]) expect(html).toContain(heading);
+    // Order on the page: newest, then popular, then most hearted.
+    expect(html.indexOf("🆕 ใหม่ล่าสุด")).toBeLessThan(html.indexOf("🔥 ยอดนิยม"));
+    expect(html.indexOf("🔥 ยอดนิยม")).toBeLessThan(html.indexOf("❤️ ครูกดหัวใจมากที่สุด"));
     expect(html).toContain("ใช้ฟรี");
     expect(html).toContain("ครูกดหัวใจ 12 คน");
     expect(html.match(/<article/g)).toHaveLength(9);

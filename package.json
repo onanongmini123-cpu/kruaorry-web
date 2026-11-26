@@ -24,11 +24,14 @@
     "test:youtube-video-sql": "node scripts/test-youtube-video-sql.mjs",
     "test:resource-previews-sql": "node scripts/test-resource-previews-sql.mjs",
     "test:homepage-rankings-sql": "node scripts/test-homepage-rankings-sql.mjs",
-    "test:admin-set-resource-cover-sql": "node scripts/test-admin-set-resource-cover-sql.mjs"
+    "test:admin-set-resource-cover-sql": "node scripts/test-admin-set-resource-cover-sql.mjs",
+    "test:promo-banners-sql": "node scripts/test-promo-banners-sql.mjs",
+    "test:homepage-videos-four-sql": "node scripts/test-homepage-videos-four-sql.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
+    "@vercel/analytics": "^2.0.1",
     "lucide-react": "^1.34.0",
     "next": "16.3.8",
     "qrcode": "^1.5.4",
