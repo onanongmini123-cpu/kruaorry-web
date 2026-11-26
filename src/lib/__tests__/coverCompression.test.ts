@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { AdminCoverCompressPanel, checkToolReadiness, setCover } from "@/app/admin/AdminCoverCompressPanel";
 import {
   backupCsv, COMPRESS_THRESHOLD_BYTES, COVER_CACHE_CONTROL, coverObjectPath, estimateAfterBytes, isCompressedCoverUrl, newCompressedPath,
-  parseBackupCsv, planCompression, totals,
+  parseBackupCsv, planCompression, selectCompressionBatch, totals,
 } from "@/lib/coverCompression";
 
 const BASE = "https://abc.supabase.co/storage/v1/object/public/resource-covers/";
@@ -47,6 +47,20 @@ describe("planCompression", () => {
     expect(plan[0]).toMatchObject({ bytes: 2_000_000, estimatedAfterBytes: estimateAfterBytes(2_000_000) });
     expect(totals(plan)).toEqual({ count: 2, before: 2_400_000, after: 2 * 65 * 1024 });
     expect(estimateAfterBytes(20_000)).toBe(20_000);
+  });
+  it("selects exactly one, five, twenty or all largest eligible covers for a round", () => {
+    const many = Array.from({ length: 22 }, (_, index) => ({
+      id: String(index), title: `ตัวอย่าง ${index}`, cover_image_url: `${BASE}${index}.png`,
+    }));
+    const sizes = new Map(many.map((row, index) => [`${index}.png`, 1_000_000 - index * 10_000]));
+    const planned = planCompression(many, sizes);
+    expect([1, 5, 20, "all"].map((size) => selectCompressionBatch(planned, size as 1 | 5 | 20 | "all").length)).toEqual([1, 5, 20, 22]);
+    expect(selectCompressionBatch(planned, 5).map((item) => item.id)).toEqual(["0", "1", "2", "3", "4"]);
+    expect(selectCompressionBatch(planned, 5)[0].bytes).toBeGreaterThan(selectCompressionBatch(planned, 5)[4].bytes);
+    expect(selectCompressionBatch([...planned].reverse(), 1)[0].id).toBe("0");
+    const afterFirstRound = planCompression(many.map((row, index) => index === 0 ? { ...row, cover_image_url: `${BASE}v2/done.webp` } : row), sizes);
+    expect(selectCompressionBatch(afterFirstRound, 1)[0].id).toBe("1");
+    expect(selectCompressionBatch([], 1)).toEqual([]);
   });
 });
 
@@ -100,11 +114,12 @@ describe("saving only the cover (admin_set_resource_cover)", () => {
     await expect(checkToolReadiness(fakeClient({ rpcError: { message: "network down" } }).client)).resolves.toBe("unknown");
     await expect(checkToolReadiness(fakeClient().client)).resolves.toBe("unknown");
   });
-  it("never uses the full-save function, never deletes files, and checks readiness before the backup and every upload", () => {
+  it("never uses the full-save function, never deletes files, and checks readiness before upload", () => {
     const source = read("src/app/admin/AdminCoverCompressPanel.tsx");
     expect(source).not.toContain("admin_save_resource");
     expect(source).toContain("admin_set_resource_cover");
-    expect(source.indexOf("checkToolReadiness(supabase)")).toBeLessThan(source.indexOf("backupCsv("));
+    expect(source.indexOf("checkToolReadiness(supabase)")).toBeLessThan(source.indexOf(".upload("));
+    expect(source).toContain("!backupReady");
   });
 });
 
@@ -117,11 +132,12 @@ describe("panel and upload settings", () => {
     expect(html).toContain("ย้อนกลับ");
     expect(html).toContain("ตรวจรายการรูปที่ควรบีบอัด");
   });
-  it("the tool never deletes files and backs up before the first upload", () => {
+  it("the tool never deletes files and separates backup from the gated first upload", () => {
     const source = read("src/app/admin/AdminCoverCompressPanel.tsx");
     expect(source).not.toMatch(/from\(COVER_BUCKET\)\s*\.remove/);
     expect(source.indexOf("backupCsv(")).toBeGreaterThan(-1);
     expect(source.indexOf("backupCsv(")).toBeLessThan(source.indexOf(".upload("));
+    expect(source).toContain("preparedBatchKey === batchKey && backupConfirmed");
     expect(source).not.toMatch(/service_role|SERVICE_ROLE/i);
     // After changing covers the public pages are refreshed straight away.
     expect(source).toContain("refreshPublicPages()");
