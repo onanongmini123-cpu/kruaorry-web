@@ -63,10 +63,34 @@ describe("resource management page uses the drawer and the list tools", () => {
     expect(page).toContain("ล้างตัวกรอง");
   });
 
-  it("keeps the featured-resources panel out of the way in its own tab", () => {
+  it("splits the page into three tabs: all resources, homepage, tools", () => {
     expect(page).toContain('role="tablist" aria-label="มุมมองจัดการสื่อ"');
-    expect(page).toContain('contentTab === "featured"');
-    expect(page).toContain('contentTab === "list"');
+    expect(page).toContain('useState<"list" | "home" | "tools">("list")');
+    for (const tab of ["list", "home", "tools"]) {
+      expect(page).toContain(`contentTab === "${tab}"`);
+      expect(page).toContain(`id="res-panel-${tab}" role="tabpanel"`);
+    }
+    expect(page).toContain("สื่อทั้งหมด ({resources.length})");
+    expect(page).toContain("เลือกแท็บด้านล่าง: สื่อทั้งหมด · หน้าแรก (แบนเนอร์ วิดีโอ Hero) · เครื่องมือ");
+  });
+
+  it("the homepage tab folds banners, videos and the Hero list; tools holds cover compression; each panel appears once", () => {
+    const home = page.slice(page.indexOf('{contentTab === "home" && ('), page.indexOf('{contentTab === "tools" && ('));
+    expect(home.match(/<details className="kru-card kru-admin-fold"/g)).toHaveLength(3);
+    expect(home).toContain("<summary>แบนเนอร์ประชาสัมพันธ์</summary>");
+    expect(home).toContain("<summary>วิดีโอแนะนำ (สูงสุด 4 คลิป)</summary>");
+    expect(home).toContain('<details className="kru-card kru-admin-fold" open>');
+    expect(home).toContain("<summary>สื่อแนะนำใน Hero ({featuredIds.length}/5)</summary>");
+    expect(home).toContain("<AdminPromoBannersPanel supabase={supabase} />");
+    expect(home).toContain("<AdminHomepageVideosPanel supabase={supabase} />");
+    expect(home).toContain("handleSaveFeatured");
+    expect(home).toContain('<section className="kru-admin-featured-panel" aria-labelledby="featured-resources-title">');
+    const toolsStart = page.indexOf('{contentTab === "tools" && (');
+    const tools = page.slice(toolsStart, page.indexOf('{contentTab === "list" && (', toolsStart));
+    expect(tools).toContain("<AdminCoverCompressPanel supabase={supabase} />");
+    for (const panel of ["<AdminPromoBannersPanel ", "<AdminHomepageVideosPanel ", "<AdminCoverCompressPanel ", 'aria-labelledby="featured-resources-title"']) {
+      expect(page.split(panel).length - 1, panel).toBe(1);
+    }
   });
 
   it("confirms a save and keeps every existing action (status change, delete)", () => {
