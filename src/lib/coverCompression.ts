@@ -75,6 +75,14 @@ export function totals(candidates: readonly CompressionCandidate[]): { count: nu
   return candidates.reduce((sum, c) => ({ count: sum.count + 1, before: sum.before + c.bytes, after: sum.after + c.estimatedAfterBytes }), { count: 0, before: 0, after: 0 });
 }
 
+export type CompressionBatchSize = 1 | 5 | 20 | "all";
+
+/** Pick the largest eligible covers first. A later scan excludes covers already in v2/. */
+export function selectCompressionBatch(candidates: readonly CompressionCandidate[], size: CompressionBatchSize): CompressionCandidate[] {
+  const largestFirst = [...candidates].sort((a, b) => b.bytes - a.bytes);
+  return size === "all" ? largestFirst : largestFirst.slice(0, size);
+}
+
 export function formatKb(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
