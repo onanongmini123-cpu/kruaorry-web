@@ -2,6 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { navigateAfterAuthChange } from "@/lib/authNavigation";
 import { Mail, KeyRound, Eye, EyeOff, CheckCircle2, User } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button, Input, IconButton } from "@/components/ui";
@@ -191,8 +192,7 @@ function LoginForm() {
           setShowConfirmPassword(false);
           return;
         }
-        router.replace(authCompletionDestination("signup", rawNext));
-        router.refresh();
+        navigateAfterAuthChange(authCompletionDestination("signup", rawNext));
         return;
       }
 
@@ -204,8 +204,7 @@ function LoginForm() {
         setConfirmationHelpOpen(true);
         return;
       }
-      router.replace(signInDestination);
-      router.refresh();
+      navigateAfterAuthChange(signInDestination);
     } catch {
       if (mode === "signup") {
         // A disconnected response cannot prove whether Auth created the

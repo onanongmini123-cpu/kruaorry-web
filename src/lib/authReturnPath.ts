@@ -2,8 +2,10 @@ import { isResourceGrade } from "@/lib/resourceGrades";
 import { isValidSlug } from "@/lib/resourceSlug";
 
 // A login link may carry a destination, but never an arbitrary URL. Keeping
-// this allowlist small prevents both open redirects and accidental navigation
-// to an admin/auth route after a public-resource signup.
+// this allowlist small prevents open redirects (only same-site paths of a few
+// known shapes are ever returned). Sign-in may return to the back office
+// ("/admin", optionally one "view"): that page checks the role itself and sends a
+// non-admin to /app. Sign-UP never carries it (see authCompletionDestination).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const BASE = "https://return-path.invalid";
@@ -44,6 +46,16 @@ function safeAppPath(url: URL): string | null {
   if (category !== null && (!category.trim() || category.length > 100 || CONTROL.test(category))) return null;
   const grade = url.searchParams.get("grade");
   if (grade !== null && !isResourceGrade(grade)) return null;
+  return url.pathname + url.search;
+}
+
+const ADMIN_VIEW = /^[a-z][a-z0-9-]{0,39}$/;
+
+/** "/admin" or "/admin?view=<name>". The admin page itself validates the view name. */
+function safeAdminPath(url: URL): string | null {
+  if (url.pathname !== "/admin" || !hasOnlyParams(url.searchParams, ["view"])) return null;
+  const view = url.searchParams.get("view");
+  if (view !== null && !ADMIN_VIEW.test(view)) return null;
   return url.pathname + url.search;
 }
 
@@ -91,6 +103,9 @@ export function safeAuthNext(raw: string | null | undefined): string {
 
   const appPath = safeAppPath(url);
   if (appPath) return appPath;
+
+  const adminPath = safeAdminPath(url);
+  if (adminPath) return adminPath;
 
   const resourcePath = safeResourceDetailPath(url);
   if (resourcePath) return resourcePath;

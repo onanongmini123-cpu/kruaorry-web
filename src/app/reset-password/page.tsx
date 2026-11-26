@@ -1,7 +1,8 @@
 "use client";
 
+import { navigateAfterAuthChange } from "@/lib/authNavigation";
 import React, { Suspense, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { KeyRound, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button, Input } from "@/components/ui";
@@ -34,7 +35,6 @@ export default function ResetPasswordPage() {
 type Stage = "confirm" | "verifying" | "verified" | "error";
 
 function ResetPasswordForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const tokenHash = searchParams.get("token_hash");
@@ -91,8 +91,7 @@ function ResetPasswordForm() {
     }
     setDone(true);
     window.setTimeout(() => {
-      router.push("/app");
-      router.refresh();
+      navigateAfterAuthChange("/app");
     }, 1500);
   };
 
