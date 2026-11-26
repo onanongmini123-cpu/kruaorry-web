@@ -5,14 +5,18 @@ Applied filenames use the exact `<version>_<name>` recorded in
 (`ghwpmtmbqtchsrnagoir`). Any future file must be checked against the live
 ledger before application.
 
-**Current state (production ledger last checked 2026-11-23):** migrations
-`001`–`063` are recorded as applied. In particular, `058`–`060` (videos,
-previews and rankings), `061`–`062` (homepage banners and four videos), and
-`063` (the admin cover-only update function) are applied. Migration `063` was
-applied on 2026-11-23 and its read-only verification passed 4/4 checks. Older
-paragraphs below that call migrations "pending" describe the state when they
-were written and are kept as history. Always re-run `supabase migration list`
-and `supabase db push --dry-run` before applying anything; do not infer remote
+**Current state (production ledger last checked 2026-11-26):** migrations
+`001`–`064` are recorded as applied. In particular, `058`–`060` (videos,
+previews and rankings), `061`–`062` (homepage banners and four videos), `063`
+(the admin cover-only update function, applied 2026-11-23, verification 4/4)
+and `064` (`set_featured_resources` uses `DELETE … WHERE true` for
+pg_safeupdate) are applied. Migration `064` was applied on 2026-11-26, ledger
+`20261014100000`, and its read-only verification passed 3/3 checks. The next
+free number is `065`; the accounts branch (`claude/wonderful-planck-dixufx`)
+must not reuse its old numbers. Older paragraphs below that call migrations
+"pending" describe the state when they were written and are kept as history.
+Always re-run `supabase migration list` and `supabase db push --dry-run`
+before applying anything; do not infer remote
 state from this note.
 
 **Live ledger as verified on 2026-09-18:** `001` through `016c` (19
