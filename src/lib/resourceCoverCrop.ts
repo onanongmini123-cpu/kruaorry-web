@@ -1,9 +1,9 @@
 export const RESOURCE_COVER_ASPECT = 4 / 3;
 export const RESOURCE_CARD_ASPECT = 16 / 10;
-export const RESOURCE_COVER_MAX_WIDTH = 1448;
+export const RESOURCE_COVER_MAX_WIDTH = 800;
 export const RESOURCE_COVER_MIN_ZOOM = 1;
 export const RESOURCE_COVER_MAX_ZOOM = 4;
-export const RESOURCE_COVER_WEBP_QUALITY = 0.85;
+export const RESOURCE_COVER_WEBP_QUALITY = 0.8;
 export const RESOURCE_COVER_JPEG_QUALITY = 0.88;
 
 export type ResourceCoverCrop = {

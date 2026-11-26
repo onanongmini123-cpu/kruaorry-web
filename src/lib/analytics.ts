@@ -1,3 +1,5 @@
+import { track as trackVercel } from "@vercel/analytics";
+
 /**
  * One place that product code reports what visitors do. Nothing here knows
  * about a vendor: providers (Google Tag Manager/GA4, Plausible, Vercel
@@ -103,6 +105,16 @@ type DataLayerWindow = Window & {
  * which is the safe default.
  */
 const pageProviders: AnalyticsProvider[] = [
+  {
+    name: "vercel",
+    track({ name, properties }) {
+      // Hobby includes page views but does not support custom events. Keep
+      // these off unless the owner explicitly enables them on an eligible plan.
+      if (process.env.NEXT_PUBLIC_VERCEL_CUSTOM_EVENTS_ENABLED === "true") {
+        trackVercel(name, properties);
+      }
+    },
+  },
   {
     name: "dataLayer",
     track({ name, properties }) {

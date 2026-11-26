@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Lock, Sparkles, Star } from "lucide-react";
-import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, type KeyboardEvent } from "react";
 import { PublicResourceCover } from "@/app/resources/PublicResourceCover";
 import type { ResourceAffordance } from "@/components/ui";
 import { accessLabel } from "@/lib/resourceAccess";
@@ -30,11 +30,11 @@ export type FeaturedCarouselResource = {
 type RankedResource = { id: string; featuredRank: number | null };
 
 /**
- * Featured configuration is authoritative when present. Without it, the
- * backend's latest-first ordering is retained. Duplicate ids never create
- * duplicate slides, even if a caller accidentally joins the same row twice.
+ * Featured configuration leads when present, then the rest of the library in the
+ * backend's latest-first order. Duplicate ids never create duplicate slides,
+ * even if a caller accidentally joins the same row twice.
  */
-export function selectFeaturedResources<T extends RankedResource>(resources: readonly T[], limit = 5): T[] {
+export function selectFeaturedResources<T extends RankedResource>(resources: readonly T[], limit = 40): T[] {
   const unique = resources.filter((resource, index, all) => (
     all.findIndex((candidate) => candidate.id === resource.id) === index
   ));
@@ -46,8 +46,10 @@ export function selectFeaturedResources<T extends RankedResource>(resources: rea
       || left.sourceIndex - right.sourceIndex
     ))
     .map(({ resource }) => resource);
-
-  return (ranked.length > 0 ? ranked : unique).slice(0, Math.max(0, limit));
+  const rankedIds = new Set(ranked.map((resource) => resource.id));
+  // Staff-chosen resources lead; every other resource follows in the backend's
+  // latest-first order, so the whole library flows past instead of only five.
+  return [...ranked, ...unique.filter((resource) => !rankedIds.has(resource.id))].slice(0, Math.max(0, limit));
 }
 
 export function featuredAccessLabel(resource: Pick<FeaturedCarouselResource, "accessMode" | "requiredPlanNames">): string {
@@ -65,58 +67,57 @@ function prefersReducedMotion(): boolean {
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+const AUTOPLAY_PX_PER_SECOND = 36;
+
 export function FeaturedResourceCarousel({ resources, loading = false }: FeaturedResourceCarouselProps) {
   const featured = useMemo(() => selectFeaturedResources(resources), [resources]);
-  const [activeIndex, setActiveIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
-  const slideRefs = useRef<Array<HTMLElement | null>>([]);
+  const firstSetRef = useRef<HTMLDivElement>(null);
+  const pausedRef = useRef(false);
   const headingId = useId();
   const trackId = useId();
-  const safeActiveIndex = Math.min(activeIndex, Math.max(featured.length - 1, 0));
+  const loops = featured.length > 1;
 
-  const goTo = useCallback((requestedIndex: number) => {
-    if (featured.length === 0) return;
-    const nextIndex = Math.max(0, Math.min(requestedIndex, featured.length - 1));
+  // Endless slow drift: the list is rendered twice, and when the first copy has
+  // scrolled out of view the position jumps back by exactly one copy. It stops
+  // while a finger, the pointer or keyboard focus is on it, and never starts for
+  // people who asked for reduced motion.
+  useEffect(() => {
     const track = trackRef.current;
-    const slide = slideRefs.current[nextIndex];
-    if (track && slide) {
-      track.scrollTo({
-        left: slide.offsetLeft - track.offsetLeft,
-        behavior: prefersReducedMotion() ? "auto" : "smooth",
-      });
-    }
-    setActiveIndex(nextIndex);
-  }, [featured.length]);
+    const firstSet = firstSetRef.current;
+    if (!loops || !track || !firstSet || prefersReducedMotion()) return undefined;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = Math.min(now - last, 100);
+      last = now;
+      const setWidth = firstSet.offsetWidth + (parseFloat(getComputedStyle(track).columnGap) || 16);
+      if (!pausedRef.current && setWidth > 0 && !document.hidden) {
+        track.scrollLeft += (AUTOPLAY_PX_PER_SECOND * elapsed) / 1000;
+      }
+      if (setWidth > 0) {
+        if (track.scrollLeft >= setWidth) track.scrollLeft -= setWidth;
+        else if (track.scrollLeft <= 0 && pausedRef.current) track.scrollLeft += setWidth;
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [loops]);
+
+  const pause = () => { pausedRef.current = true; };
+  const resume = () => { pausedRef.current = false; };
+
+  const step = useCallback((direction: 1 | -1) => {
+    const track = trackRef.current;
+    const slide = track?.querySelector<HTMLElement>(".kru-featured-carousel__slide");
+    if (!track || !slide) return;
+    track.scrollBy({ left: direction * (slide.offsetWidth + 16), behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      goTo(safeActiveIndex + 1);
-    } else if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      goTo(safeActiveIndex - 1);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      goTo(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      goTo(featured.length - 1);
-    }
-  };
-
-  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
-    const track = event.currentTarget;
-    let nearestIndex = 0;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    slideRefs.current.forEach((slide, index) => {
-      if (!slide) return;
-      const distance = Math.abs((slide.offsetLeft - track.offsetLeft) - track.scrollLeft);
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestIndex = index;
-      }
-    });
-    setActiveIndex((current) => current === nearestIndex ? current : nearestIndex);
+    if (event.key === "ArrowRight") { event.preventDefault(); step(1); }
+    else if (event.key === "ArrowLeft") { event.preventDefault(); step(-1); }
   };
 
   if (loading) {
@@ -142,6 +143,53 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
     );
   }
 
+  const renderSlide = (resource: FeaturedCarouselResource, index: number, clone: boolean) => {
+    const accessLabel = featuredAccessLabel(resource);
+    const showReview = resource.reviewCount > 0 && resource.reviewAverage !== null;
+    const slideProps = clone
+      ? { "aria-hidden": true as const }
+      : { role: "group", "aria-roledescription": "slide", "aria-label": `${index + 1} จาก ${featured.length}: ${resource.title}` };
+    return (
+      <div key={`${clone ? "c" : "o"}-${resource.id}`} className="kru-featured-carousel__slide" {...slideProps}>
+        <Link href={resourceHref(resource)} className="kru-featured-carousel__card" tabIndex={clone ? -1 : undefined}>
+          <div className="kru-featured-carousel__cover">
+            <PublicResourceCover
+              title={resource.title}
+              url={resource.coverImageUrl}
+              deliveryMode={resource.affordance}
+              fallback="neutral"
+              eager={!clone && index < 4}
+              style={{ aspectRatio: "4 / 3" }}
+            />
+            <div className="kru-featured-carousel__badges">
+              {resource.isNew && <span className="kru-featured-carousel__badge kru-featured-carousel__badge--new">ใหม่</span>}
+              <span className={`kru-featured-carousel__badge kru-featured-carousel__badge--${resource.accessMode}`}>
+                {resource.accessMode !== "public" && <Lock size={13} aria-hidden="true" />}
+                {accessLabel}
+              </span>
+              {resource.trialAvailable && resource.accessMode === "plans" && (
+                <span className="kru-featured-carousel__badge kru-featured-carousel__badge--trial">ทดลองได้</span>
+              )}
+            </div>
+          </div>
+          <div className="kru-featured-carousel__body">
+            <h3>{resource.title}</h3>
+            <p>{resource.meta || resource.description || "สื่อพร้อมใช้สำหรับห้องเรียน"}</p>
+            <div className="kru-featured-carousel__meta">
+              {showReview ? (
+                <span aria-label={`คะแนน ${resource.reviewAverage!.toFixed(1)} จาก 5, ${resource.reviewCount} รีวิว`}>
+                  <Star size={15} fill="currentColor" aria-hidden="true" />
+                  {resource.reviewAverage!.toFixed(1)} ({resource.reviewCount.toLocaleString("th-TH")})
+                </span>
+              ) : <span />}
+              <span className="kru-featured-carousel__detail">ดูรายละเอียด <ChevronRight size={15} aria-hidden="true" /></span>
+            </div>
+          </div>
+        </Link>
+      </div>
+    );
+  };
+
   return (
     <section
       className="kru-featured-carousel"
@@ -152,26 +200,14 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
       <div className="kru-featured-carousel__header">
         <div>
           <span className="kru-featured-carousel__eyebrow">คัดสรรจากคลังจริง</span>
-          <h2 id={headingId}>สื่อแนะนำสำหรับคุณครู</h2>
+          <h2 id={headingId}>สื่อและเกมสำหรับคุณครู</h2>
         </div>
         {featured.length > 1 && (
           <div className="kru-featured-carousel__arrows" aria-label="เลื่อนสื่อแนะนำ">
-            <button
-              type="button"
-              aria-label="ดูสื่อก่อนหน้า"
-              aria-controls={trackId}
-              disabled={safeActiveIndex === 0}
-              onClick={() => goTo(safeActiveIndex - 1)}
-            >
+            <button type="button" aria-label="ดูสื่อก่อนหน้า" aria-controls={trackId} onClick={() => step(-1)}>
               <ChevronLeft size={20} aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              aria-label="ดูสื่อถัดไป"
-              aria-controls={trackId}
-              disabled={safeActiveIndex === featured.length - 1}
-              onClick={() => goTo(safeActiveIndex + 1)}
-            >
+            <button type="button" aria-label="ดูสื่อถัดไป" aria-controls={trackId} onClick={() => step(1)}>
               <ChevronRight size={20} aria-hidden="true" />
             </button>
           </div>
@@ -184,80 +220,25 @@ export function FeaturedResourceCarousel({ resources, loading = false }: Feature
         className="kru-featured-carousel__track"
         role="group"
         tabIndex={0}
-        aria-label="สื่อแนะนำ เลื่อนด้วยนิ้วหรือปุ่มลูกศร"
+        aria-label="สื่อแนะนำ เลื่อนวนอัตโนมัติ แตะหรือเอาเมาส์วางเพื่อหยุด เลื่อนด้วยนิ้วหรือปุ่มลูกศร"
         onKeyDown={handleKeyDown}
-        onScroll={handleScroll}
+        onMouseEnter={pause}
+        onMouseLeave={resume}
+        onFocus={pause}
+        onBlur={resume}
+        onTouchStart={pause}
+        onTouchEnd={resume}
+        onTouchCancel={resume}
       >
-        {featured.map((resource, index) => {
-          const accessLabel = featuredAccessLabel(resource);
-          const showReview = resource.reviewCount > 0 && resource.reviewAverage !== null;
-          return (
-            <div
-              key={resource.id}
-              ref={(node) => { slideRefs.current[index] = node; }}
-              className="kru-featured-carousel__slide"
-              role="group"
-              aria-roledescription="slide"
-              aria-label={`${index + 1} จาก ${featured.length}: ${resource.title}`}
-            >
-              <Link href={resourceHref(resource)} className="kru-featured-carousel__card">
-                <div className="kru-featured-carousel__cover">
-                  <PublicResourceCover
-                    title={resource.title}
-                    url={resource.coverImageUrl}
-                    deliveryMode={resource.affordance}
-                    fallback="neutral"
-                    eager={index < 2}
-                    style={{ aspectRatio: "4 / 3" }}
-                  />
-                  <div className="kru-featured-carousel__badges">
-                    {resource.isNew && <span className="kru-featured-carousel__badge kru-featured-carousel__badge--new">ใหม่</span>}
-                    <span className={`kru-featured-carousel__badge kru-featured-carousel__badge--${resource.accessMode}`}>
-                      {resource.accessMode !== "public" && <Lock size={13} aria-hidden="true" />}
-                      {accessLabel}
-                    </span>
-                    {resource.trialAvailable && resource.accessMode === "plans" && (
-                      <span className="kru-featured-carousel__badge kru-featured-carousel__badge--trial">ทดลองได้</span>
-                    )}
-                  </div>
-                </div>
-                <div className="kru-featured-carousel__body">
-                  <h3>{resource.title}</h3>
-                  <p>{resource.meta || resource.description || "สื่อพร้อมใช้สำหรับห้องเรียน"}</p>
-                  <div className="kru-featured-carousel__meta">
-                    {showReview ? (
-                      <span aria-label={`คะแนน ${resource.reviewAverage!.toFixed(1)} จาก 5, ${resource.reviewCount} รีวิว`}>
-                        <Star size={15} fill="currentColor" aria-hidden="true" />
-                        {resource.reviewAverage!.toFixed(1)} ({resource.reviewCount.toLocaleString("th-TH")})
-                      </span>
-                    ) : <span />}
-                    <span className="kru-featured-carousel__detail">ดูรายละเอียด <ChevronRight size={15} aria-hidden="true" /></span>
-                  </div>
-                </div>
-              </Link>
-            </div>
-          );
-        })}
-      </div>
-
-      {featured.length > 1 && (
-        <div className="kru-featured-carousel__dots" aria-label="เลือกสื่อแนะนำ">
-          {featured.map((resource, index) => (
-            <button
-              key={resource.id}
-              type="button"
-              aria-label={`ไปยังสื่อ ${index + 1}: ${resource.title}`}
-              aria-controls={trackId}
-              aria-current={safeActiveIndex === index ? "true" : undefined}
-              onClick={() => goTo(index)}
-            />
-          ))}
+        <div ref={firstSetRef} className="kru-featured-carousel__set">
+          {featured.map((resource, index) => renderSlide(resource, index, false))}
         </div>
-      )}
-
-      <span className="kru-featured-carousel__live" aria-live="polite" aria-atomic="true">
-        สื่อ {safeActiveIndex + 1} จาก {featured.length}: {featured[safeActiveIndex]?.title}
-      </span>
+        {loops && (
+          <div className="kru-featured-carousel__set" aria-hidden="true">
+            {featured.map((resource, index) => renderSlide(resource, index, true))}
+          </div>
+        )}
+      </div>
       <CarouselStyles />
     </section>
   );
@@ -268,13 +249,9 @@ function CarouselStyles() {
     <style jsx global>{`
       .kru-featured-carousel {
         min-width: 0;
-        width: min(100%, 560px);
-        padding: var(--sp-5);
-        border: 1px solid rgba(195, 176, 252, .7);
-        border-radius: var(--r-panel);
-        background: rgba(255, 255, 255, .72);
-        box-shadow: 0 24px 64px rgba(70, 49, 139, .13);
-        backdrop-filter: blur(14px);
+        width: min(100%, var(--container-max));
+        margin: 0 auto;
+        padding: var(--sp-7) var(--sp-5) var(--sp-5);
       }
 
       .kru-featured-carousel__header {
@@ -282,7 +259,7 @@ function CarouselStyles() {
         align-items: center;
         justify-content: space-between;
         gap: var(--sp-4);
-        padding: 0 var(--sp-1) var(--sp-4);
+        padding: 0 0 var(--sp-4);
       }
 
       .kru-featured-carousel__eyebrow {
@@ -326,11 +303,20 @@ function CarouselStyles() {
         gap: var(--sp-4);
         overflow-x: auto;
         overscroll-behavior-x: contain;
-        scroll-snap-type: x mandatory;
-        scroll-padding-inline: 2px;
-        padding: 2px calc(42% + 2px) var(--sp-4) 2px;
-        scrollbar-width: thin;
-        scrollbar-color: var(--purple-200) transparent;
+        padding: 4px 0 var(--sp-4);
+        scrollbar-width: none;
+        -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+        mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+      }
+
+      .kru-featured-carousel__track::-webkit-scrollbar {
+        display: none;
+      }
+
+      .kru-featured-carousel__set {
+        display: flex;
+        flex: 0 0 auto;
+        gap: var(--sp-4);
       }
 
       .kru-featured-carousel__track:focus-visible {
@@ -339,8 +325,7 @@ function CarouselStyles() {
 
       .kru-featured-carousel__slide {
         min-width: 0;
-        flex: 0 0 calc(58% - 8px);
-        scroll-snap-align: start;
+        flex: 0 0 clamp(220px, 24vw, 272px);
       }
 
       .kru-featured-carousel__card {
@@ -468,51 +453,6 @@ function CarouselStyles() {
         white-space: nowrap;
       }
 
-      .kru-featured-carousel__dots {
-        min-height: var(--tap-min, 44px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .kru-featured-carousel__dots button {
-        width: var(--tap-min, 44px);
-        height: var(--tap-min, 44px);
-        padding: 0;
-        border: 0;
-        border-radius: var(--r-pill);
-        display: grid;
-        place-items: center;
-        background: transparent;
-        cursor: pointer;
-      }
-
-      .kru-featured-carousel__dots button::after {
-        content: "";
-        width: 10px;
-        height: 10px;
-        border-radius: var(--r-pill);
-        background: var(--purple-200);
-        transition: width var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
-      }
-
-      .kru-featured-carousel__dots button[aria-current="true"]::after {
-        width: 28px;
-        background: var(--purple-600);
-      }
-
-      .kru-featured-carousel__live {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
       .kru-featured-carousel--state {
         min-height: 330px;
         display: flex;
@@ -550,31 +490,20 @@ function CarouselStyles() {
 
       @media (max-width: 560px) {
         .kru-featured-carousel {
-          padding: var(--sp-4);
-          border-radius: var(--r-lg);
+          padding: var(--sp-6) var(--sp-4) var(--sp-4);
         }
 
         .kru-featured-carousel__slide {
-          flex-basis: calc(100% - 8px);
+          flex-basis: min(72vw, 260px);
         }
 
         .kru-featured-carousel__arrows {
           display: none;
         }
-
-        .kru-featured-carousel__track {
-          padding-right: 10px;
-          scrollbar-width: none;
-        }
-
-        .kru-featured-carousel__track::-webkit-scrollbar {
-          display: none;
-        }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .kru-featured-carousel__card,
-        .kru-featured-carousel__dots button::after {
+        .kru-featured-carousel__card {
           transition: none;
         }
 

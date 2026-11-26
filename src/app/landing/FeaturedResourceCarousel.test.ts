@@ -20,7 +20,7 @@ const resource = (id: string, featuredRank: number | null, overrides: Partial<Fe
 });
 
 describe("selectFeaturedResources", () => {
-  it("deduplicates, orders configured ranks, and caps the carousel at five", () => {
+  it("deduplicates, orders configured ranks, and honours an explicit limit", () => {
     const rows = [
       resource("third", 30),
       resource("first", 10),
@@ -32,8 +32,14 @@ describe("selectFeaturedResources", () => {
       resource("unranked", null),
     ];
 
-    expect(selectFeaturedResources(rows).map((item) => item.id))
+    expect(selectFeaturedResources(rows, 5).map((item) => item.id))
       .toEqual(["first", "second", "third", "fourth", "fifth"]);
+  });
+
+  it("puts staff-chosen resources first and then lets the rest of the library follow, so everything flows past", () => {
+    const rows = [resource("a", null), resource("b", 20), resource("c", null), resource("d", 10), resource("a", null)];
+    expect(selectFeaturedResources(rows).map((item) => item.id)).toEqual(["d", "b", "a", "c"]);
+    expect(selectFeaturedResources(Array.from({ length: 60 }, (_, i) => resource(`r${i}`, null)))).toHaveLength(40);
   });
 
   it("uses unique latest-first resources only when no featured configuration exists", () => {
@@ -94,7 +100,8 @@ describe("FeaturedResourceCarousel trial badge", () => {
       resource("pro-plain", 2, { accessMode: "plans", requiredPlanNames: ["Teacher"] }),
       resource("free", 3, { trialAvailable: true }),
     ]);
-    expect(html.match(/ทดลองได้/g)).toHaveLength(1);
+    // Each slide is rendered twice for the endless loop; the repeat is hidden from assistive tech.
+    expect(html.match(/ทดลองได้/g)).toHaveLength(2);
     expect(html.indexOf("ทดลองได้")).toBeLessThan(html.indexOf("pro-plain"));
   });
 });

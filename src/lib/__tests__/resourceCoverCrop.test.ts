@@ -57,20 +57,20 @@ describe("resource cover crop", () => {
     });
   });
 
-  it("never upscales tiny sources and caps large output at 1448 by 1086", () => {
-    expect(resourceCoverOutputSize(4000, 3000, DEFAULT_RESOURCE_COVER_CROP)).toEqual({ width: 1448, height: 1086 });
+  it("never upscales tiny sources and caps large output at 800 by 600", () => {
+    expect(resourceCoverOutputSize(4000, 3000, DEFAULT_RESOURCE_COVER_CROP)).toEqual({ width: 800, height: 600 });
     expect(resourceCoverOutputSize(320, 240, DEFAULT_RESOURCE_COVER_CROP)).toEqual({ width: 320, height: 240 });
     expect(resourceCoverOutputSize(80, 160, DEFAULT_RESOURCE_COVER_CROP)).toEqual({ width: 80, height: 60 });
   });
 
   it("recognizes a 4:3 source within the two-percent tolerance", () => {
-    expect(isResourceCoverAspect(1448, 1086)).toBe(true);
+    expect(isResourceCoverAspect(800, 600)).toBe(true);
     expect(isResourceCoverAspect(132, 100)).toBe(true);
     expect(isResourceCoverAspect(130, 100)).toBe(false);
     expect(isResourceCoverAspect(0, 100)).toBe(false);
   });
 
-  it("renders a bounded WebP at quality 0.85", async () => {
+  it("renders a bounded WebP at quality 0.8", async () => {
     const bitmap = { width: 2400, height: 1600, close: vi.fn() };
     const drawImage = vi.fn();
     const context = { drawImage, imageSmoothingEnabled: false, imageSmoothingQuality: "low" };
@@ -89,14 +89,14 @@ describe("resource cover crop", () => {
 
     try {
       const result = await cropAndOptimizeResourceCover({ type: "image/png", size: 4000 } as File);
-      expect(result).toMatchObject({ extension: "webp", width: 1448, height: 1086 });
+      expect(result).toMatchObject({ extension: "webp", width: 800, height: 600 });
       const draw = drawImage.mock.calls[0];
       expect(draw[0]).toBe(bitmap);
       expect(draw[1]).toBeCloseTo(400 / 3);
       expect(draw[2]).toBeCloseTo(0);
       expect(draw[3]).toBeCloseTo(6400 / 3);
       expect(draw[4]).toBeCloseTo(1600);
-      expect(draw.slice(5)).toEqual([0, 0, 1448, 1086]);
+      expect(draw.slice(5)).toEqual([0, 0, 800, 600]);
       expect(context.imageSmoothingEnabled).toBe(true);
       expect(context.imageSmoothingQuality).toBe("high");
       expect(bitmap.close).toHaveBeenCalledOnce();

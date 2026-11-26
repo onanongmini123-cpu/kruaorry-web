@@ -11,7 +11,8 @@ const UUID = "4cf231ef-9488-4239-b633-96393c251a72";
 function resource(id: string, slug: string | null, accessMode: PublicResource["accessMode"] = "public"): PublicResource {
   return {
     id, slug, title: id, meta: "", description: "", category: "", gradeLevels: [], deliveryMode: "web_app",
-    coverImageUrl: null, tags: [], accessMode, isFree: true, isNew: false, requiredPlanIds: [],
+    coverImageUrl: null, tags: [], accessMode, isFree: true, isNew: false,
+  publishedAt: null, requiredPlanIds: [],
     requiredPlanNames: [], featuredRank: null, reviewAverage: null, reviewCount: 0, detail: null, youtubeVideoId: null, previewImages: [], trialAvailable: false,
   };
 }

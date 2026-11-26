@@ -6,6 +6,7 @@ import { Badge, ResourceCard, Tag } from "@/components/ui";
 import { PublicTopBar } from "@/components/PublicTopBar";
 import { TrackedAnchor } from "@/components/analytics/TrackedAnchor";
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
+import { RecentViewTracker } from "@/components/RecentViewTracker";
 import { ResourceViewBeacon } from "@/components/analytics/ResourceViewBeacon";
 import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { accessDescription, accessLabel, accessTier } from "@/lib/resourceAccess";
@@ -107,6 +108,7 @@ export default async function ResourceDetailPage({ params }: Props) {
   return (
     <div className="kru-detail__page">
       <ResourceViewBeacon resourceId={item.id} />
+      <RecentViewTracker resourceId={item.id} />
       <TrackOnMount
         event="resource_view"
         properties={{ resource_id: item.id, slug: item.slug ?? "", access_tier: tier, delivery_mode: item.deliveryMode, authenticated: viewer.authenticated }}

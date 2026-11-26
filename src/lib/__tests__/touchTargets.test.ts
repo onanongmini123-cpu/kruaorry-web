@@ -25,9 +25,10 @@ describe("touch target sizes", () => {
     expect(read("src/components/PublicTopBar.css")).toMatch(/\.kru-topbar__brand,\s*\.kru-topbar__action \{\s*min-height: var\(--tap-min, 44px\);/);
   });
 
-  it("carousel dots have a 44px hit area around the small visible dot", () => {
-    const source = read("src/app/landing/FeaturedResourceCarousel.tsx");
-    expect(source).toMatch(/\.kru-featured-carousel__dots button \{\s*width: var\(--tap-min, 44px\);\s*height: var\(--tap-min, 44px\);/);
+  it("promo banner dots and arrows have a 44px hit area around the small visible dot", () => {
+    const source = read("src/app/landing/PromoBanners.tsx");
+    expect(source).toMatch(/\.kru-promo__dots button \{ width: var\(--tap-min, 44px\); height: var\(--tap-min, 44px\);/);
+    expect(source).toMatch(/\.kru-promo__arrow \{ width: var\(--tap-min, 44px\); height: var\(--tap-min, 44px\);/);
   });
 
   it("the library filter row never needs more than the phone/tablet width", () => {

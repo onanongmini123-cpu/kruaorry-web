@@ -64,4 +64,5 @@ supabase migration repair --status applied 20261012090000   # 060
 ## หมายเหตุ
 - คำสั่ง `migration repair` ในเอกสารนี้เขียนตามวิธีที่ใช้ใน `docs/pr-27-handoff.md` (applied หลังลงด้วยมือ,
   reverted หลัง rollback) ผมไม่ได้เห็นข้อสรุปของ Codex จึงให้ครูเทียบกับของ Codex ก่อนใช้จริง
+- migration 061 และ 062 (แบนเนอร์ และวิดีโอ 4 ช่อง) ดู `docs/production-rollout-061-062.md` ทำหลัง 058–060 ขึ้นจริงแล้วเท่านั้น
 - ข้อมูลทดสอบบน staging: `supabase/seeds/staging-test-data.sql` (ลง) และ `staging-test-cleanup.sql` (ลบเฉพาะแถว `[TEST]`) **ห้ามรันบนฐานจริง**
