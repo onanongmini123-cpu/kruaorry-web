@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Button, Input } from "@/components/ui";
-import { compressToWebp } from "@/lib/imageWebp";
+import { compressImageForUpload } from "@/lib/imageWebp";
 import { refreshPublicPages } from "@/lib/refreshPublicPages";
 import { bannersPayload, draftsFromRows, EMPTY_BANNER_DRAFT, PROMO_BANNER_LIMIT, type BannerDraft } from "@/lib/promoBanners";
 
@@ -67,12 +67,12 @@ export function AdminPromoBannersPanel({ supabase }: { supabase: SupabaseClient 
     setBusy(true);
     setMessage(null);
     try {
-      const blob = await compressToWebp(file, field === "imageUrl" ? DESKTOP_MAX_WIDTH : MOBILE_MAX_WIDTH);
-      const path = `banners/${crypto.randomUUID()}.webp`;
-      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: false, contentType: "image/webp", cacheControl: BANNER_CACHE_CONTROL });
+      const image = await compressImageForUpload(file, field === "imageUrl" ? DESKTOP_MAX_WIDTH : MOBILE_MAX_WIDTH);
+      const path = `banners/${crypto.randomUUID()}.${image.extension}`;
+      const { error } = await supabase.storage.from(BUCKET).upload(path, image.blob, { upsert: false, contentType: image.contentType, cacheControl: BANNER_CACHE_CONTROL });
       if (error) throw new Error(error.message);
       update(index, { [field]: supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl });
-      setMessage({ tone: "ok", text: `ย่อและอัปโหลดรูปแล้ว (${Math.round(blob.size / 1024)} KB) กด “บันทึกแบนเนอร์” เพื่อใช้งานจริง` });
+      setMessage({ tone: "ok", text: `ย่อและอัปโหลดรูปแล้ว (${image.extension === "webp" ? "WebP" : "JPEG"} ${Math.round(image.blob.size / 1024)} KB) กด “บันทึกแบนเนอร์” เพื่อใช้งานจริง` });
     } catch (thrown) {
       setMessage({ tone: "error", text: `อัปโหลดรูปไม่สำเร็จ: ${thrown instanceof Error ? thrown.message : String(thrown)}` });
     } finally {
@@ -111,7 +111,7 @@ export function AdminPromoBannersPanel({ supabase }: { supabase: SupabaseClient 
         <h2 id="admin-banners-title" style={{ fontSize: "var(--fs-20)" }}>แบนเนอร์ประชาสัมพันธ์หน้าแรก</h2>
         <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-14)" }}>
           ใส่ได้สูงสุด {PROMO_BANNER_LIMIT} แบนเนอร์ เลื่อนอัตโนมัติทุก 5 วินาที ไม่มีแบนเนอร์ = ซ่อนทั้งส่วน · รูปคอมอัตราส่วน 16:9 (เช่น 1600×900) รูปมือถือ 4:5 (เช่น 1080×1350) ไม่บังคับ ·
-          ระบบย่อและแปลงเป็น WebP ให้อัตโนมัติก่อนอัปโหลด · ลิงก์ขึ้นต้นด้วย https:// (เปิดแท็บใหม่) หรือ / เช่น /resources (หน้าในเว็บ)
+          ระบบย่อและแปลงเป็น WebP ให้อัตโนมัติก่อนอัปโหลด (iPhone/iPad ใช้ JPEG แทน) · ลิงก์ขึ้นต้นด้วย https:// (เปิดแท็บใหม่) หรือ / เช่น /resources (หน้าในเว็บ)
         </p>
       </div>
       {!loaded ? (
