@@ -7,11 +7,11 @@ import { compressToWebp } from "@/lib/imageWebp";
 import { refreshPublicPages } from "@/lib/refreshPublicPages";
 import {
   COVER_BUCKET, COVER_CACHE_CONTROL, COVER_COMPRESS_MAX_WIDTH, COVER_COMPRESS_QUALITY, backupCsv, coverFileName, coverObjectPath,
-  formatKb, isCompressedCoverUrl, newCompressedPath, parseBackupCsv, planCompression, selectCompressionBatch, totals,
-  type CompressionBatchSize, type CompressionCandidate, type CoverRow,
+  formatKb, isCompressedCoverUrl, newCompressedPath, parseBackupCsv, planCompression, totals,
+  type CompressionCandidate, type CoverRow,
 } from "@/lib/coverCompression";
 
-type Outcome = { id: string; title: string; status: "done" | "skipped" | "failed"; note: string; oldUrl?: string; newUrl?: string; before?: number; after?: number };
+type Outcome = { id: string; title: string; status: "done" | "skipped" | "failed"; note: string; oldUrl?: string; newUrl?: string; saved?: number };
 
 /** What the install check learned about migration 063 (the cover-only save function). */
 export type ToolReadiness = "ready" | "missing" | "not_admin" | "unknown";
@@ -60,9 +60,6 @@ function downloadText(name: string, content: string) {
 /** Admin tool "บีบอัดรูปปกเดิม": re-saves big existing covers as small WebP files. Originals are never deleted. */
 export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient }) {
   const [candidates, setCandidates] = useState<CompressionCandidate[] | null>(null);
-  const [batchSize, setBatchSize] = useState<CompressionBatchSize>(1);
-  const [preparedBatchKey, setPreparedBatchKey] = useState<string | null>(null);
-  const [backupConfirmed, setBackupConfirmed] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ index: number; total: number; title: string } | null>(null);
@@ -70,89 +67,55 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [backupRows, setBackupRows] = useState<{ id: string; url: string }[]>([]);
   const stopRef = useRef(false);
-  const startingRef = useRef(false);
   const busy = scanning || running;
-  const batch = selectCompressionBatch(candidates ?? [], batchSize);
-  const batchKey = JSON.stringify(batch.map((c) => [c.id, c.url]));
-  const backupReady = batch.length > 0 && preparedBatchKey === batchKey && backupConfirmed;
-
-  const loadCandidates = async (): Promise<CompressionCandidate[]> => {
-    const { data, error } = await supabase.from("resources").select("id, title, cover_image_url").order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as CoverRow[];
-    const folders = [...new Set(rows.map((r) => coverObjectPath(r.cover_image_url)).filter((p): p is string => Boolean(p)).map((p) => p.split("/").slice(0, -1).join("/")))];
-    const sizes = new Map<string, number>();
-    for (const folder of folders) {
-      const listed = await supabase.storage.from(COVER_BUCKET).list(folder, { limit: 1000 });
-      if (listed.error) throw new Error(listed.error.message);
-      for (const item of listed.data ?? []) {
-        const size = (item.metadata as { size?: number } | null)?.size;
-        if (typeof size === "number") sizes.set(folder ? `${folder}/${item.name}` : item.name, size);
-      }
-    }
-    return planCompression(rows, sizes);
-  };
 
   const scan = async () => {
     setScanning(true);
     setMessage(null);
-    setPreparedBatchKey(null);
-    setBackupConfirmed(false);
     try {
-      setCandidates(await loadCandidates());
+      const { data, error } = await supabase.from("resources").select("id, title, cover_image_url").order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as CoverRow[];
+      const folders = [...new Set(rows.map((r) => coverObjectPath(r.cover_image_url)).filter((p): p is string => Boolean(p)).map((p) => p.split("/").slice(0, -1).join("/")))];
+      const sizes = new Map<string, number>();
+      for (const folder of folders) {
+        const listed = await supabase.storage.from(COVER_BUCKET).list(folder, { limit: 1000 });
+        if (listed.error) throw new Error(listed.error.message);
+        for (const item of listed.data ?? []) {
+          const size = (item.metadata as { size?: number } | null)?.size;
+          if (typeof size === "number") sizes.set(folder ? `${folder}/${item.name}` : item.name, size);
+        }
+      }
+      setCandidates(planCompression(rows, sizes));
+      setOutcomes([]);
     } catch (thrown) {
-      setCandidates(null);
       setMessage({ tone: "error", text: `ตรวจรายการไม่สำเร็จ: ${thrown instanceof Error ? thrown.message : String(thrown)}` });
     } finally {
       setScanning(false);
     }
   };
 
-  const downloadBackup = () => {
-    if (busy || batch.length === 0) return;
-    downloadText(`cover-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`, backupCsv(batch.map((c) => ({ id: c.id, title: c.title, url: c.url }))));
-    setPreparedBatchKey(batchKey);
-    setBackupConfirmed(false);
-    setMessage({ tone: "ok", text: `เริ่มดาวน์โหลด CSV สำรองสำหรับ ${batch.length} รูปแล้ว โปรดตรวจว่าไฟล์อยู่ในเครื่องก่อนกดยืนยัน` });
-  };
-
   const start = async () => {
-    if (busy || startingRef.current || !backupReady) return;
-    startingRef.current = true;
-    setRunning(true);
-    const selected = [...batch];
+    if (!candidates || candidates.length === 0) return;
     // 0. Refuse to begin unless the cover-only save function is installed.
-    let readiness: ToolReadiness;
-    try {
-      readiness = await checkToolReadiness(supabase);
-    } catch {
-      readiness = "unknown";
-    }
+    const readiness = await checkToolReadiness(supabase);
     if (readiness !== "ready") {
       setMessage({ tone: "error", text: readinessMessage(readiness) });
-      setRunning(false);
-      startingRef.current = false;
       return;
     }
-    setPreparedBatchKey(null);
-    setBackupConfirmed(false);
+    // 1. The backup file comes first, before anything is uploaded or changed.
+    downloadText(`cover-backup-${new Date().toISOString().slice(0, 10)}.csv`, backupCsv(candidates.map((c) => ({ id: c.id, title: c.title, url: c.url }))));
+    setRunning(true);
     stopRef.current = false;
     setOutcomes([]);
     setMessage(null);
     const results: Outcome[] = [];
-    for (let index = 0; index < selected.length; index += 1) {
+    for (let index = 0; index < candidates.length; index += 1) {
       if (stopRef.current) break;
-      const c = selected[index];
-      setProgress({ index: index + 1, total: selected.length, title: c.title });
+      const c = candidates[index];
+      setProgress({ index: index + 1, total: candidates.length, title: c.title });
       let outcome: Outcome;
       try {
-        const latest = await supabase.from("resources").select("cover_image_url").eq("id", c.id).single();
-        if (latest.error || !latest.data) throw new Error("อ่านรูปปกปัจจุบันไม่สำเร็จ");
-        if (latest.data.cover_image_url !== c.url) {
-          results.push({ id: c.id, title: c.title, status: "skipped", note: "รูปปกเปลี่ยนไปแล้ว ข้ามรายการนี้" });
-          setOutcomes([...results]);
-          continue;
-        }
         const response = await fetch(c.url);
         if (!response.ok) throw new Error(`โหลดรูปเดิมไม่ได้ (${response.status})`);
         const original = await response.blob();
@@ -166,7 +129,7 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
           const newUrl = supabase.storage.from(COVER_BUCKET).getPublicUrl(path).data.publicUrl;
           const changed = await setCover(supabase, c.id, newUrl);
           outcome = changed.ok
-            ? { id: c.id, title: c.title, status: "done", note: `${formatKb(c.bytes)} → ${formatKb(small.size)}`, oldUrl: changed.previous ?? c.url, newUrl, before: c.bytes, after: small.size }
+            ? { id: c.id, title: c.title, status: "done", note: `${formatKb(c.bytes)} → ${formatKb(small.size)}`, oldUrl: changed.previous ?? c.url, newUrl, saved: c.bytes - small.size }
             : { id: c.id, title: c.title, status: "failed", note: changed.reason };
         }
       } catch (thrown) {
@@ -177,23 +140,14 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
     }
     const refreshed = results.some((r) => r.status === "done") ? await refreshPublicPages() : true;
     const done = results.filter((r) => r.status === "done");
-    const before = done.reduce((sum, r) => sum + (r.before ?? 0), 0);
-    const after = done.reduce((sum, r) => sum + (r.after ?? 0), 0);
-    let remaining: number | null = null;
-    try {
-      const next = await loadCandidates();
-      setCandidates(next);
-      remaining = next.length;
-    } catch {
-      setCandidates(null);
-    }
+    const saved = done.reduce((sum, r) => sum + (r.saved ?? 0), 0);
     setMessage({
       tone: results.some((r) => r.status === "failed") ? "error" : "ok",
-      text: `รอบนี้ทำไป ${results.length} รูป · สำเร็จ ${done.length} · ข้าม ${results.filter((r) => r.status === "skipped").length} · พลาด ${results.filter((r) => r.status === "failed").length} · ขนาดก่อน/หลังของรูปที่สำเร็จ ${formatKb(before)} → ${formatKb(after)} · ${remaining === null ? "ยังตรวจจำนวนที่เหลือไม่ได้ กดตรวจรายการอีกครั้ง" : `เหลืออีก ${remaining} รูป`}${stopRef.current ? " · หยุดกลางคัน" : ""}${refreshed ? "" : " · ล้างแคชหน้าเว็บไม่สำเร็จ หน้าเว็บจะอัปเดตภายใน 5 นาที"}`,
+      text: `สรุป: สำเร็จ ${done.length} · ข้าม ${results.filter((r) => r.status === "skipped").length} · พลาด ${results.filter((r) => r.status === "failed").length} · ประหยัดต่อการโหลดหนึ่งรอบ ${formatKb(saved)}${stopRef.current ? " · หยุดกลางคัน" : ""}${refreshed ? "" : " · ล้างแคชหน้าเว็บไม่สำเร็จ หน้าเว็บจะอัปเดตภายใน 5 นาที"}`,
     });
     setProgress(null);
     setRunning(false);
-    startingRef.current = false;
+    setCandidates(null);
   };
 
   const rollback = async (rows: { id: string; url: string }[]) => {
@@ -266,23 +220,11 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
             <p role="status">
               พบ {sum?.count} รูป · รวม {formatKb(sum?.before ?? 0)} · คาดว่าเหลือประมาณ {formatKb(sum?.after ?? 0)} (ตัวเลขคาดการณ์ ผลจริงอาจต่างกัน)
             </p>
-            <fieldset disabled={busy} style={{ border: 0, margin: 0, padding: 0 }}>
-              <legend style={{ fontWeight: 700, marginBottom: "var(--sp-2)" }}>จำนวนรูปที่จะทำรอบนี้</legend>
-              <div style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}>
-                {([1, 5, 20, "all"] as const).map((size) => (
-                  <label key={size} style={{ minHeight: 44, display: "inline-flex", alignItems: "center", gap: "var(--sp-2)", padding: "0 var(--sp-3)", border: "1px solid var(--border-subtle)", borderRadius: 12, cursor: "pointer" }}>
-                    <input type="radio" name="cover-compress-batch-size" value={size} checked={batchSize === size} onChange={() => { setBatchSize(size); setPreparedBatchKey(null); setBackupConfirmed(false); }} />
-                    {size === "all" ? "ทั้งหมด" : `${size} รูป`}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <p>รอบนี้เลือก {batch.length} รูป เรียงจากไฟล์ใหญ่ที่สุดก่อน</p>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
                 <thead><tr><th align="left">สื่อ</th><th align="left">ไฟล์เดิม</th><th align="right">เดิม</th><th align="right">คาดว่าเหลือ</th></tr></thead>
                 <tbody>
-                  {batch.map((c) => (
+                  {candidates.map((c) => (
                     <tr key={c.id}>
                       <td>{c.title}</td>
                       <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{coverFileName(c.url)}</td>
@@ -293,13 +235,8 @@ export function AdminCoverCompressPanel({ supabase }: { supabase: SupabaseClient
                 </tbody>
               </table>
             </div>
-            <div style={{ display: "grid", gap: "var(--sp-3)", justifyItems: "start" }}>
-              <Button variant="secondary" onClick={downloadBackup} disabled={busy}>1. ดาวน์โหลด CSV สำรองของรอบนี้ ({batch.length} รูป)</Button>
-              <label style={{ minHeight: 44, display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
-                <input type="checkbox" checked={backupConfirmed} disabled={busy || preparedBatchKey !== batchKey} onChange={(event) => setBackupConfirmed(event.target.checked)} />
-                ฉันตรวจแล้วว่าไฟล์ CSV สำรองอยู่ในเครื่อง
-              </label>
-              <Button onClick={() => void start()} disabled={busy || !backupReady}>2. บีบอัด {batch.length} รูป</Button>
+            <div>
+              <Button onClick={() => void start()} disabled={busy}>ดาวน์โหลดไฟล์สำรอง แล้วเริ่มบีบอัด {sum?.count} รูป</Button>
             </div>
           </>
         )
