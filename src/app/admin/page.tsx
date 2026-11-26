@@ -349,7 +349,7 @@ export default function AdminConsolePage() {
   const [formBaseline, setFormBaseline] = useState("");
   const [resourceQuery, setResourceQuery] = useState("");
   const [resourceFilter, setResourceFilter] = useState<ResourceStatusFilter>("all");
-  const [contentTab, setContentTab] = useState<"list" | "featured">("list");
+  const [contentTab, setContentTab] = useState<"list" | "home" | "tools">("list");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -2170,16 +2170,12 @@ export default function AdminConsolePage() {
               <div className="kru-res-header">
                 <div>
                   <h1 style={{ fontSize: "var(--fs-30)" }}>จัดการสื่อ</h1>
-                  <p>กดชื่อสื่อหรือปุ่ม “แก้ไข” เพื่อเปิดแผงแก้ไขด้านข้าง · สื่อใหม่เริ่มเป็นฉบับร่าง ต้องมีรูปปกก่อนเผยแพร่</p>
+                  <p>เลือกแท็บด้านล่าง: สื่อทั้งหมด · หน้าแรก (แบนเนอร์ วิดีโอ Hero) · เครื่องมือ</p>
                 </div>
                 <Button icon={Plus} onClick={openCreateForm} disabled={mutationBusy}>
                   เพิ่มสื่อใหม่
                 </Button>
               </div>
-
-              <AdminPromoBannersPanel supabase={supabase} />
-
-              <AdminHomepageVideosPanel supabase={supabase} />
 
               {failedCleanups.length > 0 && (
                 <div
@@ -2203,8 +2199,6 @@ export default function AdminConsolePage() {
                   </Button>
                 </div>
               )}
-
-              <AdminCoverCompressPanel supabase={supabase} />
 
               {savedNotice && (
                 <div className="kru-res-notice" role="status">
@@ -2510,60 +2504,82 @@ export default function AdminConsolePage() {
                 <button id="res-tab-list" type="button" role="tab" aria-selected={contentTab === "list"} aria-controls="res-panel-list" onClick={() => setContentTab("list")}>
                   สื่อทั้งหมด ({resources.length})
                 </button>
-                <button id="res-tab-featured" type="button" role="tab" aria-selected={contentTab === "featured"} aria-controls="res-panel-featured" onClick={() => setContentTab("featured")}>
-                  สื่อแนะนำใน Hero ({featuredIds.length}/5)
+                <button id="res-tab-home" type="button" role="tab" aria-selected={contentTab === "home"} aria-controls="res-panel-home" onClick={() => setContentTab("home")}>
+                  หน้าแรก
+                </button>
+                <button id="res-tab-tools" type="button" role="tab" aria-selected={contentTab === "tools"} aria-controls="res-panel-tools" onClick={() => setContentTab("tools")}>
+                  เครื่องมือ
                 </button>
               </div>
 
-              {contentTab === "featured" && (
-              <section id="res-panel-featured" role="tabpanel" className="kru-card kru-admin-featured-panel" aria-labelledby="featured-resources-title">
-                <div className="kru-admin-section-heading">
-                  <div>
-                    <h2 id="featured-resources-title" style={{ fontSize: "var(--fs-18)" }}>สื่อแนะนำใน Hero</h2>
-                    <p className="kru-admin-field-help">เลือกสื่อที่เผยแพร่แล้วได้สูงสุด 5 รายการ และจัดลำดับโดยไม่ทำรายการซ้ำ</p>
-                  </div>
-                  <Button size="sm" icon={Star} onClick={handleSaveFeatured} loading={pendingAction === "featured"} disabled={mutationBusy && pendingAction !== "featured"}>
-                    บันทึกลำดับ
-                  </Button>
-                </div>
-                {resources.filter((resource) => resource.status === "published").length === 0 ? (
-                  <p className="kru-admin-field-help">ยังไม่มีสื่อที่เผยแพร่ให้เลือก</p>
-                ) : (
-                  <div className="kru-admin-featured-list">
-                    {resources.filter((resource) => resource.status === "published").map((resource) => {
-                      const position = featuredIds.indexOf(resource.id);
-                      const selected = position >= 0;
-                      return (
-                        <div key={resource.id} className="kru-admin-featured-item">
-                          <label className="kru-admin-choice" style={{ flex: 1 }}>
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              disabled={!selected && featuredIds.length >= 5}
-                              onChange={(event) => {
-                                const next = toggleFeaturedResource(featuredIds, resource.id, event.target.checked);
-                                if (event.target.checked && next === featuredIds) window.alert("เลือกสื่อแนะนำได้สูงสุด 5 รายการ");
-                                setFeaturedIds(next);
-                              }}
-                            />
-                            <span>{selected ? `${position + 1}. ` : ""}{resource.title}</span>
-                          </label>
-                          {selected && (
-                            <div className="kru-admin-order-actions">
-                              <button type="button" className="kru-admin-icon-action" aria-label={`เลื่อน ${resource.title} ขึ้น`} disabled={position === 0} onClick={() => setFeaturedIds(moveFeaturedResource(featuredIds, resource.id, -1))}>
-                                <ChevronUp size={18} aria-hidden="true" />
-                              </button>
-                              <button type="button" className="kru-admin-icon-action" aria-label={`เลื่อน ${resource.title} ลง`} disabled={position === featuredIds.length - 1} onClick={() => setFeaturedIds(moveFeaturedResource(featuredIds, resource.id, 1))}>
-                                <ChevronDown size={18} aria-hidden="true" />
-                              </button>
-                            </div>
-                          )}
+              {contentTab === "home" && (
+                <div id="res-panel-home" role="tabpanel" aria-labelledby="res-tab-home" className="kru-admin-home-panels">
+                  <details className="kru-card kru-admin-fold">
+                    <summary>แบนเนอร์ประชาสัมพันธ์</summary>
+                    <AdminPromoBannersPanel supabase={supabase} />
+                  </details>
+                  <details className="kru-card kru-admin-fold">
+                    <summary>วิดีโอแนะนำ (สูงสุด 4 คลิป)</summary>
+                    <AdminHomepageVideosPanel supabase={supabase} />
+                  </details>
+                  <details className="kru-card kru-admin-fold" open>
+                    <summary>สื่อแนะนำใน Hero ({featuredIds.length}/5)</summary>
+                    <section className="kru-admin-featured-panel" aria-labelledby="featured-resources-title">
+                      <div className="kru-admin-section-heading">
+                        <div>
+                          <h2 id="featured-resources-title" style={{ fontSize: "var(--fs-18)" }}>สื่อแนะนำใน Hero</h2>
+                          <p className="kru-admin-field-help">เลือกสื่อที่เผยแพร่แล้วได้สูงสุด 5 รายการ และจัดลำดับโดยไม่ทำรายการซ้ำ</p>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+                        <Button size="sm" icon={Star} onClick={handleSaveFeatured} loading={pendingAction === "featured"} disabled={mutationBusy && pendingAction !== "featured"}>
+                          บันทึกลำดับ
+                        </Button>
+                      </div>
+                      {resources.filter((resource) => resource.status === "published").length === 0 ? (
+                        <p className="kru-admin-field-help">ยังไม่มีสื่อที่เผยแพร่ให้เลือก</p>
+                      ) : (
+                        <div className="kru-admin-featured-list">
+                          {resources.filter((resource) => resource.status === "published").map((resource) => {
+                            const position = featuredIds.indexOf(resource.id);
+                            const selected = position >= 0;
+                            return (
+                              <div key={resource.id} className="kru-admin-featured-item">
+                                <label className="kru-admin-choice" style={{ flex: 1 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    disabled={!selected && featuredIds.length >= 5}
+                                    onChange={(event) => {
+                                      const next = toggleFeaturedResource(featuredIds, resource.id, event.target.checked);
+                                      if (event.target.checked && next === featuredIds) window.alert("เลือกสื่อแนะนำได้สูงสุด 5 รายการ");
+                                      setFeaturedIds(next);
+                                    }}
+                                  />
+                                  <span>{selected ? `${position + 1}. ` : ""}{resource.title}</span>
+                                </label>
+                                {selected && (
+                                  <div className="kru-admin-order-actions">
+                                    <button type="button" className="kru-admin-icon-action" aria-label={`เลื่อน ${resource.title} ขึ้น`} disabled={position === 0} onClick={() => setFeaturedIds(moveFeaturedResource(featuredIds, resource.id, -1))}>
+                                      <ChevronUp size={18} aria-hidden="true" />
+                                    </button>
+                                    <button type="button" className="kru-admin-icon-action" aria-label={`เลื่อน ${resource.title} ลง`} disabled={position === featuredIds.length - 1} onClick={() => setFeaturedIds(moveFeaturedResource(featuredIds, resource.id, 1))}>
+                                      <ChevronDown size={18} aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  </details>
+                </div>
+              )}
+
+              {contentTab === "tools" && (
+                <div id="res-panel-tools" role="tabpanel" aria-labelledby="res-tab-tools">
+                  <AdminCoverCompressPanel supabase={supabase} />
+                </div>
               )}
 
               {contentTab === "list" && (
