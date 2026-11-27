@@ -48,8 +48,12 @@ export async function POST(request: NextRequest) {
     const key = viewerDayKey(secret, visitorId, bangkokDate());
 
     const service = createSupabaseClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    await withTimeout(Promise.resolve(service.rpc("record_site_visit", { p_viewer_day_key: key })), "visit record", TIMEOUT_MS);
-    return done(visitorId === existing ? undefined : visitorId);
+    const recorded = await withTimeout(Promise.resolve(service.rpc("record_site_visit", { p_viewer_day_key: key })), "visit record", TIMEOUT_MS);
+    if (!recorded.ok || recorded.value.error) return done();
+    const response = done(visitorId === existing ? undefined : visitorId);
+    // The browser remembers the day only after the database accepted the request.
+    response.headers.set("x-visit-accepted", "1");
+    return response;
   } catch {
     return done();
   }
@@ -68,5 +72,6 @@ async function isStaffOrUnknown(request: NextRequest): Promise<boolean> {
   const profile = await withTimeout(Promise.resolve(supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()), "visit role", TIMEOUT_MS);
   if (!profile.ok || profile.value.error) return true;
   const role = (profile.value.data as { role?: unknown } | null)?.role;
-  return role === "admin" || role === "owner";
+  // A missing or unfamiliar role is not safe to count as a regular member.
+  return role !== "member";
 }
