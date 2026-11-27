@@ -42,6 +42,7 @@ describe("POST /api/visit", () => {
   it("records a visitor once with only a 64-hex daily key, sets the cookie, answers 204 with no body", async () => {
     const res = await POST(req());
     expect(res.status).toBe(204);
+    expect(res.headers.get("x-visit-accepted")).toBe("1");
     expect(await res.text()).toBe("");
     expect(rpc).toHaveBeenCalledTimes(1);
     const [fn, args] = rpc.mock.calls[0] as [string, Record<string, string>];
@@ -85,6 +86,7 @@ describe("POST /api/visit", () => {
       const res = await POST(req({ cookie: SESSION }));
       expect(res.status).toBe(204);
       expect(res.headers.get("set-cookie")).toBeNull();
+      expect(res.headers.get("x-visit-accepted")).toBeNull();
     }
     expect(rpc).not.toHaveBeenCalled();
     user = { id: "u2" }; role = "member";
@@ -97,6 +99,16 @@ describe("POST /api/visit", () => {
   it("does not count when the session cannot be checked (staff never slip in)", async () => {
     authFails = true;
     await POST(req({ cookie: SESSION }));
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("does not count a signed-in user whose profile role is missing or unfamiliar", async () => {
+    user = { id: "u4" };
+    for (const unknownRole of [null, "future_role"]) {
+      role = unknownRole;
+      const res = await POST(req({ cookie: SESSION }));
+      expect(res.headers.get("x-visit-accepted")).toBeNull();
+    }
     expect(rpc).not.toHaveBeenCalled();
   });
 
@@ -119,9 +131,15 @@ describe("POST /api/visit", () => {
 
   it("a database failure still answers 204", async () => {
     rpc.mockImplementationOnce(async () => { throw new Error("db down"); });
-    expect((await POST(req())).status).toBe(204);
+    const thrown = await POST(req());
+    expect(thrown.status).toBe(204);
+    expect(thrown.headers.get("x-visit-accepted")).toBeNull();
+    expect(thrown.headers.get("set-cookie")).toBeNull();
     rpc.mockImplementationOnce(async () => ({ data: null, error: { message: "boom" } }));
-    expect((await POST(req())).status).toBe(204);
+    const rejected = await POST(req());
+    expect(rejected.status).toBe(204);
+    expect(rejected.headers.get("x-visit-accepted")).toBeNull();
+    expect(rejected.headers.get("set-cookie")).toBeNull();
   });
 });
 
@@ -143,6 +161,7 @@ describe("wiring", () => {
     expect(beacon).toContain('"use client"');
     expect(beacon).toContain("useEffect");
     expect(beacon).toContain("localStorage");
+    expect(beacon).toContain('response.headers.get("x-visit-accepted")');
     expect(beacon).toContain("Asia/Bangkok");
     expect(beacon).toContain("return null");
   });
