@@ -627,3 +627,18 @@ does not change any existing cover. Rollback:
 `supabase/rollbacks/20261014090000_063_admin_set_resource_cover.rollback.sql`;
 read-only verification: `supabase/verification/063-verify.sql`; SQL test:
 `npm run test:admin-set-resource-cover-sql`.
+
+Migration `20261016090000_066_owner_finance.sql` is **not applied** anywhere yet
+(Draft PR; staging first, then a separate go-ahead for production). It adds the
+owner-only finance records for "บัญชีและเป้าหมาย": `owner_manual_finance_entries`
+(income / expense / refund in satang; never edited or deleted, a mistake is
+voided with a reason), `owner_recurring_expenses` (reminders only until marked
+paid), the append-only `owner_finance_audit`, and the private
+`owner-expense-receipts` bucket (5 MB, JPEG/PNG/WebP/PDF). Every write goes
+through owner-only functions that check `public.is_owner()` first. Income whose
+reference matches a confirmed membership payment is refused (those payments are
+counted from `membership_payment_confirmations`). It does not depend on `065`.
+Rollback: `supabase/rollbacks/20261016090000_066_owner_finance.rollback.sql`
+(recorded money is lost; the bucket is left in place); read-only verification:
+`supabase/verification/066-verify.sql` (8 checks); SQL test:
+`npm run test:owner-finance-sql`.
