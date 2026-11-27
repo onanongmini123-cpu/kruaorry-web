@@ -25,7 +25,7 @@ export function SiteVisitBeacon() {
       if (cancelled) return;
       fetch("/api/visit", { method: "POST", credentials: "same-origin", keepalive: true })
         .then((response) => {
-          if (response.status !== 204) return;
+          if (response.status !== 204 || response.headers.get("x-visit-accepted") !== "1") return;
           try { window.localStorage.setItem(SENT_KEY, day); } catch { /* ignore */ }
         })
         .catch(() => { /* offline or blocked: ignore */ });
