@@ -27,6 +27,7 @@
     "test:admin-set-resource-cover-sql": "node scripts/test-admin-set-resource-cover-sql.mjs",
     "test:promo-banners-sql": "node scripts/test-promo-banners-sql.mjs",
     "test:homepage-videos-four-sql": "node scripts/test-homepage-videos-four-sql.mjs",
+    "test:site-visits-sql": "node scripts/test-site-visits-sql.mjs",
     "test:featured-resources-sql": "node scripts/test-set-featured-resources-where-sql.mjs",
     "test:owner-finance-sql": "node scripts/test-owner-finance-sql.mjs"
   },

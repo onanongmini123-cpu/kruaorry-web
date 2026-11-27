@@ -85,9 +85,9 @@ describe("application proxy", () => {
     mockSession({ id: "member-1", is_anonymous: false });
     const toApp = await proxy(new NextRequest("https://example.com/login?mode=signup&next=%2Fapp%3Fview%3Dlibrary"));
     expect(toApp.status).toBe(307);
-    expect(toApp.headers.get("location")).toBe("https://example.com/app");
+    expect(toApp.headers.get("location")).toBe("https://example.com/");
     const other = await proxy(new NextRequest("https://example.com/login?mode=signup&next=https%3A%2F%2Fevil.example"));
-    expect(other.headers.get("location")).toBe("https://example.com/app");
+    expect(other.headers.get("location")).toBe("https://example.com/");
     const membership = await proxy(new NextRequest("https://example.com/login?mode=signup&next=%2Fmembership%3Fplan%3Dteacher"));
     expect(membership.headers.get("location")).toBe("https://example.com/membership?plan=teacher");
     expect(config.matcher).toContain("/login");
@@ -102,11 +102,11 @@ describe("application proxy", () => {
     expect(view.headers.get("location")).toBe("https://example.com/admin?view=members");
     for (const next of ["https%3A%2F%2Fevil.example%2Fadmin", "%2F%2Fevil.example", "%2Fadmin%2Fusers", "%2Fadmin%3Fnext%3Dhttps%3A%2F%2Fevil.example"]) {
       const bad = await proxy(new NextRequest(`https://example.com/login?next=${next}`));
-      expect(bad.headers.get("location"), next).toBe("https://example.com/app");
+      expect(bad.headers.get("location"), next).toBe("https://example.com/");
     }
     // Signing up never carries the back office along.
     const signup = await proxy(new NextRequest("https://example.com/login?mode=signup&next=%2Fadmin"));
-    expect(signup.headers.get("location")).toBe("https://example.com/app");
+    expect(signup.headers.get("location")).toBe("https://example.com/");
   });
 
   it("lets authenticated sign-in resume only an allowlisted destination", async () => {
@@ -119,7 +119,7 @@ describe("application proxy", () => {
     ));
 
     expect(safe.headers.get("location")).toBe("https://example.com/membership?plan=teacher");
-    expect(unsafe.headers.get("location")).toBe("https://example.com/app");
+    expect(unsafe.headers.get("location")).toBe("https://example.com/");
   });
 
   it("keeps the login page available to a signed-out visitor", async () => {

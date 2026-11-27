@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   authCompletionDestination,
   FREE_SIGNUP_HREF,
+  MEMBER_HOME,
   safeAuthNext,
   safeUpgradeReturnPath,
   safeMembershipReturn,
@@ -78,18 +79,18 @@ describe("safeAuthNext", () => {
     "/membership?plan=teacher&redirect=https%3A%2F%2Fevil.example",
     "/membership#how-to-pay",
   ])("falls back to /app for an unsafe destination: %s", (raw) => {
-    expect(safeAuthNext(raw)).toBe("/app");
+    expect(safeAuthNext(raw)).toBe("/");
   });
 });
 
 describe("authCompletionDestination", () => {
   it("signup completion is /app, except for the membership page the visitor chose a plan on", () => {
     expect(FREE_SIGNUP_HREF).toBe("/login?mode=signup&next=%2Fapp");
-    expect(SIGNUP_DESTINATION).toBe("/app");
-    expect(authCompletionDestination("signup", "/app")).toBe("/app");
-    expect(authCompletionDestination("signup", `/app?resource=${id}`)).toBe("/app");
-    expect(authCompletionDestination("signup", "https://evil.example/steal")).toBe("/app");
-    expect(authCompletionDestination("signup", `/download/${id}?name=a.pdf`)).toBe("/app");
+    expect(SIGNUP_DESTINATION).toBe("/");
+    expect(authCompletionDestination("signup", "/app")).toBe("/");
+    expect(authCompletionDestination("signup", `/app?resource=${id}`)).toBe("/");
+    expect(authCompletionDestination("signup", "https://evil.example/steal")).toBe("/");
+    expect(authCompletionDestination("signup", `/download/${id}?name=a.pdf`)).toBe("/");
     expect(authCompletionDestination("signup", "/membership?plan=teacher&returnTo=%2Fapp")).toBe("/membership?plan=teacher&returnTo=%2Fapp");
     expect(authCompletionDestination("signup", "/membership?plan=founder")).toBe("/membership?plan=founder");
     expect(authCompletionDestination("signup", "/membership")).toBe("/membership");
@@ -111,15 +112,15 @@ describe("authCompletionDestination", () => {
 
   it("sign-in keeps its wider allowlist and still sends a bad membership path to /app", () => {
     expect(authCompletionDestination("signin", "/membership?plan=teacher&returnTo=%2Fapp")).toBe("/membership?plan=teacher&returnTo=%2Fapp");
-    expect(authCompletionDestination("signin", "/membership?plan=evil")).toBe("/app");
-    expect(authCompletionDestination("signin", "/membership?plan=teacher&x=1")).toBe("/app");
+    expect(authCompletionDestination("signin", "/membership?plan=evil")).toBe("/");
+    expect(authCompletionDestination("signin", "/membership?plan=teacher&x=1")).toBe("/");
   });
 
   it("preserves only an allowlisted next for sign-in", () => {
     expect(authCompletionDestination("signin", `/resources/${id}`)).toBe(`/resources/${id}`);
     expect(authCompletionDestination("signin", `/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`))
       .toBe(`/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`);
-    expect(authCompletionDestination("signin", "//evil.example/steal")).toBe("/app");
+    expect(authCompletionDestination("signin", "//evil.example/steal")).toBe("/");
   });
 });
 
@@ -150,8 +151,17 @@ describe("safeUpgradeReturnPath", () => {
 
 describe("the back office is never a sign-up destination", () => {
   it("sign-up always ends at /app or the membership page, whatever next says", () => {
-    expect(authCompletionDestination("signup", "/admin")).toBe("/app");
-    expect(authCompletionDestination("signup", "/admin?view=members")).toBe("/app");
+    expect(authCompletionDestination("signup", "/admin")).toBe("/");
+    expect(authCompletionDestination("signup", "/admin?view=members")).toBe("/");
     expect(authCompletionDestination("signin", "/admin")).toBe("/admin");
+  });
+
+  it("a plain sign-in lands on the shared homepage; the member area stays reachable on request", () => {
+    expect(MEMBER_HOME).toBe("/");
+    expect(authCompletionDestination("signin", null)).toBe("/");
+    expect(authCompletionDestination("signin", "/")).toBe("/");
+    expect(authCompletionDestination("signin", "/?x=1")).toBe("/");
+    expect(authCompletionDestination("signin", "/app")).toBe("/app");
+    expect(authCompletionDestination("signin", "/app?view=library")).toBe("/app?view=library");
   });
 });

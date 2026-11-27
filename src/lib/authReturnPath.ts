@@ -12,7 +12,11 @@ const BASE = "https://return-path.invalid";
 const APP_VIEWS = new Set(["home", "library", "favorites", "plans", "requests"]);
 const APP_FILTER_PARAMS = ["resource", "view", "q", "category", "grade"] as const;
 
-export const SIGNUP_DESTINATION = "/app";
+// Where a signed-in member lands when nothing more specific was asked for: the
+// same homepage everyone sees, with the member section (greeting, shortcuts,
+// recently used). The member area (/app) stays one tap away.
+export const MEMBER_HOME = "/";
+export const SIGNUP_DESTINATION = MEMBER_HOME;
 export const FREE_SIGNUP_HREF = "/login?mode=signup&next=%2Fapp";
 export type AuthEntryMode = "signin" | "signup";
 
@@ -99,7 +103,8 @@ export const MEMBERSHIP_NEXT_METADATA_KEY = "membership_next";
 
 export function safeAuthNext(raw: string | null | undefined): string {
   const url = internalUrl(raw);
-  if (!url) return "/app";
+  if (!url) return MEMBER_HOME;
+  if (url.pathname === "/" && hasOnlyParams(url.searchParams, [])) return MEMBER_HOME;
 
   const appPath = safeAppPath(url);
   if (appPath) return appPath;
@@ -113,19 +118,19 @@ export function safeAuthNext(raw: string | null | undefined): string {
   try {
     const membershipPath = safeMembershipReturn(raw);
     if (membershipPath) return membershipPath;
-    if (url.pathname === "/membership") return "/app";
+    if (url.pathname === "/membership") return MEMBER_HOME;
 
     const match = /^\/download\/([^/]+)$/.exec(url.pathname);
     if (!match || !UUID.test(match[1]) || !hasOnlyParams(url.searchParams, ["name", "autoclose"])) {
-      return "/app";
+      return MEMBER_HOME;
     }
     const name = url.searchParams.get("name");
-    if (name !== null && (!name || name.length > 180 || CONTROL.test(name) || /[\\/]/.test(name))) return "/app";
+    if (name !== null && (!name || name.length > 180 || CONTROL.test(name) || /[\\/]/.test(name))) return MEMBER_HOME;
     const autoClose = url.searchParams.get("autoclose");
-    if (autoClose !== null && autoClose !== "1") return "/app";
+    if (autoClose !== null && autoClose !== "1") return MEMBER_HOME;
     return url.pathname + url.search;
   } catch {
-    return "/app";
+    return MEMBER_HOME;
   }
 }
 

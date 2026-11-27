@@ -65,6 +65,7 @@ import { accessTier } from "@/lib/resourceAccess";
 import { trackEvent } from "@/lib/analytics";
 import { proUpgradeHref, type UpgradePlanId } from "@/lib/upgradeFlow";
 import { passwordEmailForUser } from "@/lib/accountPassword";
+import { MEMBER_HOME } from "@/lib/authReturnPath";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,15 @@ export default function TeacherAppPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [entitlementState, setEntitlementState] = useState<MemberEntitlementsState>(INITIAL_MEMBER_ENTITLEMENTS_STATE);
   const [view, setView] = useState<View>("home");
+  // "หน้าแรก" in the member menu opens the shared homepage (the same page guests see,
+  // plus the member section), so a member never meets two different home pages.
+  const selectNav = (key: View) => {
+    if (key === "home") {
+      router.push(MEMBER_HOME);
+      return;
+    }
+    setView(key);
+  };
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailReturnView, setDetailReturnView] = useState<"library" | "favorites">("library");
   const [query, setQuery] = useState("");
@@ -503,7 +513,7 @@ export default function TeacherAppPage() {
             <span style={{ fontFamily: "var(--font-display)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-20)", color: "var(--text-strong)" }}>KruAorry</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <SideNav groups={NAV_GROUPS} value={view === "detail" ? detailReturnView : view} ariaLabel="เมนูสมาชิก" onChange={(k) => setView(k as View)} />
+            <SideNav groups={NAV_GROUPS} value={view === "detail" ? detailReturnView : view} ariaLabel="เมนูสมาชิก" onChange={(k) => selectNav(k as View)} />
           </div>
           {(profile?.role === "admin" || profile?.role === "owner") && (
             <Button size="sm" block variant="soft" icon={ShieldCheck} onClick={() => router.push("/admin")} style={{ marginTop: "var(--sp-4)" }}>
@@ -884,7 +894,7 @@ export default function TeacherAppPage() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setView(tab.key as View)}
+              onClick={() => selectNav(tab.key as View)}
               aria-current={active ? "page" : undefined}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, border: "none", background: "transparent", color: active ? "var(--brand)" : "var(--text-muted)", fontSize: "var(--fs-12)", padding: "6px 4px", flex: 1 }}
             >

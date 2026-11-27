@@ -1,6 +1,7 @@
 "use client";
 
 import { navigateAfterAuthChange } from "@/lib/authNavigation";
+import { MEMBER_HOME } from "@/lib/authReturnPath";
 import React, { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { KeyRound, ShieldCheck } from "lucide-react";
@@ -91,7 +92,7 @@ function ResetPasswordForm() {
     }
     setDone(true);
     window.setTimeout(() => {
-      navigateAfterAuthChange("/app");
+      navigateAfterAuthChange(MEMBER_HOME);
     }, 1500);
   };
 

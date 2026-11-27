@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { DEFAULT_SHARE_IMAGE, SITE_ORIGIN } from "@/lib/site";
 import { VercelAnalytics } from "@/components/analytics/VercelAnalytics";
+import { SiteVisitBeacon } from "@/components/analytics/SiteVisitBeacon";
 
 // Fonts live in the project (src/fonts, SIL Open Font License, see src/fonts/README.md)
 // so a build never has to reach Google Fonts. The files are the same woff2 files Google
@@ -87,6 +88,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         {children}
         <VercelAnalytics />
+        <SiteVisitBeacon />
       </body>
     </html>
   );
