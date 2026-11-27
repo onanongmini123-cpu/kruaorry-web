@@ -17,7 +17,7 @@ describe("GET /auth/callback", () => {
     const next = `/download/${id}?name=${encodeURIComponent("ใบงาน.pdf")}&autoclose=1`;
     const response = await GET(new Request(`https://example.com/auth/callback?code=SECRET&next=${encodeURIComponent(next)}`));
     expect(exchangeCodeForSession).toHaveBeenCalledWith("SECRET", undefined);
-    expect(response.headers.get("location")).toBe("https://example.com/app");
+    expect(response.headers.get("location")).toBe("https://example.com/");
     expect(response.headers.get("location")).not.toContain("SECRET");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
@@ -28,7 +28,7 @@ describe("GET /auth/callback", () => {
     mockedCreateClient.mockResolvedValue({ auth: { verifyOtp } } as never);
     const response = await GET(new Request(`https://example.com/auth/callback?token_hash=SECRET&type=email&next=${encodeURIComponent(`/app?resource=${id}`)}`));
     expect(verifyOtp).toHaveBeenCalledWith({ token_hash: "SECRET", type: "email" });
-    expect(response.headers.get("location")).toBe("https://example.com/app");
+    expect(response.headers.get("location")).toBe("https://example.com/");
   });
 
   it("passes the PKCE flow id through when Supabase includes one", async () => {
@@ -41,7 +41,7 @@ describe("GET /auth/callback", () => {
   it("falls back to the login page on expired code, without echoing provider text", async () => {
     mockedCreateClient.mockResolvedValue({ auth: { exchangeCodeForSession: async () => ({ data: { user: null }, error: { message: "SECRET" } }) } } as never);
     const response = await GET(new Request(`https://example.com/auth/callback?code=SECRET&next=${encodeURIComponent(`/download/${id}`)}`));
-    expect(response.headers.get("location")).toBe("https://example.com/login?next=%2Fapp&error=confirmation");
+    expect(response.headers.get("location")).toBe("https://example.com/login?next=%2F&error=confirmation");
     expect(response.headers.get("location")).not.toContain("SECRET");
   });
 
@@ -60,7 +60,7 @@ describe("GET /auth/callback", () => {
     ));
 
     expect(response.headers.get("location")).toBe(
-      "https://example.com/login?next=%2Fapp&error=confirmation",
+      "https://example.com/login?next=%2F&error=confirmation",
     );
     expect(response.headers.get("location")).not.toContain("SECRET");
     expect(response.headers.get("location")).not.toContain("evil.example");
@@ -81,7 +81,7 @@ describe("GET /auth/callback", () => {
     ));
 
     expect(response.headers.get("location")).toBe(
-      "https://example.com/login?next=%2Fapp&error=confirmation",
+      "https://example.com/login?next=%2F&error=confirmation",
     );
     expect(response.headers.get("location")).not.toContain("SECRET");
   });
@@ -89,11 +89,11 @@ describe("GET /auth/callback", () => {
   it("rejects external redirects, ambiguous credentials and unrelated OTP types", async () => {
     mockedCreateClient.mockResolvedValue({ auth: { exchangeCodeForSession: async () => ({ data: { user: { id: "user-1" } }, error: null }) } } as never);
     const external = await GET(new Request("https://example.com/auth/callback?code=SECRET&next=https://evil.example"));
-    expect(external.headers.get("location")).toBe("https://example.com/app");
+    expect(external.headers.get("location")).toBe("https://example.com/");
     const ambiguous = await GET(new Request("https://example.com/auth/callback?code=x&token_hash=y"));
-    expect(ambiguous.headers.get("location")).toBe("https://example.com/login?next=%2Fapp&error=confirmation");
+    expect(ambiguous.headers.get("location")).toBe("https://example.com/login?next=%2F&error=confirmation");
     const recovery = await GET(new Request("https://example.com/auth/callback?token_hash=x&type=recovery"));
-    expect(recovery.headers.get("location")).toBe("https://example.com/login?next=%2Fapp&error=confirmation");
+    expect(recovery.headers.get("location")).toBe("https://example.com/login?next=%2F&error=confirmation");
   });
 
   it("does not carry even an allowlisted paid destination through signup confirmation", async () => {
@@ -101,7 +101,7 @@ describe("GET /auth/callback", () => {
     const paidNext = `/membership?plan=teacher&returnTo=${encodeURIComponent(`/resources/${id}`)}`;
     const response = await GET(new Request(`https://example.com/auth/callback?code=SECRET&next=${encodeURIComponent(paidNext)}`));
 
-    expect(response.headers.get("location")).toBe("https://example.com/app");
+    expect(response.headers.get("location")).toBe("https://example.com/");
     expect(response.headers.get("location")).not.toContain("membership");
   });
 
@@ -132,24 +132,24 @@ describe("GET /auth/callback", () => {
         42, null, { nested: "/membership" }, ["/membership"],
       ]) {
         const response = await confirm({ membership_next: evil });
-        expect(response.headers.get("location"), String(JSON.stringify(evil))).toBe("https://example.com/app");
+        expect(response.headers.get("location"), String(JSON.stringify(evil))).toBe("https://example.com/");
       }
     });
 
     it("no remembered plan (or no metadata) → /app, as before", async () => {
-      expect((await confirm({ full_name: "ครู" })).headers.get("location")).toBe("https://example.com/app");
-      expect((await confirm(undefined)).headers.get("location")).toBe("https://example.com/app");
+      expect((await confirm({ full_name: "ครู" })).headers.get("location")).toBe("https://example.com/");
+      expect((await confirm(undefined)).headers.get("location")).toBe("https://example.com/");
     });
 
     it("never takes the destination from the callback URL itself", async () => {
       const response = await confirm({}, `code=SECRET&next=${encodeURIComponent("/membership?plan=teacher")}&membership_next=${encodeURIComponent("/membership?plan=teacher")}`);
-      expect(response.headers.get("location")).toBe("https://example.com/app");
+      expect(response.headers.get("location")).toBe("https://example.com/");
     });
 
     it("a failed confirmation still goes to the login page, never to the remembered page", async () => {
       mockedCreateClient.mockResolvedValue({ auth: { exchangeCodeForSession: async () => ({ data: { user: { id: "u", user_metadata: { membership_next: "/membership?plan=teacher" } } }, error: { message: "x" } }) } } as never);
       const response = await GET(new Request("https://example.com/auth/callback?code=SECRET"));
-      expect(response.headers.get("location")).toBe("https://example.com/login?next=%2Fapp&error=confirmation");
+      expect(response.headers.get("location")).toBe("https://example.com/login?next=%2F&error=confirmation");
     });
   });
 });

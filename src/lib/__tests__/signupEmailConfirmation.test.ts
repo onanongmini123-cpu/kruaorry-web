@@ -15,9 +15,9 @@ import {
 } from "../signupEmailConfirmation";
 
 describe("signup email confirmation", () => {
-  it("builds the one same-origin callback whose destination is /app", () => {
+  it("builds the one same-origin callback whose destination is the homepage", () => {
     expect(buildSignupConfirmationRedirect("https://kruaorry-web.vercel.app"))
-      .toBe("https://kruaorry-web.vercel.app/auth/callback?next=%2Fapp");
+      .toBe("https://kruaorry-web.vercel.app/auth/callback?next=%2F");
   });
 
   it.each([
@@ -77,7 +77,7 @@ describe("signup email confirmation", () => {
       type: "signup",
       email: "teacher@example.com",
       options: {
-        emailRedirectTo: "https://kruaorry-web.vercel.app/auth/callback?next=%2Fapp",
+        emailRedirectTo: "https://kruaorry-web.vercel.app/auth/callback?next=%2F",
       },
     });
   });

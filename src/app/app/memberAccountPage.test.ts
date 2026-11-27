@@ -55,4 +55,10 @@ describe("member account integration", () => {
     expect(pageSource).toContain('aria-label="เมนูสมาชิกบนมือถือ"');
     expect(pageSource).toContain('aria-current={active ? "page" : undefined}');
   });
+
+  it("the member menu's home tab opens the shared homepage instead of a second home view", () => {
+    expect(pageSource).toContain('if (key === "home") {\n      router.push(MEMBER_HOME);');
+    expect(pageSource).toContain("onChange={(k) => selectNav(k as View)}");
+    expect(pageSource).toContain("onClick={() => selectNav(tab.key as View)}");
+  });
 });
