@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breadcrumbJsonLd, jsonLdScript, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "../resourceSeo";
+import { breadcrumbJsonLd, faqJsonLd, jsonLdScript, resourceAutoFaq, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "../resourceSeo";
 
 const base = {
   title: "Sentence Train",
@@ -63,5 +63,34 @@ describe("structured data", () => {
     expect(script).not.toContain("</script>");
     expect(script).toContain("\\u003c/script>");
     expect(JSON.parse(script).name).toBe("</script><script>alert(1)</script>");
+  });
+});
+
+describe("automatic FAQ", () => {
+  it("answers grade, access and type only from facts on the page", () => {
+    const faq = resourceAutoFaq(base);
+    expect(faq.map((entry) => entry.question)).toEqual([
+      "Sentence Train เหมาะกับชั้นไหน",
+      "Sentence Train ใช้ฟรีไหม",
+      "Sentence Train เป็นสื่อแบบไหน",
+    ]);
+    expect(faq[0].answer).toContain("หมวดภาษาอังกฤษ");
+    expect(faq[1].answer).toBe("ใช้ได้ฟรีทันที ไม่ต้องสมัครสมาชิก");
+    expect(faq[2].answer).toContain("เกมและสื่อออนไลน์");
+    expect(faq[2].answer).toContain("810 ประโยค");
+  });
+
+  it("states the right access for member and Teacher Pro resources and skips a missing grade", () => {
+    expect(resourceAutoFaq({ ...base, accessMode: "authenticated" })[1].answer).toContain("สมัครสมาชิกฟรี");
+    const pro = resourceAutoFaq({ ...base, accessMode: "plans", gradeLevels: [] });
+    expect(pro).toHaveLength(2);
+    expect(pro[0].answer).toContain("Teacher Pro");
+  });
+
+  it("builds FAQPage structured data from the same entries", () => {
+    const data = faqJsonLd(resourceAutoFaq(base));
+    expect(data["@type"]).toBe("FAQPage");
+    expect((data.mainEntity as unknown[]).length).toBe(3);
+    expect(jsonLdScript(faqJsonLd([{ question: "<x>", answer: "</script>" }]))).not.toContain("<");
   });
 });

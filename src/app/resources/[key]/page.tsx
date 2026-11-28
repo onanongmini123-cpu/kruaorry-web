@@ -12,7 +12,7 @@ import { ResourceFeedback } from "@/components/ResourceFeedback";
 import { accessDescription, accessLabel, accessTier } from "@/lib/resourceAccess";
 import { formatResourceGrades } from "@/lib/resourceGrades";
 import { DELIVERY_TYPE_LABEL, parseResourceMeta } from "@/lib/resourceMeta";
-import { breadcrumbJsonLd, jsonLdScript, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "@/lib/resourceSeo";
+import { breadcrumbJsonLd, faqJsonLd, jsonLdScript, resourceAutoFaq, resourceJsonLd, resourceSeoDescription, resourceSeoTitle } from "@/lib/resourceSeo";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/site";
 import { loadPublicResourceViewer, loadRelatedResources, resolvePublicResource } from "../data";
 import { membershipUpgradeHref, publicResourceAction, resourceHref } from "../catalog";
@@ -104,6 +104,8 @@ export default async function ResourceDetailPage({ params }: Props) {
         ? [{ name: "signup_start" as const, properties: { resource_id: item.id, source: "resource_detail" } }]
         : [];
   const players = detail?.players ?? parsedMeta.playModes;
+  // A hand-written FAQ wins; otherwise short answers built from the facts above.
+  const faq = detail?.faq.length ? detail.faq : resourceAutoFaq(item);
 
   return (
     <div className="kru-detail__page">
@@ -121,6 +123,12 @@ export default async function ResourceDetailPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(breadcrumbJsonLd(item.title, canonicalPath)) }}
       />
+      {item.accessMode !== "locked" && faq.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(faqJsonLd(faq)) }}
+        />
+      )}
       <PublicTopBar actionHref="/resources" actionLabel="คลังสื่อ" />
 
       <main className="kru-detail__main">
@@ -208,10 +216,10 @@ export default async function ResourceDetailPage({ params }: Props) {
           {item.tags.length > 0 && (
             <div className="kru-detail__tags" aria-label="หัวข้อที่เกี่ยวข้อง">{item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>
           )}
-          {detail?.faq.length ? (
+          {faq.length ? (
             <Section title="คำถามที่พบบ่อย">
               <div className="kru-detail__faq">
-                {detail.faq.map((entry) => (
+                {faq.map((entry) => (
                   <details key={entry.question}>
                     <summary>{entry.question}</summary>
                     <p>{entry.answer}</p>

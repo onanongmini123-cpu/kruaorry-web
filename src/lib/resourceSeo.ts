@@ -75,3 +75,46 @@ export function breadcrumbJsonLd(resourceTitle: string, canonicalPath: string): 
 export function jsonLdScript(data: Record<string, unknown>): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
+
+export interface FaqEntry { question: string; answer: string }
+
+const ACCESS_ANSWER: Record<SeoResource["accessMode"], string> = {
+  public: "ใช้ได้ฟรีทันที ไม่ต้องสมัครสมาชิก",
+  authenticated: "ใช้ได้ฟรี เพียงสมัครสมาชิกฟรีกับ KruAorry ก่อน",
+  plans: "เป็นสื่อสำหรับสมาชิก Teacher Pro ดูรายละเอียดและภาพตัวอย่างได้ก่อนสมัคร",
+  locked: "สื่อนี้ยังไม่เปิดให้ใช้งาน",
+};
+
+/**
+ * Short questions and answers built only from facts the page already shows
+ * (grade, subject, type, access). Used when a resource has no hand-written FAQ,
+ * so every detail page answers the questions teachers (and AI assistants) ask.
+ */
+export function resourceAutoFaq(resource: Pick<SeoResource, "title" | "category" | "gradeLevels" | "deliveryMode" | "accessMode" | "meta">): FaqEntry[] {
+  const grades = formatResourceGrades(resource.gradeLevels);
+  const type = DELIVERY_TYPE_LABEL[resource.deliveryMode];
+  const subject = resource.category.replace(/^วิชา/, "").trim();
+  const faq: FaqEntry[] = [];
+  if (grades) {
+    faq.push({ question: `${resource.title} เหมาะกับชั้นไหน`, answer: `เหมาะกับนักเรียนระดับ ${grades}${subject ? ` หมวด${subject}` : ""}` });
+  }
+  faq.push({ question: `${resource.title} ใช้ฟรีไหม`, answer: ACCESS_ANSWER[resource.accessMode] });
+  const meta = resource.meta.trim();
+  faq.push({
+    question: `${resource.title} เป็นสื่อแบบไหน`,
+    answer: `เป็น${type}${subject ? ` หมวด${subject}` : ""} จาก ${SITE_NAME}${meta ? ` (${meta})` : ""}`,
+  });
+  return faq;
+}
+
+export function faqJsonLd(entries: readonly FaqEntry[]): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: entries.map((entry) => ({
+      "@type": "Question",
+      name: entry.question,
+      acceptedAnswer: { "@type": "Answer", text: entry.answer },
+    })),
+  };
+}
