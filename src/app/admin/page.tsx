@@ -259,6 +259,7 @@ const BASE_NAV_ITEMS: SideNavGroup["items"] = [
 ];
 
 const OWNER_NAV_ITEM = { key: "audit", label: "ประวัติการแก้ไข", icon: History };
+const OWNER_FINANCE_NAV_ITEM = { key: "owner-finance", label: "บัญชีและเป้าหมาย", icon: Wallet };
 
 const REQUEST_LABEL: Record<AdminRequest["status"], string> = { pending: "รอพิจารณา", in_progress: "กำลังผลิต", done: "เสร็จแล้ว" };
 const REQUEST_TONE: Record<AdminRequest["status"], "warning" | "info" | "success"> = { pending: "warning", in_progress: "info", done: "success" };
@@ -1003,6 +1004,10 @@ export default function AdminConsolePage() {
     const guard = guardAgainstBusyForm(saving);
     if (!guard.allowed) {
       window.alert(guard.message);
+      return;
+    }
+    if (key === "owner-finance" && viewerRole === "owner") {
+      router.push("/admin/owner-finance");
       return;
     }
     const nextView = parseAdminView(key, viewerRole === "owner");
@@ -2027,7 +2032,7 @@ export default function AdminConsolePage() {
     upgrades: actionCounts.upgrades,
   };
   const baseNavItems = BASE_NAV_ITEMS.map((item) => ({ ...item, badge: navBadgeByKey[item.key as View] }));
-  const navGroups: SideNavGroup[] = [{ items: isOwner ? [...baseNavItems, OWNER_NAV_ITEM] : baseNavItems }];
+  const navGroups: SideNavGroup[] = [{ items: isOwner ? [...baseNavItems, OWNER_FINANCE_NAV_ITEM, OWNER_NAV_ITEM] : baseNavItems }];
   const planNameById = new Map(plans.map((plan) => [plan.id, plan.name]));
 
   const uploadStatusFor = (target: UploadTarget) => (uploadStatus.phase !== "idle" && uploadStatus.target === target ? uploadStatus : null);
