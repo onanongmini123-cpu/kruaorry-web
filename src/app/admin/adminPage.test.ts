@@ -18,7 +18,7 @@ describe("responsive admin console contracts", () => {
     expect(pageSource).toContain("groups={navGroups}");
     expect(pageSource).toContain('key: "moderation"');
     expect(pageSource).toContain('key: "benefits"');
-    expect(pageSource).toContain("isOwner ? [...baseNavItems, OWNER_NAV_ITEM]");
+    expect(pageSource).toContain("isOwner ? [...baseNavItems, OWNER_FINANCE_NAV_ITEM, OWNER_NAV_ITEM]");
   });
 
   it("uses authoritative admin-only action counts and marks new work first", () => {

@@ -631,8 +631,15 @@ does not change any existing cover. Rollback:
 read-only verification: `supabase/verification/063-verify.sql`; SQL test:
 `npm run test:admin-set-resource-cover-sql`.
 
-Migration `20261016090000_066_owner_finance.sql` is **not applied** anywhere yet
-(Draft PR; staging first, then a separate go-ahead for production). It adds the
+Migration `20261015090000_065_site_visits.sql` was reported as applied on
+production by the owner on 2026-11-27. It records approximate visitors once per
+Thai day without IP, email or user ID and exposes only an owner summary. Rollback:
+`supabase/rollbacks/20261015090000_065_site_visits.rollback.sql`; verification:
+`supabase/verification/065-verify.sql` (6 checks); SQL test:
+`npm run test:site-visits-sql`.
+
+Migration `20261016090000_066_owner_finance.sql` was applied on production
+on 2026-11-27 with verification 8/8. It adds the
 owner-only finance records for "บัญชีและเป้าหมาย": `owner_manual_finance_entries`
 (income / expense / refund in satang; never edited or deleted, a mistake is
 voided with a reason), `owner_recurring_expenses` (reminders only until marked
@@ -645,3 +652,14 @@ Rollback: `supabase/rollbacks/20261016090000_066_owner_finance.rollback.sql`
 (recorded money is lost; the bucket is left in place); read-only verification:
 `supabase/verification/066-verify.sql` (8 checks); SQL test:
 `npm run test:owner-finance-sql`.
+
+Migration `20261017090000_067_owner_goals_reports.sql` is **not applied on
+production**. It adds owner-only monthly goals and an append-only goal audit;
+direct writes are denied and the owner saves through an audited RPC. The
+aggregate report and 12-month CSV count membership revenue only from
+`membership_payment_confirmations`, never by adding `upgrade_requests`. Dates,
+daily targets, best day and completed-day streak use Asia/Bangkok. Rollback:
+`supabase/rollbacks/20261017090000_067_owner_goals_reports.rollback.sql`
+(goal data and goal audit history are lost); verification:
+`supabase/verification/067-verify.sql` (8 checks); SQL test:
+`npm run test:owner-goals-sql`. Stage and verify before separate production approval.
