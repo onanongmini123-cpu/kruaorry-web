@@ -64,6 +64,8 @@ export function OwnerFinancePanel() {
   const [entryDescription, setEntryDescription] = useState("");
   const [entryReference, setEntryReference] = useState("");
   const [receipt, setReceipt] = useState<File | null>(null);
+  const [voidingEntryId, setVoidingEntryId] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState("");
   const [goalMonth, setGoalMonth] = useState(() => monthStart(thaiToday()));
   const [goalAmount, setGoalAmount] = useState("");
   const [goalPro, setGoalPro] = useState("");
@@ -131,10 +133,10 @@ export function OwnerFinancePanel() {
   const previousGoal = goals.find((goal) => goal.month_start === monthStart(previousMonth.toISOString().slice(0, 10)));
   const dueCount = due.filter((item) => !item.paid && ["overdue", "due_today"].includes(item.status)).length;
 
-  async function runAction(action: () => Promise<void>, success: string) {
+  async function runAction(action: () => Promise<void>, success: string): Promise<boolean> {
     setBusy(true); setActionError(null); setNotice(null);
-    try { await action(); setNotice(success); await load(); }
-    catch (error) { setActionError(friendlyErrorMessage(error)); }
+    try { await action(); setNotice(success); await load(); return true; }
+    catch (error) { setActionError(friendlyErrorMessage(error)); return false; }
     finally { setBusy(false); }
   }
 
@@ -175,14 +177,15 @@ export function OwnerFinancePanel() {
     }, "บันทึกรายการแล้ว");
   }
 
-  async function voidEntry(entry: Entry) {
-    const reason = window.prompt("ระบุเหตุผลที่ยกเลิกรายการนี้");
-    if (reason === null) return;
-    if (!reason.trim()) { setActionError("กรุณาระบุเหตุผลก่อนยกเลิก"); return; }
-    await runAction(async () => {
-      const result = await supabase.rpc("owner_void_finance_entry", { p_entry_id: entry.id, p_reason: reason.trim() });
+  async function voidEntry(event: React.FormEvent<HTMLFormElement>, entry: Entry) {
+    event.preventDefault();
+    const reason = voidReason.trim();
+    if (!reason) { setActionError("กรุณาระบุเหตุผลก่อนยกเลิก"); return; }
+    const saved = await runAction(async () => {
+      const result = await supabase.rpc("owner_void_finance_entry", { p_entry_id: entry.id, p_reason: reason });
       if (result.error) throw result.error;
     }, "ยกเลิกรายการแล้ว ประวัติยังอยู่");
+    if (saved) { setVoidingEntryId(null); setVoidReason(""); }
   }
 
   async function saveGoal(event: React.FormEvent<HTMLFormElement>) {
@@ -354,7 +357,15 @@ export function OwnerFinancePanel() {
               {receiptLink?.id === entry.id && <a href={receiptLink.url} target="_blank" rel="noopener noreferrer">เปิดสลิป (ลิงก์ใช้ได้ 60 วินาที)</a>}
             </div>}
           </div>
-          {!entry.voided_at && <button type="button" className={styles.button} disabled={busy} onClick={() => void voidEntry(entry)}>ยกเลิก</button>}
+          {!entry.voided_at && (voidingEntryId === entry.id ? <form className={styles.voidForm} onSubmit={(event) => void voidEntry(event, entry)}>
+            <label htmlFor={`void-reason-${entry.id}`}>เหตุผลที่ยกเลิกรายการ</label>
+            <input id={`void-reason-${entry.id}`} required maxLength={500} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} autoFocus />
+            <p>รายการจะไม่ถูกนับในยอดเงิน แต่ประวัติยังอยู่</p>
+            <div className={styles.voidActions}>
+              <button type="submit" className={styles.buttonPrimary} disabled={busy || !voidReason.trim()}>ยืนยันยกเลิก</button>
+              <button type="button" className={styles.button} disabled={busy} onClick={() => { setVoidingEntryId(null); setVoidReason(""); }}>ไม่ยกเลิก</button>
+            </div>
+          </form> : <button type="button" className={styles.button} disabled={busy} onClick={() => { setActionError(null); setVoidReason(""); setVoidingEntryId(entry.id); }}>ยกเลิก</button>)}
         </article>)}
       </div>}
       <h3>รายจ่ายประจำ</h3><p className={styles.muted}>รายการนี้เป็นคำเตือน ยังไม่เป็นรายจ่ายจริงจนกด “จ่ายแล้ว”</p>

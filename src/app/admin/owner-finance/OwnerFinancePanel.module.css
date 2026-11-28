@@ -30,6 +30,11 @@
 .entry { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; min-width: 0; gap: 12px; padding: 14px 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card); }
 .entry div { min-width: 0; overflow-wrap: anywhere; }
 .entry p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.voidForm { display: grid; gap: 8px; flex-basis: 100%; min-width: 0; padding: 12px; border-radius: 10px; background: var(--status-warning-bg); }
+.voidForm label { font-weight: 700; }
+.voidForm input { width: 100%; min-width: 0; min-height: 44px; padding: 9px 11px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-card); color: var(--text-body); font: inherit; }
+.voidForm p { color: var(--status-warning-fg); }
+.voidActions { display: flex; flex-wrap: wrap; gap: 8px; }
 .goalList { display: grid; gap: 8px; padding-left: 20px; }
 .chart { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card); }
 .chartRow { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(48px, auto); align-items: center; gap: 10px; font-size: 13px; }
